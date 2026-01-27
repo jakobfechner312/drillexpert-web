@@ -1,0 +1,50 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next();
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            res.cookies.set(name, value, options);
+          });
+        },
+      },
+    }
+  );
+
+  // session holen (wichtig: damit cookies refresh passieren kann)
+  const { data } = await supabase.auth.getUser();
+  const user = data.user;
+
+  const pathname = req.nextUrl.pathname;
+
+  // ✅ Login & Auth-Routen IMMER erlauben
+  if (pathname.startsWith("/login")) return res;
+
+  // ✅ Wenn nicht eingeloggt und in geschütztem Bereich -> login
+  const protectedRoutes = ["/reports", "/settings"];
+  const isProtected = protectedRoutes.some((p) => pathname.startsWith(p));
+
+  if (!user && isProtected) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("redirectTo", pathname);
+    return NextResponse.redirect(url);
+  }
+
+  return res;
+}
+
+// ✅ matcher: ignoriert static files, api, images etc.
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api|.*\\.(?:png|jpg|jpeg|svg|webp|css|js)$).*)"],
+};

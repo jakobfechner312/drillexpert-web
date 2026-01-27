@@ -1,26 +1,53 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Tailwind v4 Theme Tokens -> erzeugen Klassen wie:
+   bg-base-bg, text-base-ink, border-base-border,
+   bg-drill-500, hover:bg-drill-600, shadow-soft, etc.
+*/
+@theme {
+  --color-base-bg: #F6F8FB;
+  --color-base-card: #FFFFFF;
+  --color-base-ink: #0B1220;
+  --color-base-muted: #6B7280;
+  --color-base-border: #E5E7EB;
+
+  --color-drill-50: #E8F8FD;
+  --color-drill-100: #CFF1FB;
+  --color-drill-200: #9FE2F6;
+  --color-drill-300: #6FD4F2;
+  --color-drill-400: #3FC6EE;
+  --color-drill-500: #00A6D6;
+  --color-drill-600: #0089B1;
+  --color-drill-700: #006C8C;
+  --color-drill-800: #004F67;
+  --color-drill-900: #003242;
+
+  --shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.08);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer base {
+  html, body { height: 100%; }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  body {
+    @apply bg-base-bg text-base-ink antialiased;
+    font-family: var(--font-geist-sans), system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  input, textarea, select, button { font: inherit; }
+
+  label { @apply text-sm font-medium text-base-ink; }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="date"],
+  input[type="number"],
+  textarea,
+  select {
+    @apply w-full rounded-xl border border-base-border bg-white px-3 py-2 text-sm shadow-sm outline-none;
+  }
+
+  input:focus, textarea:focus, select:focus {
+    @apply ring-2 ring-drill-300 border-drill-400;
+  }
 }
