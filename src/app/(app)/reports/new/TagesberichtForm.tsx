@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/browser";
 import { useDraftActions } from "@/components/DraftActions";
-import { useMemo, useRef, useEffect, useState } from "react";
+import { useMemo, useRef, useEffect, useState, useCallback } from "react";
 import SignatureCanvas from "react-signature-canvas";
 
 import type {
@@ -125,6 +125,115 @@ type TagesberichtFormProps = {
 
 
 export default function TagesberichtForm({ projectId }: TagesberichtFormProps) {
+
+  const savingRef = useRef(false);
+  const reportSaveKeyRef = useRef<string | null>(null);
+  
+ // nur für den Picker (wenn KEIN projectId prop da ist)
+  const [localProjectId, setLocalProjectId] = useState<string | null>(null);
+
+  // das ist der “echte” Projektwert, den du überall nutzt
+  const effectiveProjectId = projectId ?? localProjectId;
+
+  const [newProjectName, setNewProjectName] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);  
+
+  // Modal/UI state bleibt wie gehabt
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projectUiLoading, setProjectUiLoading] = useState(false);
+
+  const loadMyProjects = useCallback(async () => {
+    const supabase = createClient();
+    setProjectUiLoading(true);
+
+    const { data: userRes } = await supabase.auth.getUser();
+    const user = userRes.user;
+
+    if (!user) {
+      setProjectUiLoading(false);
+      alert("Nicht eingeloggt.");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("projects")
+      .select("id,name")
+      .order("created_at", { ascending: false });
+
+    setProjectUiLoading(false);
+
+    if (error) {
+      console.error(error);
+      alert("Projekte laden fehlgeschlagen: " + error.message);
+      return;
+    }
+
+    setProjects((data ?? []) as { id: string; name: string }[]);
+  }, []);
+
+  const requireProjectId = useCallback(async (): Promise<string | null> => {
+    if (effectiveProjectId) return effectiveProjectId;
+
+    await loadMyProjects();
+    setProjectModalOpen(true);
+    return null;
+  }, [effectiveProjectId, loadMyProjects]);
+
+    const createProject = useCallback(async () => {
+    const supabase = createClient();
+
+    const name = newProjectName.trim();
+    if (!name) return alert("Bitte Projektnamen eingeben.");
+
+    setCreatingProject(true);
+
+    const { data: userRes, error: userErr } = await supabase.auth.getUser();
+    const user = userRes?.user;
+
+    if (userErr || !user) {
+      setCreatingProject(false);
+      return alert("Nicht eingeloggt.");
+    }
+
+    // 1) projects insert
+    const { data: proj, error: projErr } = await supabase
+      .from("projects")
+      .insert({
+        name,
+        owner_id: user.id,
+        created_by: user.id,
+      })
+      .select("id,name")
+      .single();
+
+    if (projErr || !proj) {
+      setCreatingProject(false);
+      console.error(projErr);
+      return alert("Projekt anlegen fehlgeschlagen: " + (projErr?.message ?? "unknown"));
+    }
+
+    // 2) membership insert
+    const { error: memErr } = await supabase.from("project_members").insert({
+      project_id: proj.id,
+      user_id: user.id,
+      role_in_project: "owner",
+    });
+
+    if (memErr) {
+      setCreatingProject(false);
+      console.error(memErr);
+      return alert("Mitgliedschaft anlegen fehlgeschlagen: " + memErr.message);
+    }
+
+    // 3) UI updaten + auswählen
+    setProjects((prev) => [{ id: proj.id, name: proj.name }, ...prev]);
+    setLocalProjectId(proj.id);
+    setNewProjectName("");
+    setProjectModalOpen(false);
+    setCreatingProject(false);
+  }, [newProjectName]);
+
   const [report, setReport] = useState<Tagesbericht>(() => {
     const base = createDefaultTagesbericht();
     return {
@@ -142,7 +251,7 @@ export default function TagesberichtForm({ projectId }: TagesberichtFormProps) {
     reportRef.current = report;
   }, [report]);
 
-// ================== DRAFT + REPORT SAVE HANDLERS ==================
+  // ================== DRAFT + REPORT SAVE HANDLERS ==================
   const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
 
   useEffect(() => {
@@ -151,13 +260,22 @@ export default function TagesberichtForm({ projectId }: TagesberichtFormProps) {
 
     // ✅ Draft speichern
     setSaveDraftHandler(async () => {
-      console.log("[Form] saveDraftHandler CALLED");
+      console.log("[Form] saveDraft START");
 
       const { data: userRes } = await supabase.auth.getUser();
+      console.log("[Form] getUser done", { userErr, hasUser: !!userRes?.user });
+
       const user = userRes.user;
       if (!user) return alert("Nicht eingeloggt.");
 
+      console.log("[Form] requireProjectId START", { effectiveProjectId });
+      const pid = await requireProjectId();
+      console.log("[Form] requireProjectId DONE", { pid });
+
+      if (!pid) return; // Modal ist offen -> User muss erst Projekt wählen/anlegen
+
       const currentReport = reportRef.current;
+      console.log("[Form] inserting draft…");
 
       const title =
         currentReport?.project?.trim()
@@ -166,11 +284,13 @@ export default function TagesberichtForm({ projectId }: TagesberichtFormProps) {
 
       const { error } = await supabase.from("drafts").insert({
         user_id: user.id,
-        project_id: projectId ?? null,
+        project_id: pid, // ✅ NIE null
         report_type: "tagesbericht",
         title,
         data: currentReport,
       });
+
+      console.log("[Form] insert done", { error });
 
       if (error) {
         console.error(error);
@@ -182,33 +302,57 @@ export default function TagesberichtForm({ projectId }: TagesberichtFormProps) {
 
     // ✅ Finalen Bericht speichern
     setSaveReportHandler(async () => {
-      console.log("[Form] saveReportHandler CALLED");
+      if (savingRef.current) return; // ✅ blockt doppeltes Triggern (UI-seitig)
+      savingRef.current = true;
 
-      const { data: userRes } = await supabase.auth.getUser();
-      const user = userRes.user;
-      if (!user) return alert("Nicht eingeloggt.");
+      try {
+        const { data: userRes } = await supabase.auth.getUser();
+        const user = userRes.user;
+        if (!user) return alert("Nicht eingeloggt.");
 
-      const currentReport = reportRef.current;
+        const pid = await requireProjectId();
+        if (!pid) return;
 
-      const title =
-        currentReport?.project?.trim()
-          ? `Tagesbericht – ${currentReport.project} (${currentReport.date})`
-          : `Tagesbericht (${currentReport?.date ?? ""})`;
+        // ✅ DB-seitig: gleicher Key für denselben Save-Vorgang
+        if (!reportSaveKeyRef.current) {
+          reportSaveKeyRef.current = crypto.randomUUID();
+        }
+        const idempotencyKey = reportSaveKeyRef.current;
 
-      const { error } = await supabase.from("reports").insert({
-        user_id: user.id,
-        project_id: projectId ?? null,
-        report_type: "tagesbericht",
-        title,
-        data: currentReport,
-      });
+        const currentReport = reportRef.current;
 
-      if (error) {
-        console.error(error);
-        return alert("Bericht speichern fehlgeschlagen: " + error.message);
+        const title =
+          currentReport?.project?.trim()
+            ? `Tagesbericht – ${currentReport.project} (${currentReport.date})`
+            : `Tagesbericht (${currentReport?.date ?? ""})`;
+
+        const { error } = await supabase.from("reports").insert({
+          user_id: user.id,
+          project_id: pid,
+          report_type: "tagesbericht",
+          title,
+          data: currentReport,
+          status: "final",
+          idempotency_key: idempotencyKey, // ✅ WICHTIG
+        });
+
+        if (error) {
+          // ✅ wenn DB sagt "gibt’s schon" -> ok
+          if ((error as any).code === "23505") {
+            alert("Bericht war schon gespeichert ✅");
+            return;
+          }
+          console.error(error);
+          return alert("Bericht speichern fehlgeschlagen: " + error.message);
+        }
+
+        // ✅ bei Erfolg: Key resetten, damit nächstes Absenden wieder neu ist
+        reportSaveKeyRef.current = null;
+
+        alert("Bericht gespeichert ✅");
+      } finally {
+        savingRef.current = false;
       }
-
-      alert("Bericht gespeichert ✅");
     });
 
     return () => {
@@ -216,41 +360,8 @@ export default function TagesberichtForm({ projectId }: TagesberichtFormProps) {
       setSaveDraftHandler(null);
       setSaveReportHandler(null);
     };
-  }, [setSaveDraftHandler, setSaveReportHandler, projectId]);
+  }, [setSaveDraftHandler, setSaveReportHandler, requireProjectId]);
   // ========================================================
-
-    async function saveFinalReport() {
-    const supabase = createClient();
-
-    const { data: userRes } = await supabase.auth.getUser();
-    const user = userRes.user;
-
-    if (!user) return alert("Nicht eingeloggt.");
-    if (!projectId) return alert("Kein Projekt ausgewählt.");
-
-    const currentReport = reportRef.current;
-
-    const title =
-      currentReport?.project?.trim()
-        ? `Tagesbericht – ${currentReport.project} (${currentReport.date})`
-        : `Tagesbericht (${currentReport?.date ?? ""})`;
-
-    const { error } = await supabase.from("reports").insert({
-      user_id: user.id,
-      project_id: projectId,
-      report_type: "tagesbericht",
-      title,
-      data: currentReport,
-      status: "final",
-    });
-
-    if (error) {
-      console.error(error);
-      return alert("Bericht speichern fehlgeschlagen: " + error.message);
-    }
-
-    alert("Bericht gespeichert ✅");
-  }
 
   const sigClientRef = useRef<SignatureCanvas>(null);
   const sigDrillerRef = useRef<SignatureCanvas>(null);
@@ -519,6 +630,74 @@ function removeLastBreakRow() {
 
   return (
     <div className="mt-6 space-y-6 max-w-7xl mx-auto px-4">
+      {projectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Projekt auswählen</h3>
+              <button
+                type="button"
+                className="rounded-xl border px-3 py-2"
+                onClick={() => setProjectModalOpen(false)}
+              >
+                Schließen
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-4">
+              {/* 🔹 NEUES PROJEKT ANLEGEN */}
+              <div className="rounded-xl border p-3">
+                <div className="text-sm font-medium">Neues Projekt</div>
+
+                <div className="mt-2 flex gap-2">
+                  <input
+                    className="flex-1 rounded-xl border p-3"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    placeholder="z.B. Baustelle Freiburg Nord"
+                  />
+                  <button
+                    type="button"
+                    className="rounded-xl border px-3 py-2 disabled:opacity-50"
+                    disabled={creatingProject}
+                    onClick={createProject}
+                  >
+                    {creatingProject ? "Erstelle…" : "+ Anlegen"}
+                  </button>
+                </div>
+
+                <p className="mt-2 text-xs text-gray-500">
+                  Legt das Projekt an und wählt es automatisch aus.
+                </p>
+              </div>
+
+              {/* 🔹 PROJEKT-LISTE */}
+              {projectUiLoading ? (
+                <p className="text-sm text-gray-600">Lade Projekte…</p>
+              ) : projects.length === 0 ? (
+                <p className="text-sm text-gray-600">Noch keine Projekte vorhanden.</p>
+              ) : (
+                <div className="space-y-2">
+                  {projects.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="w-full rounded-xl border px-3 py-3 text-left hover:bg-gray-50"
+                      onClick={() => {
+                        setLocalProjectId(p.id);
+                        setProjectModalOpen(false);
+                      }}
+                    >
+                      <div className="font-medium">{p.name}</div>
+                      <div className="text-xs text-gray-500">{p.id}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {/* ======================= KOPF ======================= */}
       <section className="rounded-2xl border p-4">
         <h2 className="text-lg font-semibold">Kopf</h2>
@@ -1249,13 +1428,6 @@ function removeLastBreakRow() {
         </button>
         <button type="button" className="rounded-2xl border px-4 py-3 font-medium" onClick={openTestPdf}>
           PDF testen
-        </button>
-        <button
-          type="button"
-          className="rounded-2xl bg-black text-white px-4 py-3 font-medium"
-          onClick={saveFinalReport}
-        >
-          Absenden
         </button>
       </div>
 

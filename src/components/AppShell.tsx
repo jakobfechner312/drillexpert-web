@@ -123,14 +123,12 @@ function AppTopbar({
             Entwurf
           </button>
 
-          <button
-            onClick={() => {
-              console.log("[Report] click");
-              triggerSaveReport();
-            }}
-            className="rounded-xl bg-drill-500 px-3 py-2 text-sm font-medium text-white hover:bg-drill-600"
+         <button
+            type="button"
+            className="rounded-2xl bg-black text-white px-4 py-3 font-medium"
+            onClick={triggerSaveReport}
           >
-            PDF erzeugen
+            Absenden
           </button>
         </div>
       </div>
