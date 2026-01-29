@@ -550,12 +550,15 @@ export async function POST(req: Request) {
     }
 
     const outBytes = await outDoc.save();
-    return new NextResponse(outBytes, {
+    return new NextResponse(
+      outBytes.buffer.slice(outBytes.byteOffset, outBytes.byteOffset + outBytes.byteLength),
+      {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": 'inline; filename="tagesbericht_landscape.pdf"',
       },
-    });
+      }
+    );
   } catch (err: any) {
     console.error("PDF route error:", err);
     return NextResponse.json({ error: "PDF generation failed", message: err?.message ?? String(err) }, { status: 500 });
