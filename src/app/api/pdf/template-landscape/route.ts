@@ -2,13 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateTagesberichtPdf } from "@/lib/pdf/tagesbericht";
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: Request) {
   try {
     const supabase = await createClient();
-    const reportId = params.id;
+    const reportId = "template-landscape";
 
     // optional: schneller Debug
     // return NextResponse.json({ HIT: "tagesbericht/[id]/route.ts", params });
