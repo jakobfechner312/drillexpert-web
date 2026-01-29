@@ -13,6 +13,12 @@ type ReportRow = {
   user_id: string; // Ersteller
   status: string | null;
 };
+type ProjectFile = {
+  name: string;
+  updated_at: string;
+  created_at: string;
+  metadata?: { size?: number };
+};
 
 export default function ProjectDetailPage() {
   const params = useParams<{ projectId: string }>();
@@ -28,6 +34,11 @@ export default function ProjectDetailPage() {
 
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [files, setFiles] = useState<ProjectFile[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesErr, setFilesErr] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const maxFileSizeMb = 25;
 
   const load = async () => {
     setLoading(true);
@@ -85,6 +96,21 @@ export default function ProjectDetailPage() {
     }
 
     setReports((reps ?? []) as ReportRow[]);
+
+    // 4) Dateien laden
+    setFilesLoading(true);
+    setFilesErr(null);
+    const { data: fileList, error: fileErr } = await supabase.storage
+      .from("project-files")
+      .list(`${projectId}/`, { limit: 200, offset: 0 });
+
+    if (fileErr) {
+      setFilesErr("Dateien laden fehlgeschlagen: " + fileErr.message);
+    } else {
+      setFiles((fileList ?? []) as ProjectFile[]);
+    }
+    setFilesLoading(false);
+
     setLoading(false);
   };
 
@@ -109,6 +135,66 @@ export default function ProjectDetailPage() {
       return;
     }
     setReports((prev) => prev.filter((x) => x.id !== reportId));
+  };
+
+  const uploadFiles = async (fileList: FileList | File[]) => {
+    if (!fileList || fileList.length === 0) return;
+    setUploading(true);
+    setFilesErr(null);
+
+    const list = Array.from(fileList);
+    const supabase = createClient();
+    const { data: userRes, error: userErr } = await supabase.auth.getUser();
+    const user = userRes?.user;
+    if (userErr || !user) {
+      setFilesErr("Nicht eingeloggt.");
+      setUploading(false);
+      return;
+    }
+
+    for (const file of list) {
+      if (file.size > maxFileSizeMb * 1024 * 1024) {
+        setFilesErr(`"${file.name}" ist größer als ${maxFileSizeMb} MB.`);
+        continue;
+      }
+
+      const path = `${projectId}/${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage
+        .from("project-files")
+        .upload(path, file, {
+          upsert: false,
+          contentType: file.type || "application/octet-stream",
+        });
+
+      if (error) {
+        setFilesErr(`Upload fehlgeschlagen: ${error.message}`);
+      }
+    }
+
+    const { data: fileListNew, error: fileErr } = await supabase.storage
+      .from("project-files")
+      .list(`${projectId}/`, { limit: 200, offset: 0 });
+
+    if (fileErr) {
+      setFilesErr("Dateien laden fehlgeschlagen: " + fileErr.message);
+    } else {
+      setFiles((fileListNew ?? []) as ProjectFile[]);
+    }
+
+    setUploading(false);
+  };
+
+  const openFile = async (name: string) => {
+    const supabase = createClient();
+    const { data, error } = await supabase.storage
+      .from("project-files")
+      .createSignedUrl(`${projectId}/${name}`, 60 * 10);
+
+    if (error || !data?.signedUrl) {
+      alert("Datei konnte nicht geöffnet werden.");
+      return;
+    }
+    window.open(data.signedUrl, "_blank");
   };
 
   return (
@@ -187,6 +273,77 @@ export default function ProjectDetailPage() {
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {!loading && !err && (
+        <div className="mt-6 rounded-2xl border">
+          <div className="border-b p-4">
+            <h2 className="font-medium">Projektdateien</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Uploads & Anhänge zum Projekt
+            </p>
+          </div>
+
+          <div className="p-4">
+            <div
+              className="rounded-2xl border border-dashed p-6 text-center text-sm text-gray-600"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                uploadFiles(e.dataTransfer.files);
+              }}
+            >
+              <div className="font-medium text-gray-800">Dateien hier ablegen</div>
+              <div className="mt-1 text-xs text-gray-500">
+                PDF, Bilder, Excel, CSV, DOCX … bis {maxFileSizeMb} MB
+              </div>
+
+              <label className="mt-3 inline-block rounded-xl border px-3 py-2 text-sm hover:bg-gray-50">
+                Dateien auswählen
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => e.target.files && uploadFiles(e.target.files)}
+                  accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.csv,.xlsx,.xls,.doc,.docx,.txt,.rtf"
+                />
+              </label>
+
+              {uploading && (
+                <div className="mt-2 text-xs text-gray-500">Upload läuft…</div>
+              )}
+              {filesErr && (
+                <div className="mt-2 text-xs text-red-600">{filesErr}</div>
+              )}
+            </div>
+
+            {filesLoading ? (
+              <p className="mt-4 text-sm text-gray-600">Lade Dateien…</p>
+            ) : files.length === 0 ? (
+              <p className="mt-4 text-sm text-gray-600">Noch keine Dateien vorhanden.</p>
+            ) : (
+              <ul className="mt-4 divide-y rounded-2xl border">
+                {files.map((f) => (
+                  <li key={f.name} className="flex items-center justify-between gap-3 p-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{f.name}</div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        {(f.metadata?.size ? Math.round(f.metadata.size / 1024) : 0)} KB
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                      onClick={() => openFile(f.name)}
+                    >
+                      Öffnen
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       )}
     </div>
