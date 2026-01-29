@@ -1,6 +1,6 @@
 // src/app/page.tsx
 import AppShell from "@/components/AppShell";
-import TagesberichtForm from "@/app/reports/new/TagesberichtForm";
+import TagesberichtForm from "@/app/(app)/reports/new/TagesberichtForm";
 
 
 export default function Home() {
