@@ -44,6 +44,8 @@ node_modules
 .next
 .env
 .env.local
+.env.*.local
+sicherung.tsx
 .env.production
 .env.development
 
