@@ -13,8 +13,6 @@ import type {
   UmsetzenRow,
   WorkerRow,
   PegelAusbauRow,
-  TimeRange,
-  TransportRow,
 } from "@/types/tagesbericht";
 import { createDefaultTagesbericht } from "@/lib/defaultTagesbericht";
 
@@ -126,27 +124,25 @@ type TagesberichtFormProps = {
   mode?: "create" | "edit";
 };
 
-function normalizeTagesbericht(raw: unknown): Tagesbericht {
+function normalizeTagesbericht(raw: any): Tagesbericht {
   const base = createDefaultTagesbericht();
 
-  const r = { ...base, ...(raw ?? {}) } as Tagesbericht;
+  const r: any = { ...base, ...(raw ?? {}) };
 
   // ---------- nested defaults ----------
-  const w = r.weather ?? {};
   r.weather = {
-    ...w,
-    conditions: w.conditions ?? [],
-    tempMaxC: w.tempMaxC ?? null,
-    tempMinC: w.tempMinC ?? null,
+    conditions: [],
+    tempMaxC: null,
+    tempMinC: null,
+    ...(r.weather ?? {}),
   };
 
-  const sig = r.signatures ?? {};
   r.signatures = {
-    ...sig,
-    clientOrManagerName: sig.clientOrManagerName ?? "",
-    drillerName: sig.drillerName ?? "",
-    clientOrManagerSigPng: sig.clientOrManagerSigPng ?? "",
-    drillerSigPng: sig.drillerSigPng ?? "",
+    clientOrManagerName: "",
+    drillerName: "",
+    clientOrManagerSigPng: "",
+    drillerSigPng: "",
+    ...(r.signatures ?? {}),
   };
 
   // ---------- arrays (mindestens 1 Zeile) ----------
@@ -173,8 +169,8 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
   }
 
   // time input braucht "HH:MM"
-  const toHHMM = (v: unknown): string => {
-    if (typeof v !== "string") return "";
+  const toHHMM = (v: any) => {
+    if (typeof v !== "string") return v;
     // "HH:MM:SS" -> "HH:MM"
     if (/^\d{2}:\d{2}:\d{2}/.test(v)) return v.slice(0, 5);
     // "HH:MM" passt schon
@@ -183,7 +179,7 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
   };
 
   if (Array.isArray(r.workTimeRows)) {
-    r.workTimeRows = r.workTimeRows.map((row) => ({
+    r.workTimeRows = r.workTimeRows.map((row: any) => ({
       ...row,
       from: toHHMM(row?.from ?? ""),
       to: toHHMM(row?.to ?? ""),
@@ -191,7 +187,7 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
   }
 
   if (Array.isArray(r.breakRows)) {
-    r.breakRows = r.breakRows.map((row) => ({
+    r.breakRows = r.breakRows.map((row: any) => ({
       ...row,
       from: toHHMM(row?.from ?? ""),
       to: toHHMM(row?.to ?? ""),
@@ -199,7 +195,7 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
   }
 
   if (Array.isArray(r.transportRows)) {
-    r.transportRows = r.transportRows.map((row) => ({
+    r.transportRows = r.transportRows.map((row: any) => ({
       ...row,
       time: toHHMM(row?.time ?? ""),
     }));
@@ -274,17 +270,43 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create" 
     setProjectModalOpen(true);
     return null;
    }, [effectiveProjectId, loadMyProjects]);
+  
+   const ensureSaveTarget = useCallback(async (): Promise<{ scope: SaveScope; projectId: string | null } | null> => {
+    // Wenn Seite schon in einem Projekt ist -> immer dort speichern (kein Popup)
+    if (projectId) {
+      setSaveScope("project");
+      return { scope: "project", projectId };
+    }
 
-  const ensureSaveTarget = useCallback(async (): Promise<{ scope: SaveScope; projectId: string | null } | null> => {
+    // Wenn User vorher schon gewählt hat
+    if (saveScope === "my_reports") {
+      return { scope: "my_reports", projectId: null };
+    }
+    if (saveScope === "project" && localProjectId) {
+      return { scope: "project", projectId: localProjectId };
+    }
+
+  // Erstes Mal (unset) oder project ohne Auswahl -> Modal öffnen
+  await loadMyProjects();
+  setProjectModalOpen(true);
+
+  const result = await new Promise<{ scope: SaveScope; projectId: string | null } | undefined>((resolve) => {
+    pendingSaveResolveRef.current = resolve;
+  });
+
+  pendingSaveResolveRef.current = null;
+  return result ?? null;
+}, [projectId, saveScope, localProjectId, loadMyProjects]);
+
+    // Wenn User vorher schon "Meine Berichte" gewählt hat
     if (saveScope === "my_reports") {
       return { scope: "my_reports", projectId: null };
     }
 
-    if (effectiveProjectId) {
-      return { scope: "project", projectId: effectiveProjectId };
-    }
-
+    // saveScope === "project" aber wir haben noch kein Projekt -> Popup öffnen
     await loadMyProjects();
+
+    // wir öffnen das Modal und warten auf eine Auswahl
     setProjectModalOpen(true);
 
     const result = await new Promise<{ scope: SaveScope; projectId: string | null } | undefined>((resolve) => {
@@ -293,7 +315,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create" 
 
     pendingSaveResolveRef.current = null;
     return result ?? null;
-  }, [saveScope, effectiveProjectId, loadMyProjects]);
+    }, [projectId, saveScope, loadMyProjects, setSaveScope]);
 
     const createProject = useCallback(async () => {
     const supabase = createClient();
@@ -396,11 +418,10 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create" 
 
       // ✅ DEBUG: was kommt wirklich aus der DB?
       console.log("[EDIT LOAD] raw from db", data.data);
-      const dbReport = data.data as Partial<Tagesbericht>;
-      console.log("[EDIT LOAD] client", dbReport.client);
-      console.log("[EDIT LOAD] project", dbReport.project);
-      console.log("[EDIT LOAD] vehicles", dbReport.vehicles);
-      console.log("[EDIT LOAD] worker0 name", dbReport.workers?.[0]?.name);
+      console.log("[EDIT LOAD] client", (data.data as any)?.client);
+      console.log("[EDIT LOAD] project", (data.data as any)?.project);
+      console.log("[EDIT LOAD] vehicles", (data.data as any)?.vehicles);
+      console.log("[EDIT LOAD] worker0 name", (data.data as any)?.workers?.[0]?.name);
       setReport(normalizeTagesbericht(data.data));
     };
 
@@ -408,178 +429,170 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create" 
   }, [mode, reportId]);
 
   // ================== DRAFT + REPORT SAVE HANDLERS ==================
-  const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
+  // ================== DRAFT + REPORT SAVE HANDLERS ==================
+const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
 
-  useEffect(() => {
-    console.log("[Form] register save handlers");
-    const supabase = createClient();
+useEffect(() => {
+  console.log("[Form] register save handlers");
+  const supabase = createClient();
 
-    // ✅ Draft speichern
-    setSaveDraftHandler(async () => {
-      console.log("[Form] saveDraft START");
+  // ✅ Draft speichern (Drafts immer MIT Projekt)
+  setSaveDraftHandler(async () => {
+    console.log("[Form] saveDraft START");
 
+    const { data: userRes, error: userErr } = await supabase.auth.getUser();
+    const user = userRes?.user;
+
+    console.log("[Form] getUser done", { userErr, hasUser: !!user });
+
+    if (userErr || !user) {
+      alert("Nicht eingeloggt.");
+      return;
+    }
+
+    console.log("[Form] requireProjectId START", { effectiveProjectId });
+    const pid = await requireProjectId();
+    console.log("[Form] requireProjectId DONE", { pid });
+
+    if (!pid) return; // Modal offen -> User muss erst Projekt wählen/anlegen
+
+    const currentReport = reportRef.current;
+
+    const title =
+      currentReport?.project?.trim()
+        ? `Tagesbericht – ${currentReport.project} (${currentReport.date})`
+        : `Tagesbericht Entwurf (${currentReport?.date ?? ""})`;
+
+    const { error } = await supabase.from("drafts").insert({
+      user_id: user.id,
+      project_id: pid, // ✅ NIE null bei drafts
+      report_type: "tagesbericht",
+      title,
+      data: currentReport,
+    });
+
+    if (error) {
+      console.error(error);
+      alert("Entwurf speichern fehlgeschlagen: " + error.message);
+      return;
+    }
+
+    alert("Entwurf gespeichert ✅");
+  });
+
+  // ✅ Finalen Bericht speichern
+  setSaveReportHandler(async () => {
+    if (savingRef.current) return; // ✅ blockt doppeltes Triggern (UI-seitig)
+    savingRef.current = true;
+
+    try {
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
-    console.log("[Form] getUser done", { userErr, hasUser: !!userRes?.user });
+      const user = userRes?.user;
 
-      const user = userRes.user;
-      if (!user) return alert("Nicht eingeloggt.");
+      if (userErr || !user) {
+        alert("Nicht eingeloggt.");
+        return;
+      }
 
-      console.log("[Form] requireProjectId START", { effectiveProjectId });
-      const pid = await requireProjectId();
-      console.log("[Form] requireProjectId DONE", { pid });
+      // ✅ User entscheidet: Projekt ODER "Meine Berichte"
+      const target = await ensureSaveTarget();
+      if (!target) return;
 
-      if (!pid) return; // Modal ist offen -> User muss erst Projekt wählen/anlegen
-
+      const pid = target.projectId; // string | null (nur bei scope === "project")
       const currentReport = reportRef.current;
-      console.log("[Form] inserting draft…");
 
       const title =
         currentReport?.project?.trim()
           ? `Tagesbericht – ${currentReport.project} (${currentReport.date})`
-          : `Tagesbericht Entwurf (${currentReport?.date ?? ""})`;
+          : `Tagesbericht (${currentReport?.date ?? ""})`;
 
-      const { error } = await supabase.from("drafts").insert({
+      // ===============================
+      // EDIT → UPDATE
+      // ===============================
+      if (mode === "edit") {
+        if (!reportId) {
+          alert("Fehler: reportId fehlt im Edit-Modus");
+          return;
+        }
+
+        const rid = reportId; // ✅ TS-safe
+
+        const { error } = await supabase
+          .from("reports")
+          .update({
+            title,
+            data: currentReport,
+            status: "final",
+            // ✅ korrekt: Projekt setzen oder null wenn "Meine Berichte"
+            project_id: target.scope === "project" ? pid : null,
+          })
+          .eq("id", rid);
+
+        if (error) {
+          console.error(error);
+          alert("Bericht aktualisieren fehlgeschlagen: " + error.message);
+          return;
+        }
+
+        alert("Bericht aktualisiert ✅");
+        return;
+      }
+
+      // ===============================
+      // CREATE → INSERT
+      // ===============================
+      if (!reportSaveKeyRef.current) {
+        reportSaveKeyRef.current = crypto.randomUUID();
+      }
+
+      const idempotencyKey = reportSaveKeyRef.current;
+
+      const payload = {
         user_id: user.id,
-        project_id: pid, // ✅ NIE null
+        project_id: target.scope === "project" ? pid : null,
         report_type: "tagesbericht",
         title,
         data: currentReport,
-      });
+        status: "final",
+        idempotency_key: idempotencyKey,
+      };
 
-      console.log("[Form] insert done", { error });
+      const { error } = await supabase.from("reports").insert(payload);
 
       if (error) {
-        console.error(error);
-        return alert("Entwurf speichern fehlgeschlagen: " + error.message);
-      }
-
-      alert("Entwurf gespeichert ✅");
-    });
-
-    // ✅ Finalen Bericht speichern
-    setSaveReportHandler(async () => {
-      if (savingRef.current) return; // ✅ blockt doppeltes Triggern (UI-seitig)
-      savingRef.current = true;
-
-      try {
-        const { data: userRes } = await supabase.auth.getUser();
-        const user = userRes.user;
-        if (!user) return alert("Nicht eingeloggt.");
-        
-        const target = await ensureSaveTarget();
-        if (!target) return;
-
-        const pid = target.projectId; // string | null
-
-        // ✅ DB-seitig: gleicher Key für denselben Save-Vorgang
-        if (!reportSaveKeyRef.current) {
-          reportSaveKeyRef.current = crypto.randomUUID();
+        if ((error as any).code === "23505") {
+          // Duplicate idempotency_key
+          reportSaveKeyRef.current = null;
+          alert("Bericht war schon gespeichert ✅");
+          return;
         }
 
-        const currentReport = reportRef.current;
-        console.log("[SAVE] currentReport.client", currentReport.client);
-        console.log("[SAVE] currentReport.project", currentReport.project);
-        console.log("[SAVE] currentReport.vehicles", currentReport.vehicles);
-        console.log("[SAVE] currentReport.worker0 name", currentReport.workers?.[0]?.name);
-
-        const title =
-          currentReport?.project?.trim()
-            ? `Tagesbericht – ${currentReport.project} (${currentReport.date})`
-            : `Tagesbericht (${currentReport?.date ?? ""})`;
-
-        // ===============================
-// EDIT → UPDATE
-// ===============================
-if (mode === "edit") {
-  if (!reportId) {
-    alert("Fehler: reportId fehlt im Edit-Modus");
-    return;
-  }
-
-  const { error } = await supabase
-    .from("reports")
-    .update({
-      title,
-      data: currentReport,
-      status: "final",
-      project_id: pid,
-    })
-    .eq("id", reportId);
-
-  if (error) {
-    console.error(error);
-    alert("Bericht aktualisieren fehlgeschlagen: " + error.message);
-    return;
-  }
-
-  alert("Bericht aktualisiert ✅");
-  return;
-}
-
-// ===============================
-// CREATE → INSERT (wie vorher)
-// ===============================
-  if (!reportSaveKeyRef.current) {
-    reportSaveKeyRef.current = crypto.randomUUID();
-  }
-
-  const idempotencyKey = reportSaveKeyRef.current!;
-
-  const payload = {
-    user_id: user.id,
-    project_id: saveScope === "project" ? pid : null,
-    report_type: "tagesbericht",
-    title,
-    data: currentReport,
-    status: "final",
-    idempotency_key: idempotencyKey,
-  } satisfies {
-    user_id: string;
-    project_id: string | null;
-    report_type: "tagesbericht";
-    title: string;
-    data: Tagesbericht;
-    status: "final";
-    idempotency_key: string;
-  };
-
-  const { error } = await supabase.from("reports").insert(payload);
-
-  if (error) {
-    if (typeof error === "object" && error && "code" in error && (error as { code?: string }).code === "23505") {
-      reportSaveKeyRef.current = null;
-      alert("Bericht war schon gespeichert ✅");
-      return;
-    }
-
-    console.error(error);
-    alert("Bericht speichern fehlgeschlagen: " + error.message);
-    return;
-  }
-
-  reportSaveKeyRef.current = null;
-  alert("Bericht gespeichert ✅");
-      } finally {
-        savingRef.current = false;
+        console.error(error);
+        alert("Bericht speichern fehlgeschlagen: " + error.message);
+        return;
       }
-    });
 
-    return () => {
-      console.log("[Form] cleanup save handlers");
-      setSaveDraftHandler(null);
-      setSaveReportHandler(null);
-    };
-  }, [
-    setSaveDraftHandler,
-    setSaveReportHandler,
-    requireProjectId,
-    ensureSaveTarget,
-    effectiveProjectId,
-    mode,
-    reportId,
-    saveScope,
-  ]);
-  // ========================================================
+      reportSaveKeyRef.current = null;
+      alert("Bericht gespeichert ✅");
+    } finally {
+      savingRef.current = false;
+    }
+  });
+
+  return () => {
+    console.log("[Form] cleanup save handlers");
+    setSaveDraftHandler(null);
+    setSaveReportHandler(null);
+  };
+}, [
+  setSaveDraftHandler,
+  setSaveReportHandler,
+  requireProjectId,
+  ensureSaveTarget,
+  effectiveProjectId,
+  mode,
+  reportId,
+]);
 
   const sigClientRef = useRef<SignatureCanvas>(null);
   const sigDrillerRef = useRef<SignatureCanvas>(null);
@@ -619,7 +632,7 @@ if (mode === "edit") {
       ? ""
       : sigDrillerRef.current?.getTrimmedCanvas().toDataURL("image/png");
 
-    setReport((p) => ({
+    setReport((p: any) => ({
       ...p,
       signatures: {
         ...(p.signatures ?? { clientOrManagerName: "", drillerName: "" }),
@@ -642,177 +655,69 @@ if (mode === "edit") {
   function update<K extends keyof Tagesbericht>(key: K, value: Tagesbericht[K]) {
     setReport((prev) => ({ ...prev, [key]: value }));
   }
-  const safeWorkTimes = Array.isArray(report.workTimeRows) && report.workTimeRows.length
-    ? report.workTimeRows
-    : [emptyTimeRow()];
+  const safeWorkTimes = Array.isArray((report as any).workTimeRows) && (report as any).workTimeRows.length
+  ? ((report as any).workTimeRows as any[])
+  : [emptyTimeRow()];
 
-  const safeBreaks = Array.isArray(report.breakRows) && report.breakRows.length
-    ? report.breakRows
-    : [emptyTimeRow()];
+const safeBreaks = Array.isArray((report as any).breakRows) && (report as any).breakRows.length
+  ? ((report as any).breakRows as any[])
+  : [emptyTimeRow()];
 
-  function setWorkTimeRow(i: number, patch: Partial<TimeRange>) {
-    setReport((p) => {
-      const rows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
-      rows[i] = { ...rows[i], ...patch };
-      return { ...p, workTimeRows: rows };
-    });
-  }
+function setWorkTimeRow(i: number, patch: any) {
+  setReport((p: any) => {
+    const rows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
+    rows[i] = { ...rows[i], ...patch };
+    return { ...p, workTimeRows: rows };
+  });
+}
 
-  function addWorkTimeRow() {
-    setReport((p) => {
-      const rows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
-      if (rows.length >= 2) return p;
-      rows.push(emptyTimeRow());
-      return { ...p, workTimeRows: rows };
-    });
-  }
+function addWorkTimeRow() {
+  setReport((p: any) => {
+    const rows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
+    if (rows.length >= 2) return p;
+    rows.push(emptyTimeRow());
+    return { ...p, workTimeRows: rows };
+  });
+}
 
-  function removeLastWorkTimeRow() {
-    setReport((p) => {
-      const rows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
-      if (rows.length <= 1) return p;
-      rows.pop();
-      return { ...p, workTimeRows: rows };
-    });
-  }
+function removeLastWorkTimeRow() {
+  setReport((p: any) => {
+    const rows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
+    if (rows.length <= 1) return p;
+    rows.pop();
+    return { ...p, workTimeRows: rows };
+  });
+}
 
-  function setBreakRow(i: number, patch: Partial<TimeRange>) {
-    setReport((p) => {
-      const rows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
-      rows[i] = { ...rows[i], ...patch };
-      return { ...p, breakRows: rows };
-    });
-  }
+function setBreakRow(i: number, patch: any) {
+  setReport((p: any) => {
+    const rows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
+    rows[i] = { ...rows[i], ...patch };
+    return { ...p, breakRows: rows };
+  });
+}
 
-  function addBreakRow() {
-    setReport((p) => {
-      const rows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
-      if (rows.length >= 2) return p;
-      rows.push(emptyTimeRow());
-      return { ...p, breakRows: rows };
-    });
-  }
+function addBreakRow() {
+  setReport((p: any) => {
+    const rows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
+    if (rows.length >= 2) return p;
+    rows.push(emptyTimeRow());
+    return { ...p, breakRows: rows };
+  });
+}
 
-  function removeLastBreakRow() {
-    setReport((p) => {
-      const rows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
-      if (rows.length <= 1) return p;
-      rows.pop();
-      return { ...p, breakRows: rows };
-    });
-  }
-
-  function addWorkAndBreakRow() {
-    setReport((p) => {
-      const workRows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
-      const breakRows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
-      if (workRows.length >= 2 || breakRows.length >= 2) return p;
-      workRows.push(emptyTimeRow());
-      breakRows.push(emptyTimeRow());
-      return { ...p, workTimeRows: workRows, breakRows };
-    });
-  }
-
-  function removeLastWorkAndBreakRow() {
-    setReport((p) => {
-      const workRows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
-      const breakRows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
-      if (workRows.length <= 1 || breakRows.length <= 1) return p;
-      workRows.pop();
-      breakRows.pop();
-      return { ...p, workTimeRows: workRows, breakRows };
-    });
-  }
+function removeLastBreakRow() {
+  setReport((p: any) => {
+    const rows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
+    if (rows.length <= 1) return p;
+    rows.pop();
+    return { ...p, breakRows: rows };
+  });
+}
 
   function saveDraftToLocalStorage() {
     localStorage.setItem("tagesbericht_draft", JSON.stringify(report));
     alert("Entwurf lokal gespeichert ✅");
-  }
-
-  function fillTestData() {
-    const base = createDefaultTagesbericht();
-    const today = new Date().toISOString().slice(0, 10);
-
-    const filled: Tagesbericht = {
-      ...base,
-      date: today,
-      project: "Baustelle Freiburg Nord",
-      client: "Stadt Freiburg",
-      name: "Team A",
-      dailyReportNo: "TB-001",
-      vehicles: "LKW 7.5t, Bohrgerät X2",
-      aNr: "A-2026-001",
-      device: "Bohrgerät BG-12",
-      trailer: "Anhänger 2t",
-      workTimeRows: [
-        { from: "07:00", to: "12:00" },
-        { from: "12:30", to: "16:00" },
-      ],
-      breakRows: [
-        { from: "09:30", to: "09:45" },
-        { from: "12:00", to: "12:30" },
-      ],
-      weather: {
-        conditions: ["trocken"],
-        tempMaxC: 18,
-        tempMinC: 8,
-      },
-      transportRows: [
-        { from: "Lager", to: "Baustelle", km: 12, time: "00:20" },
-      ],
-      ruhewasserVorArbeitsbeginnM: 2.4,
-      entfernungWohnwagenBaustelleKm: 12,
-      entfernungWohnwagenBaustelleZeit: "00:20",
-      workCycles: ["Bohren", "Verrohren"],
-      otherWork: "Material angeliefert, Baustelle eingerichtet.",
-      remarks: "Keine besonderen Vorkommnisse.",
-      tableRows: [
-        {
-          ...emptyTableRow(),
-          boNr: "B1",
-          gebohrtVon: "0.0",
-          gebohrtBis: "12.5",
-          verrohrtVon: "0.0",
-          verrohrtBis: "10.0",
-          verrohrtFlags: ["RB"],
-          vollbohrVon: "12.5",
-          vollbohrBis: "150",
-          probenFlags: ["GP"],
-          spt: "N/A",
-          verfuellung: {
-            tonVon: "0.0",
-            tonBis: "2.0",
-            bohrgutVon: "2.0",
-            bohrgutBis: "12.5",
-            zementBentVon: "",
-            zementBentBis: "",
-            betonVon: "",
-            betonBis: "",
-          },
-        },
-      ],
-      workers: [
-        {
-          ...emptyWorker(),
-          name: "Max Mustermann",
-          reineArbeitsStd: "8",
-          wochenendfahrt: "0",
-          ausfallStd: "0",
-          ausloeseT: true,
-          ausloeseN: false,
-          arbeitsakteNr: "AA-1001",
-          stunden: Array(16).fill(""),
-        },
-      ],
-      umsetzenRows: [
-        { ...emptyUmsetzenRow(), von: "P1", auf: "P2", entfernungM: "120", zeit: "00:25", begruendung: "Zugang", wartezeit: "0" },
-      ],
-      pegelAusbauRows: [
-        { ...emptyPegelAusbauRow(), bohrNr: "B1", pegelDm: "DN100", sumpfVon: "10.0", sumpfBis: "12.5", filterVon: "6.0", filterBis: "10.0" },
-      ],
-    };
-
-    setReport(filled);
   }
 
   async function openTestPdf() {
@@ -887,34 +792,34 @@ if (mode === "edit") {
       return { ...p, umsetzenRows: rows };
     });
   }
-  const safeTransport = Array.isArray(report.transportRows) && report.transportRows.length
-    ? report.transportRows
-    : [emptyTransportRow()];
+  const safeTransport = Array.isArray((report as any).transportRows)
+  ? ((report as any).transportRows as any[])
+  : [emptyTransportRow()];
 
-  function setTransportRow(i: number, patch: Partial<TransportRow>) {
-    setReport((p) => {
-      const rows = Array.isArray(p.transportRows) ? [...p.transportRows] : [emptyTransportRow()];
-      rows[i] = { ...rows[i], ...patch };
-      return { ...p, transportRows: rows };
+    function setTransportRow(i: number, patch: any) {
+    setReport((p: any) => {
+        const rows = Array.isArray(p.transportRows) ? [...p.transportRows] : [emptyTransportRow()];
+        rows[i] = { ...rows[i], ...patch };
+        return { ...p, transportRows: rows };
     });
-  }
+    }
 
-  function addTransportRow() {
-    setReport((p) => {
-      const rows = Array.isArray(p.transportRows) ? [...p.transportRows] : [];
-      rows.push(emptyTransportRow());
-      return { ...p, transportRows: rows.length ? rows : [emptyTransportRow()] };
+    function addTransportRow() {
+    setReport((p: any) => {
+        const rows = Array.isArray(p.transportRows) ? [...p.transportRows] : [];
+        rows.push(emptyTransportRow());
+        return { ...p, transportRows: rows.length ? rows : [emptyTransportRow()] };
     });
-  }
+    }
 
-  function removeLastTransportRow() {
-    setReport((p) => {
-      const rows = Array.isArray(p.transportRows) ? [...p.transportRows] : [emptyTransportRow()];
-      if (rows.length <= 1) return { ...p, transportRows: rows };
-      rows.pop();
-      return { ...p, transportRows: rows };
+    function removeLastTransportRow() {
+    setReport((p: any) => {
+        const rows = Array.isArray(p.transportRows) ? [...p.transportRows] : [emptyTransportRow()];
+        if (rows.length <= 1) return { ...p, transportRows: rows };
+        rows.pop();
+        return { ...p, transportRows: rows };
     });
-  }
+    }
   /** ---------- Workers ---------- */
   const safeWorkers = useMemo<WorkerRow[]>(
     () => (Array.isArray(report.workers) && report.workers.length ? report.workers : [emptyWorker()]),
@@ -980,37 +885,16 @@ if (mode === "edit") {
     });
   }
 
-  type PegelBooleanKey =
-    | "sebaKap"
-    | "boKap"
-    | "hydrKap"
-    | "fernGask"
-    | "passavant"
-    | "betonSockel"
-    | "abstHalter"
-    | "klarpump";
-
-  const pegelBoolFields: Array<[PegelBooleanKey, string]> = [
-    ["sebaKap", "Seba Kap."],
-    ["boKap", "Bo Kap."],
-    ["hydrKap", "Hydr. Kap."],
-    ["fernGask", "Fern-Gask."],
-    ["passavant", "Passavant"],
-    ["betonSockel", "Betonsockel"],
-    ["abstHalter", "Abst.-Halter"],
-    ["klarpump", "Klarpump."],
-  ];
-
   return (
-    <div className="mt-8 space-y-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
+    <div className="mt-6 space-y-6 max-w-7xl mx-auto px-4">
       {projectModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-sky-900">Projekt auswählen</h3>
+              <h3 className="text-lg font-semibold">Projekt auswählen</h3>
               <button
                 type="button"
-                className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50"
+                className="rounded-xl border px-3 py-2"
                 onClick={() => {
                   setProjectModalOpen(false);
                   pendingSaveResolveRef.current?.(undefined);
@@ -1023,7 +907,7 @@ if (mode === "edit") {
             <div className="mt-3">
               <button
                 type="button"
-                className="w-full rounded-xl border px-3 py-3 text-left hover:bg-slate-50"
+                className="w-full rounded-xl border px-3 py-3 text-left hover:bg-gray-50"
                 onClick={() => {
                   setSaveScope("my_reports");
                   setProjectModalOpen(false);
@@ -1032,7 +916,7 @@ if (mode === "edit") {
                 }}
               >
                 <div className="font-medium">Meine Berichte</div>
-                <div className="text-xs text-slate-500">Speichert ohne Projekt-Zuordnung</div>
+                <div className="text-xs text-gray-500">Speichert ohne Projekt-Zuordnung</div>
               </button>
             </div>
 
@@ -1050,7 +934,7 @@ if (mode === "edit") {
                   />
                   <button
                     type="button"
-                    className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                    className="rounded-xl border px-3 py-2 disabled:opacity-50"
                     disabled={creatingProject}
                     onClick={createProject}
                   >
@@ -1058,23 +942,23 @@ if (mode === "edit") {
                   </button>
                 </div>
 
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-gray-500">
                   Legt das Projekt an und wählt es automatisch aus.
                 </p>
               </div>
 
               {/* 🔹 PROJEKT-LISTE */}
               {projectUiLoading ? (
-                <p className="text-sm text-slate-600">Lade Projekte…</p>
+                <p className="text-sm text-gray-600">Lade Projekte…</p>
               ) : projects.length === 0 ? (
-                <p className="text-sm text-slate-600">Noch keine Projekte vorhanden.</p>
+                <p className="text-sm text-gray-600">Noch keine Projekte vorhanden.</p>
               ) : (
                 <div className="space-y-2">
                   {projects.map((p) => (
                     <button
                       key={p.id}
                       type="button"
-                      className="w-full rounded-xl border px-3 py-3 text-left hover:bg-slate-50"
+                      className="w-full rounded-xl border px-3 py-3 text-left hover:bg-gray-50"
                       onClick={() => {
                         setSaveScope("project");
                         setLocalProjectId(p.id);
@@ -1084,7 +968,7 @@ if (mode === "edit") {
                       }}
                     >
                       <div className="font-medium">{p.name}</div>
-                      <div className="text-xs text-slate-500">{p.id}</div>
+                      <div className="text-xs text-gray-500">{p.id}</div>
                     </button>
                   ))}
                 </div>
@@ -1094,40 +978,40 @@ if (mode === "edit") {
         </div>
       )}
       {/* ======================= KOPF ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold text-sky-900">Kopf</h2>
+      <section className="rounded-2xl border p-4">
+        <h2 className="text-lg font-semibold">Kopf</h2>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           {/* LINKS */}
-          <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-            <h3 className="text-lg font-semibold text-sky-900">Allgemein</h3>
+          <section className="rounded-2xl border p-4">
+            <h3 className="text-lg font-semibold">Allgemein</h3>
 
             <div className="mt-4 grid gap-4">
               <label className="space-y-1">
-                <span className="text-sm text-slate-600">Datum</span>
+                <span className="text-sm text-gray-600">Datum</span>
                 <input
                   type="date"
                   className="w-full rounded-xl border p-3"
                   value={report.date ?? ""}
-                  onChange={(e) => update("date", e.target.value)}
+                  onChange={(e) => update("date", e.target.value as any)}
                 />
               </label>
               <label className="space-y-1">
-                <span className="text-sm text-slate-600">Projekt</span>
+                <span className="text-sm text-gray-600">Projekt</span>
                 <input
                   className="w-full rounded-xl border p-3"
                   value={report.project ?? ""}
-                  onChange={(e) => update("project", e.target.value)}
+                  onChange={(e) => update("project", e.target.value as any)}
                   placeholder="z.B. Baustelle Freiburg Nord"
                 />
               </label>
 
               <label className="space-y-1">
-                <span className="text-sm text-slate-600">Auftraggeber</span>
+                <span className="text-sm text-gray-600">Auftraggeber</span>
                 <input
                   className="w-full rounded-xl border p-3"
                   value={report.client ?? ""}
-                  onChange={(e) => update("client", e.target.value)}
+                  onChange={(e) => update("client", e.target.value as any)}
                   placeholder="z.B. Stadt Freiburg"
                 />
               </label>
@@ -1135,71 +1019,73 @@ if (mode === "edit") {
           </section>
 
           {/* RECHTS */}
-          <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-            <h3 className="text-lg font-semibold text-sky-900">Oben rechts</h3>
-            <p className="mt-1 text-sm text-slate-600">Fahrzeuge / A.Nr. / Gerät + Arbeitszeit & Pausen</p>
+          <section className="rounded-2xl border p-4">
+            <h3 className="text-lg font-semibold">Oben rechts</h3>
+            <p className="mt-1 text-sm text-gray-600">Fahrzeuge / A.Nr. / Gerät + Arbeitszeit & Pausen</p>
 
             <div className="mt-4 grid gap-4 md:grid-cols-3">
               <label className="space-y-1">
-                <span className="text-sm text-slate-600">Fahrzeuge</span>
-                <input className="w-full rounded-xl border p-3" value={report.vehicles ?? ""} onChange={(e) => update("vehicles", e.target.value)} />
+                <span className="text-sm text-gray-600">Fahrzeuge</span>
+                <input className="w-full rounded-xl border p-3" value={report.vehicles ?? ""} onChange={(e) => update("vehicles", e.target.value as any)} />
               </label>
 
               <label className="space-y-1">
-                <span className="text-sm text-slate-600">A.Nr.</span>
-                <input className="w-full rounded-xl border p-3" value={report.aNr ?? ""} onChange={(e) => update("aNr", e.target.value)} />
+                <span className="text-sm text-gray-600">A.Nr.</span>
+                <input className="w-full rounded-xl border p-3" value={report.aNr ?? ""} onChange={(e) => update("aNr", e.target.value as any)} />
               </label>
 
               <label className="space-y-1">
-                <span className="text-sm text-slate-600">Gerät</span>
-                <input className="w-full rounded-xl border p-3" value={report.device ?? ""} onChange={(e) => update("device", e.target.value)} />
+                <span className="text-sm text-gray-600">Gerät</span>
+                <input className="w-full rounded-xl border p-3" value={report.device ?? ""} onChange={(e) => update("device", e.target.value as any)} />
               </label>
             </div>
 
-           <div className="mt-4 rounded-xl border p-4">
+           <div className="rounded-xl border p-4">
             <div className="flex items-center justify-between">
-                <h4 className="font-medium">Arbeitszeit & Pausen</h4>
+                <h4 className="font-medium">Arbeitszeit</h4>
                 <div className="flex gap-2">
-                <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addWorkAndBreakRow}>+ Zeile</button>
-                <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastWorkAndBreakRow}>– Zeile</button>
+                <button type="button" className="rounded-xl border px-3 py-2" onClick={addWorkTimeRow}>+ Zeile</button>
+                <button type="button" className="rounded-xl border px-3 py-2" onClick={removeLastWorkTimeRow}>– Zeile</button>
                 </div>
             </div>
 
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-slate-200/70 bg-slate-50 p-3">
-                  <div className="text-sm font-medium text-slate-700">Arbeitszeit</div>
-                  <div className="mt-2 space-y-3">
-                    {safeWorkTimes.slice(0, 2).map((r, i) => (
-                      <div key={i} className="grid grid-cols-2 gap-3">
-                        <input type="time" className="w-full rounded-xl border p-3"
-                          value={r.from ?? ""} onChange={(e) => setWorkTimeRow(i, { from: e.target.value })} />
-                        <input type="time" className="w-full rounded-xl border p-3"
-                          value={r.to ?? ""} onChange={(e) => setWorkTimeRow(i, { to: e.target.value })} />
-                      </div>
-                    ))}
-                  </div>
+            <div className="mt-3 space-y-3">
+                {safeWorkTimes.slice(0, 2).map((r, i) => (
+                <div key={i} className="grid grid-cols-2 gap-3">
+                    <input type="time" className="w-full rounded-xl border p-3"
+                    value={r.from ?? ""} onChange={(e) => setWorkTimeRow(i, { from: e.target.value })} />
+                    <input type="time" className="w-full rounded-xl border p-3"
+                    value={r.to ?? ""} onChange={(e) => setWorkTimeRow(i, { to: e.target.value })} />
                 </div>
-                <div className="rounded-xl border border-slate-200/70 bg-slate-50 p-3">
-                  <div className="text-sm font-medium text-slate-700">Pausen</div>
-                  <div className="mt-2 space-y-3">
-                    {safeBreaks.slice(0, 2).map((r, i) => (
-                      <div key={i} className="grid grid-cols-2 gap-3">
-                        <input type="time" className="w-full rounded-xl border p-3"
-                          value={r.from ?? ""} onChange={(e) => setBreakRow(i, { from: e.target.value })} />
-                        <input type="time" className="w-full rounded-xl border p-3"
-                          value={r.to ?? ""} onChange={(e) => setBreakRow(i, { to: e.target.value })} />
-                      </div>
-                    ))}
-                  </div>
+                ))}
+            </div>
+            </div>
+            <div className="rounded-xl border p-4">
+            <div className="flex items-center justify-between">
+                <h4 className="font-medium">Pausen</h4>
+                <div className="flex gap-2">
+                <button type="button" className="rounded-xl border px-3 py-2" onClick={addBreakRow}>+ Zeile</button>
+                <button type="button" className="rounded-xl border px-3 py-2" onClick={removeLastBreakRow}>– Zeile</button>
                 </div>
+            </div>
+
+            <div className="mt-3 space-y-3">
+                {safeBreaks.slice(0, 2).map((r, i) => (
+                <div key={i} className="grid grid-cols-2 gap-3">
+                    <input type="time" className="w-full rounded-xl border p-3"
+                    value={r.from ?? ""} onChange={(e) => setBreakRow(i, { from: e.target.value })} />
+                    <input type="time" className="w-full rounded-xl border p-3"
+                    value={r.to ?? ""} onChange={(e) => setBreakRow(i, { to: e.target.value })} />
+                </div>
+                ))}
             </div>
             </div>
           </section>
         </div>
       </section>
       {/* ======================= WETTER + TRANSPORT ======================= */}
-    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-    <h2 className="text-lg font-semibold text-sky-900">Wetter / Transport</h2>
+    <section className="rounded-2xl border p-4">
+    <h2 className="text-lg font-semibold">Wetter / Transport</h2>
 
     {/* Wetter */}
     <div className="mt-4 rounded-xl border p-4">
@@ -1232,7 +1118,7 @@ if (mode === "edit") {
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
         <label className="space-y-1">
-            <span className="text-sm text-slate-600">Temp. Max (°C)</span>
+            <span className="text-sm text-gray-600">Temp. Max (°C)</span>
             <input
             className="w-full rounded-xl border p-3"
             inputMode="numeric"
@@ -1251,7 +1137,7 @@ if (mode === "edit") {
         </label>
 
         <label className="space-y-1">
-            <span className="text-sm text-slate-600">Temp. Min (°C)</span>
+            <span className="text-sm text-gray-600">Temp. Min (°C)</span>
             <input
             className="w-full rounded-xl border p-3"
             inputMode="numeric"
@@ -1278,7 +1164,7 @@ if (mode === "edit") {
   <div className="mt-3 grid gap-4 md:grid-cols-3">
     {/* Ruhewasser vor Arbeitsbeginn */}
     <label className="space-y-1">
-      <span className="text-sm text-slate-600">
+      <span className="text-sm text-gray-600">
         Ruhewasser vor Arbeitsbeginn (m)
       </span>
       <input
@@ -1297,7 +1183,7 @@ if (mode === "edit") {
 
     {/* Entfernung Wohnwagen / Baustelle (km) */}
     <label className="space-y-1">
-      <span className="text-sm text-slate-600">
+      <span className="text-sm text-gray-600">
         Entfernung Wohnwagen / Baustelle (km)
       </span>
       <input
@@ -1316,7 +1202,7 @@ if (mode === "edit") {
 
     {/* Zeit */}
         <label className="space-y-1">
-        <span className="text-sm text-slate-600">Zeit</span>
+        <span className="text-sm text-gray-600">Zeit</span>
         <input
             className="w-full rounded-xl border p-3"
             value={report.entfernungWohnwagenBaustelleZeit ?? ""}
@@ -1331,18 +1217,18 @@ if (mode === "edit") {
 
 
     {/* Transport (ausklappbar) */}
-    <section className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+    <section className="mt-4 rounded-2xl border p-4">
     <div className="flex items-center justify-between gap-3">
         <div>
         <h3 className="font-medium">Transport</h3>
-        <p className="mt-1 text-sm text-slate-600">von → nach, km, Zeit</p>
+        <p className="mt-1 text-sm text-gray-600">von → nach, km, Zeit</p>
         </div>
 
         <div className="flex gap-2">
-        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addTransportRow}>
+        <button type="button" className="rounded-xl border px-3 py-2" onClick={addTransportRow}>
             + Zeile
         </button>
-        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastTransportRow}>
+        <button type="button" className="rounded-xl border px-3 py-2" onClick={removeLastTransportRow}>
             – Zeile
         </button>
         </div>
@@ -1381,13 +1267,13 @@ if (mode === "edit") {
     </section>
 
       {/* ======================= ARBEITER ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold text-sky-900">Arbeiter / Arbeitsakte</h2>
+      <section className="rounded-2xl border p-4">
+        <h2 className="text-lg font-semibold">Arbeiter / Arbeitsakte</h2>
 
         <div className="mt-3 flex gap-3">
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addWorker}>+ Arbeiter</button>
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastWorker}>– Arbeiter</button>
-          <span className="text-sm text-slate-500 self-center">Arbeiter: {safeWorkers.length}</span>
+          <button type="button" className="rounded-xl border px-3 py-2" onClick={addWorker}>+ Arbeiter</button>
+          <button type="button" className="rounded-xl border px-3 py-2" onClick={removeLastWorker}>– Arbeiter</button>
+          <span className="text-sm text-gray-500 self-center">Arbeiter: {safeWorkers.length}</span>
         </div>
 
         <div className="mt-4 space-y-4">
@@ -1396,35 +1282,35 @@ if (mode === "edit") {
               <div className="grid gap-3 md:grid-cols-12">
                 <div className="md:col-span-3">
                   <label className="space-y-1">
-                    <span className="text-sm text-slate-600">Name</span>
+                    <span className="text-sm text-gray-600">Name</span>
                     <input className="w-full rounded-xl border p-3" value={w.name ?? ""} onChange={(e) => setWorker(idx, { name: e.target.value })} />
                   </label>
                 </div>
 
                 <div className="md:col-span-2">
                   <label className="space-y-1">
-                    <span className="text-sm text-slate-600">Reine Arbeits Std.</span>
+                    <span className="text-sm text-gray-600">Reine Arbeits Std.</span>
                     <input className="w-full rounded-xl border p-3" value={w.reineArbeitsStd ?? ""} onChange={(e) => setWorker(idx, { reineArbeitsStd: e.target.value })} />
                   </label>
                 </div>
 
                 <div className="md:col-span-2">
                   <label className="space-y-1">
-                    <span className="text-sm text-slate-600">Wochenendfahrt</span>
+                    <span className="text-sm text-gray-600">Wochenendfahrt</span>
                     <input className="w-full rounded-xl border p-3" value={w.wochenendfahrt ?? ""} onChange={(e) => setWorker(idx, { wochenendfahrt: e.target.value })} />
                   </label>
                 </div>
 
                 <div className="md:col-span-2">
                   <label className="space-y-1">
-                    <span className="text-sm text-slate-600">Ausfall Std.</span>
+                    <span className="text-sm text-gray-600">Ausfall Std.</span>
                     <input className="w-full rounded-xl border p-3" value={w.ausfallStd ?? ""} onChange={(e) => setWorker(idx, { ausfallStd: e.target.value })} />
                   </label>
                 </div>
 
                 {/* ✅ Auslöse: nur T / N */}
-                <div className="md:col-span-2 rounded-xl border p-3">
-                <div className="text-sm text-slate-600 mb-2">Auslöse</div>
+                <div className="md:col-span-1 rounded-xl border p-3">
+                <div className="text-sm text-gray-600 mb-2">Auslöse</div>
 
                 <div className="flex flex-col gap-2">
                     <label className="flex items-center gap-2 text-sm">
@@ -1453,7 +1339,7 @@ if (mode === "edit") {
               </div>
 
               <div className="mt-4 rounded-xl border p-3">
-                <div className="text-sm text-slate-600 mb-2">Arbeitstakt/Stunden (Kästchen)</div>
+                <div className="text-sm text-gray-600 mb-2">Arbeitstakt/Stunden (Kästchen)</div>
                 <div className="grid gap-2 grid-cols-8 md:grid-cols-16">
                   {(Array.isArray(w.stunden) ? w.stunden : Array(16).fill("")).slice(0, 16).map((val, j) => (
                     <input
@@ -1475,13 +1361,13 @@ if (mode === "edit") {
       </section>
 
       {/* ======================= TABELLE ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold text-sky-900">Tabelle (Bohrung / Proben / Verfüllung)</h2>
+      <section className="rounded-2xl border p-4">
+        <h2 className="text-lg font-semibold">Tabelle (Bohrung / Proben / Verfüllung)</h2>
 
         <div className="mt-3 flex gap-3">
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addRow}>+ Zeile</button>
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastRow}>– Zeile</button>
-          <span className="text-sm text-slate-500 self-center">Zeilen: {safeTableRows.length}</span>
+          <button type="button" className="rounded-xl border px-3 py-2" onClick={addRow}>+ Zeile</button>
+          <button type="button" className="rounded-xl border px-3 py-2" onClick={removeLastRow}>– Zeile</button>
+          <span className="text-sm text-gray-500 self-center">Zeilen: {safeTableRows.length}</span>
         </div>
 
         <div className="mt-4 space-y-4">
@@ -1545,19 +1431,19 @@ if (mode === "edit") {
               <div className="md:col-span-6 rounded-xl border p-3 mt-3">
                 <div className="text-sm font-medium mb-3">Verfüllung</div>
                 <div className="grid gap-3 md:grid-cols-8">
-                  <div className="md:col-span-2 text-sm text-slate-600 self-center">Ton</div>
+                  <div className="md:col-span-2 text-sm text-gray-600 self-center">Ton</div>
                   <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.tonVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), tonVon: e.target.value } })} placeholder="Ton von" />
                   <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.tonBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), tonBis: e.target.value } })} placeholder="Ton bis" />
 
-                  <div className="md:col-span-2 text-sm text-slate-600 self-center">Bohrgut</div>
+                  <div className="md:col-span-2 text-sm text-gray-600 self-center">Bohrgut</div>
                   <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.bohrgutVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), bohrgutVon: e.target.value } })} placeholder="Bohrgut von" />
                   <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.bohrgutBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), bohrgutBis: e.target.value } })} placeholder="Bohrgut bis" />
 
-                  <div className="md:col-span-2 text-sm text-slate-600 self-center">Zement-Bent.</div>
+                  <div className="md:col-span-2 text-sm text-gray-600 self-center">Zement-Bent.</div>
                   <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.zementBentVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentVon: e.target.value } })} placeholder="Zement-Bent. von" />
                   <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.zementBentBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentBis: e.target.value } })} placeholder="Zement-Bent. bis" />
 
-                  <div className="md:col-span-2 text-sm text-slate-600 self-center">Beton</div>
+                  <div className="md:col-span-2 text-sm text-gray-600 self-center">Beton</div>
                   <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.betonVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonVon: e.target.value } })} placeholder="Beton von" />
                   <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.betonBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonBis: e.target.value } })} placeholder="Beton bis" />
                 </div>
@@ -1568,13 +1454,13 @@ if (mode === "edit") {
       </section>
 
       {/* ======================= UMSETZEN ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm mt-4">
-        <h2 className="text-lg font-semibold text-sky-900">Umsetzen</h2>
+      <section className="rounded-2xl border p-4 mt-4">
+        <h2 className="text-lg font-semibold">Umsetzen</h2>
 
         <div className="mt-3 flex gap-3">
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addUmsetzenRow}>+ Zeile</button>
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastUmsetzenRow}>– Zeile</button>
-          <span className="text-sm text-slate-500 self-center">Zeilen: {safeUmsetzen.length}</span>
+          <button type="button" className="rounded-xl border px-3 py-2" onClick={addUmsetzenRow}>+ Zeile</button>
+          <button type="button" className="rounded-xl border px-3 py-2" onClick={removeLastUmsetzenRow}>– Zeile</button>
+          <span className="text-sm text-gray-500 self-center">Zeilen: {safeUmsetzen.length}</span>
         </div>
 
         <div className="mt-4 space-y-3">
@@ -1594,13 +1480,13 @@ if (mode === "edit") {
       </section>
 
       {/* ======================= PEGELAUSBAU ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm mt-6">
-        <h2 className="text-lg font-semibold text-sky-900">Pegelausbau</h2>
+      <section className="rounded-2xl border p-4 mt-6">
+        <h2 className="text-lg font-semibold">Pegelausbau</h2>
 
         <div className="mt-3 flex gap-3">
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addPegelRow}>+ Zeile</button>
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastPegelRow}>– Zeile</button>
-          <span className="text-sm text-slate-500 self-center">Zeilen: {safePegel.length}</span>
+          <button type="button" className="rounded-xl border px-3 py-2" onClick={addPegelRow}>+ Zeile</button>
+          <button type="button" className="rounded-xl border px-3 py-2" onClick={removeLastPegelRow}>– Zeile</button>
+          <span className="text-sm text-gray-500 self-center">Zeilen: {safePegel.length}</span>
         </div>
 
         {safePegel.map((r, i) => (
@@ -1657,12 +1543,21 @@ if (mode === "edit") {
               <div className="font-medium mb-3">VERSCHLÜSSE</div>
 
               <div className="grid md:grid-cols-4 gap-3">
-                {pegelBoolFields.map(([k, label]) => (
+                {[
+                  ["sebaKap", "Seba Kap."],
+                  ["boKap", "Bo Kap."],
+                  ["hydrKap", "Hydr. Kap."],
+                  ["fernGask", "Fern-Gask."],
+                  ["passavant", "Passavant"],
+                  ["betonSockel", "Betonsockel"],
+                  ["abstHalter", "Abst.-Halter"],
+                  ["klarpump", "Klarpump."],
+                ].map(([k, label]) => (
                   <label key={k} className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
-                      checked={r[k]}
-                      onChange={(e) => updatePegel(i, { [k]: e.target.checked } as Partial<PegelAusbauRow>)}
+                      checked={!!(r as any)[k]}
+                      onChange={(e) => updatePegel(i, { [k]: e.target.checked } as any)}
                     />
                     {label}
                   </label>
@@ -1673,29 +1568,29 @@ if (mode === "edit") {
         ))}
       </section>
       {/* ======================= SONSTIGE / BEMERKUNGEN / UNTERSCHRIFTEN ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm mt-6">
-    <h2 className="text-lg font-semibold text-sky-900">
+      <section className="rounded-2xl border p-4 mt-6">
+    <h2 className="text-lg font-semibold">
       Sonstige / Bemerkungen / Unterschriften
     </h2>
 
     {/* Texte */}
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
-      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border p-4">
         <h3 className="font-medium">Sonstige Arbeiten</h3>
         <textarea
           className="mt-3 w-full rounded-xl border p-3 min-h-[160px]"
           value={report.otherWork ?? ""}
-          onChange={(e) => update("otherWork", e.target.value)}
+          onChange={(e) => update("otherWork", e.target.value as any)}
           placeholder="Sonstige Arbeiten…"
         />
       </div>
 
-      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border p-4">
         <h3 className="font-medium">Bemerkungen / Anordnungen / Besuche</h3>
         <textarea
           className="mt-3 w-full rounded-xl border p-3 min-h-[160px]"
           value={report.remarks ?? ""}
-          onChange={(e) => update("remarks", e.target.value)}
+          onChange={(e) => update("remarks", e.target.value as any)}
           placeholder="Bemerkungen, Anordnungen, Besuche…"
         />
       </div>
@@ -1704,7 +1599,7 @@ if (mode === "edit") {
   {/* UNTERSCHRIFTEN */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         {/* Auftraggeber */}
-        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border p-4">
           <h3 className="font-medium">
             Unterschrift Auftraggeber / Bauleitung
           </h3>
@@ -1713,7 +1608,7 @@ if (mode === "edit") {
             className="mt-3 w-full rounded-xl border p-3"
             value={report.signatures?.clientOrManagerName ?? ""}
             onChange={(e) =>
-              setReport((p) => ({
+              setReport((p: any) => ({
                 ...p,
                 signatures: {
                   ...(p.signatures ?? {}),
@@ -1739,14 +1634,14 @@ if (mode === "edit") {
           <div className="mt-2 flex gap-2">
             <button
               type="button"
-              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
+              className="rounded-xl border px-3 py-2 text-sm"
               onClick={clearClientSig}
             >
               Löschen
             </button>
             <button
               type="button"
-              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
+              className="rounded-xl border px-3 py-2 text-sm"
               onClick={saveSignatureToState}
             >
               Übernehmen
@@ -1755,14 +1650,14 @@ if (mode === "edit") {
         </div>
 
         {/* Bohrmeister */}
-        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border p-4">
           <h3 className="font-medium">Unterschrift Bohrmeister</h3>
 
           <input
             className="mt-3 w-full rounded-xl border p-3"
             value={report.signatures?.drillerName ?? ""}
             onChange={(e) =>
-              setReport((p) => ({
+              setReport((p: any) => ({
                 ...p,
                 signatures: {
                   ...(p.signatures ?? {}),
@@ -1788,14 +1683,14 @@ if (mode === "edit") {
           <div className="mt-2 flex gap-2">
             <button
               type="button"
-              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
+              className="rounded-xl border px-3 py-2 text-sm"
               onClick={clearDrillerSig}
             >
               Löschen
             </button>
             <button
               type="button"
-              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
+              className="rounded-xl border px-3 py-2 text-sm"
               onClick={saveSignatureToState}
             >
               Übernehmen
@@ -1809,7 +1704,7 @@ if (mode === "edit") {
       <div className="flex flex-col gap-3 sm:flex-row">
         <button
           type="button"
-          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 font-medium text-slate-700 hover:bg-slate-50"
+          className="rounded-2xl border px-4 py-3 font-medium"
           onClick={saveDraftToLocalStorage}
         >
           Entwurf speichern (lokal)
@@ -1817,15 +1712,7 @@ if (mode === "edit") {
 
         <button
           type="button"
-          className="rounded-2xl border border-sky-200 bg-white px-4 py-3 font-medium text-sky-700 hover:bg-sky-50"
-          onClick={fillTestData}
-        >
-          Testdaten füllen
-        </button>
-
-        <button
-          type="button"
-          className="rounded-2xl border border-sky-600 bg-sky-600 px-4 py-3 font-medium text-white hover:bg-sky-700"
+          className="rounded-2xl border px-4 py-3 font-medium"
           onClick={openTestPdf}
         >
           PDF testen
