@@ -721,9 +721,27 @@ if (mode === "edit") {
   }
 
   function saveDraftToLocalStorage() {
-    localStorage.setItem("tagesbericht_draft", JSON.stringify(report));
-    alert("Entwurf lokal gespeichert ✅");
+    try {
+      localStorage.setItem("tagesbericht_draft", JSON.stringify(reportRef.current));
+      alert("Entwurf lokal gespeichert ✅");
+    } catch (e) {
+      console.error("Local draft save failed", e);
+      alert("Lokales Speichern fehlgeschlagen.");
+    }
   }
+
+  useEffect(() => {
+    if (mode === "edit") return;
+    try {
+      const raw = localStorage.getItem("tagesbericht_draft");
+      if (!raw) return;
+      if (!window.confirm("Lokalen Entwurf laden?")) return;
+      const parsed = JSON.parse(raw);
+      setReport(normalizeTagesbericht(parsed));
+    } catch (e) {
+      console.warn("Local draft load failed", e);
+    }
+  }, [mode]);
 
   function fillTestData() {
     const base = createDefaultTagesbericht();
