@@ -24,8 +24,9 @@ export async function GET(_req: Request) {
     }
 
     const pdfBytes = await generateTagesberichtPdf(report.data);
+    const body = Buffer.from(pdfBytes);
 
-    return new NextResponse(pdfBytes, {
+    return new NextResponse(body, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename="tagesbericht-${reportId}.pdf"`,
