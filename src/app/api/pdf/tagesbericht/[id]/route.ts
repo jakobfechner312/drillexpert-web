@@ -23,15 +23,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
     const pdfBytes = await generateTagesberichtPdf(report.data);
 
-    return new NextResponse(
-      pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength),
-      {
+    const body = Buffer.from(pdfBytes);
+    return new NextResponse(body, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename="tagesbericht-${id}.pdf"`,
       },
-      }
-    );
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Unknown error" }, { status: 500 });
   }
