@@ -101,7 +101,7 @@ export default function ProjectDetailPage() {
     setFilesLoading(true);
     setFilesErr(null);
     const { data: fileList, error: fileErr } = await supabase.storage
-      .from("project-files")
+      .from("dropData")
       .list(`${projectId}/`, { limit: 200, offset: 0 });
 
     if (fileErr) {
@@ -160,7 +160,7 @@ export default function ProjectDetailPage() {
 
       const path = `${projectId}/${Date.now()}-${file.name}`;
       const { error } = await supabase.storage
-        .from("project-files")
+        .from("dropData")
         .upload(path, file, {
           upsert: false,
           contentType: file.type || "application/octet-stream",
@@ -172,7 +172,7 @@ export default function ProjectDetailPage() {
     }
 
     const { data: fileListNew, error: fileErr } = await supabase.storage
-      .from("project-files")
+      .from("dropData")
       .list(`${projectId}/`, { limit: 200, offset: 0 });
 
     if (fileErr) {
@@ -187,7 +187,7 @@ export default function ProjectDetailPage() {
   const openFile = async (name: string) => {
     const supabase = createClient();
     const { data, error } = await supabase.storage
-      .from("project-files")
+      .from("dropData")
       .createSignedUrl(`${projectId}/${name}`, 60 * 10);
 
     if (error || !data?.signedUrl) {
