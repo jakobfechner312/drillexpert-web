@@ -17,6 +17,7 @@ export default function MyReportsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [reports, setReports] = useState<ReportRow[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -62,12 +63,13 @@ export default function MyReportsPage() {
           </p>
         </div>
 
-        <Link
-          href="/reports/new"
+        <button
+          type="button"
           className="rounded-xl border px-3 py-2 hover:bg-gray-50"
+          onClick={() => setCreateOpen(true)}
         >
           + Bericht erstellen
-        </Link>
+        </button>
       </div>
 
       {loading && <p className="mt-4 text-sm text-gray-600">Lade…</p>}
@@ -124,6 +126,36 @@ export default function MyReportsPage() {
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Bericht erstellen</h3>
+              <button
+                type="button"
+                className="rounded-xl border px-3 py-2"
+                onClick={() => setCreateOpen(false)}
+              >
+                Schließen
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <Link
+                href="/reports/new"
+                className="block rounded-xl border px-3 py-3 hover:bg-gray-50"
+                onClick={() => setCreateOpen(false)}
+              >
+                Tagesbericht
+                <div className="mt-1 text-xs text-gray-500">
+                  Standard Tagesbericht (digital)
+                </div>
+              </Link>
+            </div>
+          </div>
         </div>
       )}
     </div>
