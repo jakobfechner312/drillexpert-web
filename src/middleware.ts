@@ -30,11 +30,8 @@ export async function middleware(req: NextRequest) {
   // ✅ Login & Auth-Routen IMMER erlauben
   if (pathname.startsWith("/login")) return res;
 
-  // ✅ Wenn nicht eingeloggt und in geschütztem Bereich -> login
-  const protectedRoutes = ["/reports", "/settings"];
-  const isProtected = protectedRoutes.some((p) => pathname.startsWith(p));
-
-  if (!user && isProtected) {
+  // ✅ Wenn nicht eingeloggt -> login (alles außer /login)
+  if (!user) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirectTo", pathname);
