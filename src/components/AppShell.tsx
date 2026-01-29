@@ -65,8 +65,8 @@ function AppTopbar({
 
   return (
     <header className="sticky top-0 z-50 border-b border-base-border bg-white/80 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-3">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="relative h-10 w-40">
             <Image
               src="/drillexpert-logo.png"
@@ -95,21 +95,21 @@ function AppTopbar({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {userEmail ? (
             <button
               onClick={handleLogout}
-              className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
-            >
-              Logout
-            </button>
+            className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
+          >
+            Logout
+          </button>
           ) : (
             <Link
               href="/login"
-              className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
-            >
-              Login
-            </Link>
+            className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
+          >
+            Login
+          </Link>
           )}
 
           {/* ✅ Draft bleibt: ruft den Handler aus dem Form auf */}
@@ -138,17 +138,17 @@ function AppTopbar({
 
 function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto grid max-w-7xl gap-4 px-4 py-6 lg:grid-cols-[260px_1fr]">
+    <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="hidden lg:block">
         <nav className="rounded-2xl border border-base-border bg-white p-3 shadow-soft">
           <div className="mb-2 text-xs font-semibold text-base-muted">
             Navigation
           </div>
 
-          <SidebarLink href="/projects" label="Projekte" />
+          <SidebarLink href="/projects" label="Meine Projekte" />
           <SidebarLink href="/reports/new" label="Neuer Tagesbericht" />
-          <SidebarLink href="/reports" label="Berichte" />
-          <SidebarLink href="/drafts" label="Entwürfe" />
+          <SidebarLink href="/reports" label="Meine Berichte" />
+          <SidebarLink href="/drafts" label="Meine Entwürfe" />
           <SidebarLink href="/settings" label="Einstellungen" />
 
           <div className="mt-4 rounded-xl bg-drill-50 p-3">
@@ -160,8 +160,8 @@ function AppLayout({ children }: { children: ReactNode }) {
         </nav>
       </aside>
 
-      <main>
-        <div className="rounded-2xl border border-base-border bg-white p-5 shadow-soft">
+      <main className="min-w-0">
+        <div className="rounded-2xl border border-base-border bg-white p-4 sm:p-5 shadow-soft">
           {children}
         </div>
       </main>
