@@ -197,6 +197,27 @@ export default function ProjectDetailPage() {
     window.open(data.signedUrl, "_blank");
   };
 
+  const fileBadge = (name: string) => {
+    const ext = name.split(".").pop()?.toLowerCase();
+    const map: Record<string, string> = {
+      pdf: "PDF",
+      jpg: "IMG",
+      jpeg: "IMG",
+      png: "IMG",
+      webp: "IMG",
+      gif: "IMG",
+      heic: "IMG",
+      csv: "CSV",
+      xlsx: "XLS",
+      xls: "XLS",
+      doc: "DOC",
+      docx: "DOC",
+      txt: "TXT",
+      rtf: "TXT",
+    };
+    return map[ext ?? ""] ?? "FILE";
+  };
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
       <div className="flex items-start justify-between gap-4">
@@ -219,73 +240,71 @@ export default function ProjectDetailPage() {
       {!loading && !err && (
         <div className="mt-6 rounded-2xl border">
           <div className="border-b p-4">
-            <h2 className="font-medium">Berichte</h2>
+            <h2 className="font-medium">Projektinhalte</h2>
             <p className="mt-1 text-sm text-gray-600">
-              {reports.length} Einträge
+              Berichte und Dateien – sauber getrennt
             </p>
           </div>
 
-          {reports.length === 0 ? (
-            <div className="p-4 text-sm text-gray-600">Noch keine Berichte vorhanden.</div>
-          ) : (
-            <ul className="divide-y">
-              {reports.map((r) => (
-                <li key={r.id} className="flex items-center justify-between gap-3 p-4">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{r.title}</div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      {new Date(r.created_at).toLocaleString()} • Status: {r.status ?? "—"}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {/* Öffnen */}
-                   <Link
-                      href={`/api/pdf/tagesbericht/${r.id}`}
-                      target="_blank"
-                      className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                    >
-                      Öffnen
-                    </Link>
-                    {/* Edit / Delete nur wenn erlaubt */}
-                    {canEditOrDelete(r) && (
-                      <>
-                        <Link
-                          href={`/projects/${projectId}/reports/${r.id}/edit`}
-                          className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                          title="Bearbeiten"
-                        >
-                          ✏️
-                        </Link>
-
-                        <button
-                          type="button"
-                          onClick={() => deleteReport(r.id)}
-                          className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                          title="Löschen"
-                        >
-                          🗑
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-      {!loading && !err && (
-        <div className="mt-6 rounded-2xl border">
+          {/* Berichte */}
           <div className="border-b p-4">
-            <h2 className="font-medium">Projektdateien</h2>
-            <p className="mt-1 text-sm text-gray-600">
-              Uploads & Anhänge zum Projekt
-            </p>
+            <div className="mb-2 text-xs font-semibold text-gray-500">BERICHTE</div>
+            {reports.length === 0 ? (
+              <div className="text-sm text-gray-600">Noch keine Berichte vorhanden.</div>
+            ) : (
+              <ul className="divide-y rounded-2xl border">
+                {reports.map((r) => (
+                  <li key={r.id} className="flex items-center justify-between gap-3 p-4">
+                    <div className="min-w-0 flex items-center gap-3">
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-gray-100 text-xs font-semibold text-gray-700">
+                        TB
+                      </span>
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{r.title}</div>
+                        <div className="mt-1 text-xs text-gray-500">
+                          {new Date(r.created_at).toLocaleString()} • Status: {r.status ?? "—"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/api/pdf/tagesbericht/${r.id}`}
+                        target="_blank"
+                        className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                      >
+                        Öffnen
+                      </Link>
+                      {canEditOrDelete(r) && (
+                        <>
+                          <Link
+                            href={`/projects/${projectId}/reports/${r.id}/edit`}
+                            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                            title="Bearbeiten"
+                          >
+                            ✏️
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => deleteReport(r.id)}
+                            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                            title="Löschen"
+                          >
+                            🗑
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
+          {/* Dateien */}
           <div className="p-4">
+            <div className="mb-2 text-xs font-semibold text-gray-500">DATEIEN</div>
+
             <div
               className="rounded-2xl border border-dashed p-6 text-center text-sm text-gray-600"
               onDragOver={(e) => e.preventDefault()}
@@ -326,10 +345,15 @@ export default function ProjectDetailPage() {
               <ul className="mt-4 divide-y rounded-2xl border">
                 {files.map((f) => (
                   <li key={f.name} className="flex items-center justify-between gap-3 p-3">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{f.name}</div>
-                      <div className="mt-1 text-xs text-gray-500">
-                        {(f.metadata?.size ? Math.round(f.metadata.size / 1024) : 0)} KB
+                    <div className="min-w-0 flex items-center gap-3">
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-gray-100 text-xs font-semibold text-gray-700">
+                        {fileBadge(f.name)}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{f.name}</div>
+                        <div className="mt-1 text-xs text-gray-500">
+                          {(f.metadata?.size ? Math.round(f.metadata.size / 1024) : 0)} KB
+                        </div>
                       </div>
                     </div>
                     <button
