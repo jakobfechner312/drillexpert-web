@@ -424,11 +424,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create" 
       const user = userRes.user;
       if (!user) return alert("Nicht eingeloggt.");
 
-      console.log("[Form] requireProjectId START", { effectiveProjectId });
-      const pid = await requireProjectId();
-      console.log("[Form] requireProjectId DONE", { pid });
-
-      if (!pid) return; // Modal ist offen -> User muss erst Projekt wählen/anlegen
+      const pid = effectiveProjectId ?? null;
 
       const currentReport = reportRef.current;
       console.log("[Form] inserting draft…");
@@ -440,7 +436,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create" 
 
       const { error } = await supabase.from("drafts").insert({
         user_id: user.id,
-        project_id: pid, // ✅ NIE null
+        project_id: pid,
         report_type: "tagesbericht",
         title,
         data: currentReport,
