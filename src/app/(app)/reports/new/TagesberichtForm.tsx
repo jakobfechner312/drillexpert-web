@@ -133,11 +133,22 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
 
   // ---------- nested defaults ----------
   const w = r.weather ?? {};
+  const toNumberOrNull = (v: unknown) => {
+    if (v == null) return null;
+    if (typeof v === "number") return Number.isFinite(v) ? v : null;
+    if (typeof v === "string") {
+      const trimmed = v.trim();
+      if (!trimmed) return null;
+      const num = Number(trimmed);
+      return Number.isFinite(num) ? num : null;
+    }
+    return null;
+  };
   r.weather = {
     ...w,
     conditions: w.conditions ?? [],
-    tempMaxC: w.tempMaxC ?? null,
-    tempMinC: w.tempMinC ?? null,
+    tempMaxC: toNumberOrNull((w as any).tempMaxC),
+    tempMinC: toNumberOrNull((w as any).tempMinC),
   };
 
   const sig = r.signatures ?? {};
@@ -1251,13 +1262,16 @@ if (mode === "edit") {
             <input
             className="w-full rounded-xl border p-3"
             inputMode="numeric"
-            value={report.weather?.tempMaxC ?? ""}
+            value={Number.isFinite(report.weather?.tempMaxC) ? report.weather?.tempMaxC : ""}
             onChange={(e) =>
                 setReport((p) => ({
                 ...p,
                 weather: {
                     ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
-                    tempMaxC: e.target.value === "" ? null : Number(e.target.value),
+                    tempMaxC:
+                      e.target.value === "" || Number.isNaN(Number(e.target.value))
+                        ? null
+                        : Number(e.target.value),
                 },
                 }))
             }
@@ -1270,13 +1284,16 @@ if (mode === "edit") {
             <input
             className="w-full rounded-xl border p-3"
             inputMode="numeric"
-            value={report.weather?.tempMinC ?? ""}
+            value={Number.isFinite(report.weather?.tempMinC) ? report.weather?.tempMinC : ""}
             onChange={(e) =>
                 setReport((p) => ({
                 ...p,
                 weather: {
                     ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
-                    tempMinC: e.target.value === "" ? null : Number(e.target.value),
+                    tempMinC:
+                      e.target.value === "" || Number.isNaN(Number(e.target.value))
+                        ? null
+                        : Number(e.target.value),
                 },
                 }))
             }

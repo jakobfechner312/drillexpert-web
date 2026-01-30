@@ -211,6 +211,7 @@ function SidebarReports() {
 
       <div className="ml-2 mt-1 hidden space-y-1 group-hover:block">
         <SidebarLink href="/reports/new" label="Tagesbericht" />
+        <SidebarLink href="/reports/schichtenverzeichnis/new" label="Schichtenverzeichnis" />
       </div>
     </div>
   );

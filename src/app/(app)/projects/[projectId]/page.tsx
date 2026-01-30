@@ -278,7 +278,13 @@ export default function ProjectDetailPage() {
             href={`/projects/${projectId}/reports/new`}
             className="rounded-xl border px-3 py-2 hover:bg-gray-50"
           >
-            + Bericht erstellen
+            + Tagesbericht
+          </Link>
+          <Link
+            href={`/projects/${projectId}/reports/schichtenverzeichnis/new`}
+            className="rounded-xl border px-3 py-2 hover:bg-gray-50"
+          >
+            + Schichtenverzeichnis
           </Link>
         </div>
       </div>

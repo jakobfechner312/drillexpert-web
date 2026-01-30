@@ -154,6 +154,16 @@ export default function MyReportsPage() {
                   Standard Tagesbericht (digital)
                 </div>
               </Link>
+              <Link
+                href="/reports/schichtenverzeichnis/new"
+                className="block rounded-xl border px-3 py-3 hover:bg-gray-50"
+                onClick={() => setCreateOpen(false)}
+              >
+                Schichtenverzeichnis
+                <div className="mt-1 text-xs text-gray-500">
+                  PDF-Template mit zwei Seiten
+                </div>
+              </Link>
             </div>
           </div>
         </div>
