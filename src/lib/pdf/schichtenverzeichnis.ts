@@ -76,7 +76,7 @@ export async function generateSchichtenverzeichnisPdf(
   const outDoc = await PDFDocument.create();
   const font = await outDoc.embedFont(StandardFonts.Helvetica);
 
-  const pages = [];
+  const pages: Array<ReturnType<typeof outDoc.addPage>> = [];
 
   for (const fileName of TEMPLATE_FILES) {
     const templatePath = getTemplatePath(fileName);
