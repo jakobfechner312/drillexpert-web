@@ -32,6 +32,11 @@ function AppTopbar({
   subtitle?: string;
 }) {
   const { triggerSaveDraft, triggerSaveReport } = useDraftActions();
+  const pathname = usePathname();
+  const isReportEditor =
+    pathname === "/reports/new" ||
+    pathname.endsWith("/reports/new") ||
+    pathname.includes("/reports/") && pathname.includes("/edit");
 
   const supabase = useMemo(() => createClient(), []);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -99,37 +104,40 @@ function AppTopbar({
           {userEmail ? (
             <button
               onClick={handleLogout}
-            className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
-          >
-            Logout
-          </button>
+              className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
+            >
+              Logout
+            </button>
           ) : (
             <Link
               href="/login"
-            className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
-          >
-            Login
-          </Link>
+              className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
+            >
+              Login
+            </Link>
           )}
 
-          {/* ✅ Draft bleibt: ruft den Handler aus dem Form auf */}
-          <button
-            onClick={() => {
-              console.log("[Entwurf] click");
-              triggerSaveDraft();
-            }}
-            className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
-          >
-            Entwurf
-          </button>
+          {isReportEditor && (
+            <>
+              <button
+                onClick={() => {
+                  console.log("[Entwurf] click");
+                  triggerSaveDraft();
+                }}
+                className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
+              >
+                Entwurf
+              </button>
 
-         <button
-            type="button"
-            className="rounded-2xl bg-black text-white px-4 py-3 font-medium"
-            onClick={triggerSaveReport}
-          >
-            Absenden
-          </button>
+              <button
+                type="button"
+                className="rounded-2xl bg-black text-white px-4 py-3 font-medium"
+                onClick={triggerSaveReport}
+              >
+                Absenden
+              </button>
+            </>
+          )}
         </div>
       </div>
     </header>
@@ -146,8 +154,7 @@ function AppLayout({ children }: { children: ReactNode }) {
           </div>
 
           <SidebarLink href="/projects" label="Meine Projekte" />
-          <SidebarLink href="/reports/new" label="Neuer Tagesbericht" />
-          <SidebarLink href="/reports" label="Meine Berichte" />
+          <SidebarReports />
           <SidebarLink href="/drafts" label="Meine Entwürfe" />
           <SidebarLink href="/settings" label="Einstellungen" />
 
@@ -183,5 +190,28 @@ function SidebarLink({ href, label }: { href: string; label: string }) {
     >
       {label}
     </Link>
+  );
+}
+
+function SidebarReports() {
+  const pathname = usePathname();
+  const active = pathname.startsWith("/reports");
+
+  return (
+    <div className="group">
+      <Link
+        href="/reports"
+        className={[
+          "block rounded-xl px-3 py-2 text-sm transition",
+          active ? "bg-drill-50 font-medium" : "hover:bg-base-bg",
+        ].join(" ")}
+      >
+        Meine Berichte
+      </Link>
+
+      <div className="ml-2 mt-1 hidden space-y-1 group-hover:block">
+        <SidebarLink href="/reports/new" label="Tagesbericht" />
+      </div>
+    </div>
   );
 }
