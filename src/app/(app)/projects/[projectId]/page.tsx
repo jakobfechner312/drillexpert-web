@@ -39,6 +39,7 @@ export default function ProjectDetailPage() {
   const [filesErr, setFilesErr] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const maxFileSizeMb = 25;
+  const [filter, setFilter] = useState<"all" | "reports" | "files" | "images">("all");
 
   const load = async () => {
     setLoading(true);
@@ -197,6 +198,11 @@ export default function ProjectDetailPage() {
     window.open(data.signedUrl, "_blank");
   };
 
+  const isImageFile = (name: string) => {
+    const ext = name.split(".").pop()?.toLowerCase();
+    return ["jpg", "jpeg", "png", "webp", "gif", "heic"].includes(ext ?? "");
+  };
+
   const fileBadge = (name: string) => {
     const ext = name.split(".").pop()?.toLowerCase();
     const map: Record<string, string> = {
@@ -227,6 +233,38 @@ export default function ProjectDetailPage() {
     return "bg-slate-50 text-slate-700 ring-slate-200";
   };
 
+  const items = useMemo(() => {
+    const reportItems = reports.map((r) => ({
+      type: "report" as const,
+      id: r.id,
+      title: r.title,
+      created_at: r.created_at,
+      status: r.status,
+    }));
+
+    const fileItems = files.map((f) => ({
+      type: "file" as const,
+      name: f.name,
+      created_at: f.updated_at || f.created_at,
+      size: f.metadata?.size ?? 0,
+      isImage: isImageFile(f.name),
+    }));
+
+    const merged = [...reportItems, ...fileItems].sort((a, b) => {
+      const aTime = new Date(a.created_at).getTime();
+      const bTime = new Date(b.created_at).getTime();
+      return bTime - aTime;
+    });
+
+    return merged.filter((item) => {
+      if (filter === "all") return true;
+      if (filter === "reports") return item.type === "report";
+      if (filter === "files") return item.type === "file";
+      if (filter === "images") return item.type === "file" && item.isImage;
+      return true;
+    });
+  }, [reports, files, filter]);
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
       <div className="flex items-start justify-between gap-4">
@@ -235,12 +273,14 @@ export default function ProjectDetailPage() {
           <p className="mt-1 text-sm text-gray-600">{projectId}</p>
         </div>
 
-        <Link
-          href={`/projects/${projectId}/reports/new`}
-          className="rounded-xl border px-3 py-2 hover:bg-gray-50"
-        >
-          + Bericht erstellen
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={`/projects/${projectId}/reports/new`}
+            className="rounded-xl border px-3 py-2 hover:bg-gray-50"
+          >
+            + Bericht erstellen
+          </Link>
+        </div>
       </div>
 
       {loading && <p className="mt-4 text-sm text-gray-600">Lade…</p>}
@@ -249,74 +289,38 @@ export default function ProjectDetailPage() {
       {!loading && !err && (
         <div className="mt-6 rounded-2xl border">
           <div className="border-b p-4">
-            <h2 className="font-medium">Projektinhalte</h2>
-            <p className="mt-1 text-sm text-gray-600">
-              Berichte und Dateien – sauber getrennt
-            </p>
-          </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-medium">Projekt‑Stream</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Alles an einem Ort: Berichte & Dateien
+                </p>
+              </div>
 
-          {/* Berichte */}
-          <div className="border-b p-4">
-            <div className="mb-2 text-xs font-semibold text-gray-500">BERICHTE</div>
-            {reports.length === 0 ? (
-              <div className="text-sm text-gray-600">Noch keine Berichte vorhanden.</div>
-            ) : (
-              <ul className="divide-y rounded-2xl border">
-                {reports.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between gap-3 p-4">
-                    <div className="min-w-0 flex items-center gap-3">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 text-slate-700 ring-1 ring-slate-200">
-                        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                          <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" strokeWidth="1.6"/>
-                          <path d="M14 3v6h6" fill="none" stroke="currentColor" strokeWidth="1.6"/>
-                        </svg>
-                      </span>
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">{r.title}</div>
-                        <div className="mt-1 text-xs text-gray-500">
-                          {new Date(r.created_at).toLocaleString()} • Status: {r.status ?? "—"}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Link
-                        href={`/api/pdf/tagesbericht/${r.id}`}
-                        target="_blank"
-                        className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                      >
-                        Öffnen
-                      </Link>
-                      {canEditOrDelete(r) && (
-                        <>
-                          <Link
-                            href={`/projects/${projectId}/reports/${r.id}/edit`}
-                            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                            title="Bearbeiten"
-                          >
-                            ✏️
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={() => deleteReport(r.id)}
-                            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                            title="Löschen"
-                          >
-                            🗑
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </li>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: "all", label: "Alle" },
+                  { id: "reports", label: "Berichte" },
+                  { id: "files", label: "Dateien" },
+                  { id: "images", label: "Bilder" },
+                ].map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setFilter(f.id as typeof filter)}
+                    className={[
+                      "rounded-full border px-3 py-1 text-xs",
+                      filter === f.id ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
+                    ].join(" ")}
+                  >
+                    {f.label}
+                  </button>
                 ))}
-              </ul>
-            )}
+              </div>
+            </div>
           </div>
 
-          {/* Dateien */}
-          <div className="p-4">
-            <div className="mb-2 text-xs font-semibold text-gray-500">DATEIEN</div>
-
+          <div className="border-b p-4">
             <div
               className="rounded-2xl border border-dashed p-6 text-center text-sm text-gray-600"
               onDragOver={(e) => e.preventDefault()}
@@ -348,35 +352,75 @@ export default function ProjectDetailPage() {
                 <div className="mt-2 text-xs text-red-600">{filesErr}</div>
               )}
             </div>
+          </div>
 
+          <div className="p-4">
             {filesLoading ? (
-              <p className="mt-4 text-sm text-gray-600">Lade Dateien…</p>
-            ) : files.length === 0 ? (
-              <p className="mt-4 text-sm text-gray-600">Noch keine Dateien vorhanden.</p>
+              <p className="text-sm text-gray-600">Lade Dateien…</p>
+            ) : items.length === 0 ? (
+              <p className="text-sm text-gray-600">Noch keine Inhalte vorhanden.</p>
             ) : (
-              <ul className="mt-4 divide-y rounded-2xl border">
-                {files.map((f) => (
-                  <li key={f.name} className="flex items-center justify-between gap-3 p-3">
-                    <div className="min-w-0 flex items-center gap-3">
-                      <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-[10px] font-semibold ring-1 ${fileBadgeClass(f.name)}`}>
-                        {fileBadge(f.name)}
-                      </span>
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">{f.name}</div>
-                        <div className="mt-1 text-xs text-gray-500">
-                          {(f.metadata?.size ? Math.round(f.metadata.size / 1024) : 0)} KB
+              <ul className="divide-y rounded-2xl border">
+                {items.map((item) =>
+                  item.type === "report" ? (
+                    <li key={`r-${item.id}`} className="flex items-center justify-between gap-3 p-4">
+                      <div className="min-w-0 flex items-center gap-3">
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 text-slate-700 ring-1 ring-slate-200">
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                            <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" strokeWidth="1.6"/>
+                            <path d="M14 3v6h6" fill="none" stroke="currentColor" strokeWidth="1.6"/>
+                          </svg>
+                        </span>
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{item.title}</div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            {new Date(item.created_at).toLocaleString()} • Status: {item.status ?? "—"}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                      onClick={() => openFile(f.name)}
-                    >
-                      Öffnen
-                    </button>
-                  </li>
-                ))}
+
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/api/pdf/tagesbericht/${item.id}`}
+                          target="_blank"
+                          className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                        >
+                          Öffnen
+                        </Link>
+                        {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
+                          <Link
+                            href={`/projects/${projectId}/reports/${item.id}/edit`}
+                            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                            title="Bearbeiten"
+                          >
+                            ✏️
+                          </Link>
+                        )}
+                      </div>
+                    </li>
+                  ) : (
+                    <li key={`f-${item.name}`} className="flex items-center justify-between gap-3 p-3">
+                      <div className="min-w-0 flex items-center gap-3">
+                        <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-[10px] font-semibold ring-1 ${fileBadgeClass(item.name)}`}>
+                          {fileBadge(item.name)}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{item.name}</div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            {new Date(item.created_at).toLocaleString()} • {(item.size ? Math.round(item.size / 1024) : 0)} KB
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                        onClick={() => openFile(item.name)}
+                      >
+                        Öffnen
+                      </button>
+                    </li>
+                  )
+                )}
               </ul>
             )}
           </div>
