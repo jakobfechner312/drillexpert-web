@@ -733,6 +733,8 @@ if (mode === "edit") {
   useEffect(() => {
     if (mode === "edit") return;
     try {
+      const allowAuto = localStorage.getItem("pref_autoload_draft");
+      if (allowAuto === "false") return;
       const raw = localStorage.getItem("tagesbericht_draft");
       if (!raw) return;
       const parsed = JSON.parse(raw);
