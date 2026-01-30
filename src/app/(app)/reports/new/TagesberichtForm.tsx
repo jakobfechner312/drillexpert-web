@@ -1262,7 +1262,11 @@ if (mode === "edit") {
             <input
             className="w-full rounded-xl border p-3"
             inputMode="numeric"
-            value={Number.isFinite(report.weather?.tempMaxC) ? report.weather?.tempMaxC : ""}
+            value={
+              typeof report.weather?.tempMaxC === "number" && Number.isFinite(report.weather?.tempMaxC)
+                ? String(report.weather?.tempMaxC)
+                : ""
+            }
             onChange={(e) =>
                 setReport((p) => ({
                 ...p,
@@ -1284,7 +1288,11 @@ if (mode === "edit") {
             <input
             className="w-full rounded-xl border p-3"
             inputMode="numeric"
-            value={Number.isFinite(report.weather?.tempMinC) ? report.weather?.tempMinC : ""}
+            value={
+              typeof report.weather?.tempMinC === "number" && Number.isFinite(report.weather?.tempMinC)
+                ? String(report.weather?.tempMinC)
+                : ""
+            }
             onChange={(e) =>
                 setReport((p) => ({
                 ...p,
