@@ -8,7 +8,6 @@ type DraftRow = {
   id: string;
   title: string;
   created_at: string;
-  status: string | null;
 };
 
 export default function DraftsPage() {
@@ -31,7 +30,7 @@ export default function DraftsPage() {
 
     const { data, error } = await supabase
       .from("drafts")
-      .select("id,title,created_at,status")
+      .select("id,title,created_at")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -84,8 +83,7 @@ export default function DraftsPage() {
                   <div className="min-w-0">
                     <div className="truncate font-medium">{d.title}</div>
                     <div className="mt-1 text-xs text-gray-500">
-                      {new Date(d.created_at).toLocaleString()} • Status:{" "}
-                      {d.status ?? "draft"}
+                      {new Date(d.created_at).toLocaleString()}
                     </div>
                   </div>
 

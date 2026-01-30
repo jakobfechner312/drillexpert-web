@@ -735,7 +735,6 @@ if (mode === "edit") {
     try {
       const raw = localStorage.getItem("tagesbericht_draft");
       if (!raw) return;
-      if (!window.confirm("Lokalen Entwurf laden?")) return;
       const parsed = JSON.parse(raw);
       setReport(normalizeTagesbericht(parsed));
     } catch (e) {
