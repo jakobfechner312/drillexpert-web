@@ -218,6 +218,15 @@ export default function ProjectDetailPage() {
     return map[ext ?? ""] ?? "FILE";
   };
 
+  const fileBadgeClass = (name: string) => {
+    const ext = name.split(".").pop()?.toLowerCase();
+    if (ext === "pdf") return "bg-red-50 text-red-700 ring-red-200";
+    if (["jpg", "jpeg", "png", "webp", "gif", "heic"].includes(ext ?? "")) return "bg-sky-50 text-sky-700 ring-sky-200";
+    if (["xls", "xlsx", "csv"].includes(ext ?? "")) return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+    if (["doc", "docx", "rtf", "txt"].includes(ext ?? "")) return "bg-amber-50 text-amber-700 ring-amber-200";
+    return "bg-slate-50 text-slate-700 ring-slate-200";
+  };
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
       <div className="flex items-start justify-between gap-4">
@@ -256,8 +265,11 @@ export default function ProjectDetailPage() {
                 {reports.map((r) => (
                   <li key={r.id} className="flex items-center justify-between gap-3 p-4">
                     <div className="min-w-0 flex items-center gap-3">
-                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-gray-100 text-xs font-semibold text-gray-700">
-                        TB
+                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 text-slate-700 ring-1 ring-slate-200">
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                          <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" strokeWidth="1.6"/>
+                          <path d="M14 3v6h6" fill="none" stroke="currentColor" strokeWidth="1.6"/>
+                        </svg>
                       </span>
                       <div className="min-w-0">
                         <div className="truncate font-medium">{r.title}</div>
@@ -346,7 +358,7 @@ export default function ProjectDetailPage() {
                 {files.map((f) => (
                   <li key={f.name} className="flex items-center justify-between gap-3 p-3">
                     <div className="min-w-0 flex items-center gap-3">
-                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-gray-100 text-xs font-semibold text-gray-700">
+                      <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-[10px] font-semibold ring-1 ${fileBadgeClass(f.name)}`}>
                         {fileBadge(f.name)}
                       </span>
                       <div className="min-w-0">
