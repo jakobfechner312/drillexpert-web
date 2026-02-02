@@ -188,6 +188,10 @@ export default function ProjectDetailPage() {
       });
 
       if (insErr) {
+        if (typeof insErr === "object" && insErr && "code" in insErr && (insErr as { code?: string }).code === "23505") {
+          setMemberOk("Ist schon Mitglied ✅");
+          return;
+        }
         setMemberErr("Hinzufügen fehlgeschlagen: " + insErr.message);
         return;
       }
