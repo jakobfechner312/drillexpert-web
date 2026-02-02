@@ -41,6 +41,10 @@ export default function ProjectDetailPage() {
   const [uploading, setUploading] = useState(false);
   const maxFileSizeMb = 25;
   const [filter, setFilter] = useState<"all" | "reports" | "files" | "images">("all");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [addingMember, setAddingMember] = useState(false);
+  const [memberErr, setMemberErr] = useState<string | null>(null);
+  const [memberOk, setMemberOk] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -147,6 +151,53 @@ export default function ProjectDetailPage() {
       return;
     }
     setFiles((prev) => prev.filter((x) => x.name !== name));
+  };
+
+  const addMemberByEmail = async () => {
+    const email = memberEmail.trim().toLowerCase();
+    if (!email) {
+      setMemberErr("Bitte E-Mail eingeben.");
+      return;
+    }
+
+    setAddingMember(true);
+    setMemberErr(null);
+    setMemberOk(null);
+
+    try {
+      const { data, error } = await supabase.rpc("get_user_by_email_for_project", {
+        p_project_id: projectId,
+        p_email: email,
+      });
+
+      if (error) {
+        setMemberErr("Suche fehlgeschlagen: " + error.message);
+        return;
+      }
+
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row?.user_id) {
+        setMemberErr("Kein Nutzer mit dieser E-Mail gefunden.");
+        return;
+      }
+
+      const { error: insErr } = await supabase.from("project_members").insert({
+        project_id: projectId,
+        user_id: row.user_id,
+        role_in_project: "member",
+      });
+
+      if (insErr) {
+        setMemberErr("Hinzufügen fehlgeschlagen: " + insErr.message);
+        return;
+      }
+
+      setMemberOk("Mitglied hinzugefügt ✅");
+      setMemberEmail("");
+      await load();
+    } finally {
+      setAddingMember(false);
+    }
   };
 
   const uploadFiles = async (fileList: FileList | File[]) => {
@@ -300,6 +351,33 @@ export default function ProjectDetailPage() {
           </Link>
         </div>
       </div>
+
+      {role === "owner" && (
+        <div className="mt-4 rounded-2xl border p-4">
+          <div className="text-sm font-semibold">Mitglied hinzufügen</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <input
+              className="min-w-[240px] flex-1 rounded-xl border px-3 py-2 text-sm"
+              placeholder="E-Mail des Users"
+              value={memberEmail}
+              onChange={(e) => setMemberEmail(e.target.value)}
+            />
+            <button
+              type="button"
+              className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+              onClick={addMemberByEmail}
+              disabled={addingMember}
+            >
+              {addingMember ? "Füge hinzu…" : "Hinzufügen"}
+            </button>
+          </div>
+          {memberErr && <div className="mt-2 text-xs text-red-600">{memberErr}</div>}
+          {memberOk && <div className="mt-2 text-xs text-green-700">{memberOk}</div>}
+          <div className="mt-2 text-xs text-gray-500">
+            Nur existierende Nutzer können hinzugefügt werden.
+          </div>
+        </div>
+      )}
 
       {loading && <p className="mt-4 text-sm text-gray-600">Lade…</p>}
       {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
