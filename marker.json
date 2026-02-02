@@ -1,0 +1,534 @@
+[
+    {
+        "key": "auftrag_nr",
+        "page": 1,
+        "x": 270,
+        "y": 790,
+        "size": 10
+    },
+    {
+        "key": "name_bohrmeister",
+        "page": 1,
+        "x": 400,
+        "y": 790,
+        "size": 10
+    },
+    {
+        "key": "blatt_nr",
+        "page": 1,
+        "x": 527,
+        "y": 790,
+        "size": 10
+    },
+    {
+        "key": "projekt_name",
+        "page": 1,
+        "x": 225,
+        "y": 761,
+        "size": 10
+    },
+    {
+        "key": "bohrung_nr",
+        "page": 1,
+        "x": 150,
+        "y": 735,
+        "size": 10
+    },
+    {
+        "key": "d_zeit",
+        "page": 1,
+        "x": 150,
+        "y": 710,
+        "size": 10
+    },
+    {
+        "key": "ramm_bohrung",
+        "page": 1,
+        "x": 338,
+        "y": 740,
+        "size": 10
+    },
+    {
+        "key": "rota_bohrung",
+        "page": 1,
+        "x": 338,
+        "y": 725,
+        "size": 10
+    },
+    {
+        "key": "ek_dks",
+        "page": 1,
+        "x": 332,
+        "y": 708,
+        "size": 10
+    },
+    {
+        "key": "ver_1",
+        "page": 1,
+        "x": 450,
+        "y": 739,
+        "size": 10
+    },
+    {
+        "key": "ver_durch_1",
+        "page": 1,
+        "x": 482,
+        "y": 739,
+        "size": 10
+    },
+    {
+        "key": "ver_durch_2",
+        "page": 1,
+        "x": 482,
+        "y": 724,
+        "size": 10
+    },
+    {
+        "key": "ver_durch_3",
+        "page": 1,
+        "x": 482,
+        "y": 707,
+        "size": 10
+    },
+    {
+        "key": "ver_3",
+        "page": 1,
+        "x": 446,
+        "y": 707,
+        "size": 10
+    },
+    {
+        "key": "ver_2",
+        "page": 1,
+        "x": 446,
+        "y": 723,
+        "size": 10
+    },
+    {
+        "key": "grundw",
+        "page": 1,
+        "x": 50,
+        "y": 642,
+        "size": 10
+    },
+    {
+        "key": "hoehe_ans",
+        "page": 1,
+        "x": 210,
+        "y": 688,
+        "size": 10
+    },
+    {
+        "key": "bezogen_auf",
+        "page": 1,
+        "x": 335,
+        "y": 689,
+        "size": 10
+    },
+    {
+        "key": "gitterwert",
+        "page": 1,
+        "x": 145,
+        "y": 673,
+        "size": 9
+    },
+    {
+        "key": "gitterwert_r",
+        "page": 1,
+        "x": 200,
+        "y": 673,
+        "size": 9
+    },
+    {
+        "key": "gitterwert_l",
+        "page": 1,
+        "x": 300,
+        "y": 673,
+        "size": 9
+    },
+    {
+        "key": "eingemessen_d",
+        "page": 1,
+        "x": 450,
+        "y": 673,
+        "size": 9
+    },
+    {
+        "key": "grund_was",
+        "page": 1,
+        "x": 50,
+        "y": 640,
+        "size": 9
+    },
+    {
+        "key": "datum",
+        "page": 1,
+        "x": 150,
+        "y": 640,
+        "size": 9
+    },
+    {
+        "key": "uhrzeit",
+        "page": 1,
+        "x": 230,
+        "y": 640,
+        "size": 9
+    },
+    {
+        "key": "tiefe_m",
+        "page": 1,
+        "x": 305,
+        "y": 640,
+        "size": 9
+    },
+    {
+        "key": "uk_ver",
+        "page": 1,
+        "x": 385,
+        "y": 640,
+        "size": 9
+    },
+    {
+        "key": "b_tiefe",
+        "page": 1,
+        "x": 470,
+        "y": 640,
+        "size": 9
+    },
+    {
+        "key": "pegel_durch",
+        "page": 1,
+        "x": 90,
+        "y": 581,
+        "size": 9
+    },
+    {
+        "key": "rok",
+        "page": 1,
+        "x": 150,
+        "y": 581,
+        "size": 9
+    },
+    {
+        "key": "passavant",
+        "page": 1,
+        "x": 407,
+        "y": 580,
+        "size": 10
+    },
+    {
+        "key": "ferngas",
+        "page": 1,
+        "x": 450,
+        "y": 580,
+        "size": 10
+    },
+    {
+        "key": "seba",
+        "page": 1,
+        "x": 475,
+        "y": 580,
+        "size": 10
+    },
+    {
+        "key": "filterkies_m",
+        "page": 1,
+        "x": 104,
+        "y": 548,
+        "size": 10
+    },
+    {
+        "key": "fkies_m",
+        "page": 1,
+        "x": 104,
+        "y": 548,
+        "size": 10
+    },
+    {
+        "key": "fkies_mbis",
+        "page": 1,
+        "x": 155,
+        "y": 548,
+        "size": 10
+    },
+    {
+        "key": "gegenFi_bis",
+        "page": 1,
+        "x": 155,
+        "y": 532,
+        "size": 10
+    },
+    {
+        "key": "gegenFi_von",
+        "page": 1,
+        "x": 110,
+        "y": 532,
+        "size": 10
+    },
+    {
+        "key": "tonDi_von",
+        "page": 1,
+        "x": 270,
+        "y": 532,
+        "size": 10
+    },
+    {
+        "key": "tonDi_von_1",
+        "page": 1,
+        "x": 270,
+        "y": 548,
+        "size": 10
+    },
+    {
+        "key": "tonDi_bis_1",
+        "page": 1,
+        "x": 315,
+        "y": 548,
+        "size": 10
+    },
+    {
+        "key": "tonDi_bis",
+        "page": 1,
+        "x": 315,
+        "y": 532,
+        "size": 10
+    },
+    {
+        "key": "zement_von",
+        "page": 1,
+        "x": 425,
+        "y": 547,
+        "size": 10
+    },
+    {
+        "key": "zement_bis",
+        "page": 1,
+        "x": 472,
+        "y": 548,
+        "size": 10
+    },
+    {
+        "key": "bohrgut_bis",
+        "page": 1,
+        "x": 472,
+        "y": 532,
+        "size": 10
+    },
+    {
+        "key": "bohrgut_von",
+        "page": 1,
+        "x": 425,
+        "y": 532,
+        "size": 10
+    },
+    {
+        "key": "sumpf",
+        "page": 1,
+        "x": 77,
+        "y": 565,
+        "size": 10
+    },
+    {
+        "key": "filter_R",
+        "page": 1,
+        "x": 153,
+        "y": 565,
+        "size": 10
+    },
+    {
+        "key": "sw",
+        "page": 1,
+        "x": 207,
+        "y": 565,
+        "size": 10
+    },
+    {
+        "key": "pvc",
+        "page": 1,
+        "x": 280,
+        "y": 565,
+        "size": 10
+    },
+    {
+        "key": "vollRohrS",
+        "page": 1,
+        "x": 377,
+        "y": 565,
+        "size": 10
+    },
+    {
+        "key": "hydKp",
+        "page": 1,
+        "x": 430,
+        "y": 562,
+        "size": 13
+    },
+    {
+        "key": "betSo",
+        "page": 1,
+        "x": 470,
+        "y": 562,
+        "size": 13
+    },
+    {
+        "key": "betSo",
+        "page": 1,
+        "x": 470,
+        "y": 562,
+        "size": 13
+    },
+    {
+        "key": "gp",
+        "page": 1,
+        "x": 123,
+        "y": 64,
+        "size": 13
+    },
+    {
+        "key": "kp",
+        "page": 1,
+        "x": 170,
+        "y": 64,
+        "size": 13
+    },
+    {
+        "key": "sp",
+        "page": 1,
+        "x": 221,
+        "y": 64,
+        "size": 13
+    },
+    {
+        "key": "wp",
+        "page": 1,
+        "x": 262,
+        "y": 64,
+        "size": 13
+    },
+    {
+        "key": "ki",
+        "page": 1,
+        "x": 317,
+        "y": 64,
+        "size": 13
+    },
+    {
+        "key": "bkb",
+        "page": 1,
+        "x": 383,
+        "y": 64,
+        "size": 13
+    },
+    {
+        "key": "spt",
+        "page": 1,
+        "x": 470,
+        "y": 64,
+        "size": 13
+    },
+    {
+        "key": "uebergeben_am",
+        "page": 1,
+        "x": 162,
+        "y": 49,
+        "size": 13
+    },
+    {
+        "key": "uebergeben_an",
+        "page": 1,
+        "x": 266,
+        "y": 49,
+        "size": 13
+    },
+    {
+        "key": "a_1",
+        "page": 1,
+        "x": 100,
+        "y": 403,
+        "size": 13
+    },
+    {
+        "key": "a_2",
+        "page": 1,
+        "x": 100,
+        "y": 383,
+        "size": 13
+    },
+    {
+        "key": "b",
+        "page": 1,
+        "x": 93,
+        "y": 360,
+        "size": 10
+    },
+    {
+        "key": "c",
+        "page": 1,
+        "x": 173,
+        "y": 360,
+        "size": 10
+    },
+    {
+        "key": "d",
+        "page": 1,
+        "x": 270,
+        "y": 360,
+        "size": 10
+    },
+    {
+        "key": "f",
+        "page": 1,
+        "x": 92,
+        "y": 340,
+        "size": 10
+    },
+    {
+        "key": "g",
+        "page": 1,
+        "x": 173,
+        "y": 340,
+        "size": 10
+    },
+    {
+        "key": "h",
+        "page": 1,
+        "x": 270,
+        "y": 340,
+        "size": 10
+    },
+    {
+        "key": "e",
+        "page": 1,
+        "x": 333,
+        "y": 340,
+        "size": 10
+    },
+    {
+        "key": "feststellungen",
+        "page": 1,
+        "x": 370,
+        "y": 400,
+        "size": 10
+    },
+    {
+        "key": "probenArt",
+        "page": 1,
+        "x": 462,
+        "y": 400,
+        "size": 10
+    },
+    {
+        "key": "ProbenNr",
+        "page": 1,
+        "x": 492,
+        "y": 400,
+        "size": 10
+    },
+    {
+        "key": "ProbenTiefe",
+        "page": 1,
+        "x": 526,
+        "y": 400,
+        "size": 10
+    }
+]

@@ -1,7 +1,7 @@
 "use client";
 
-import SchichtenverzeichnisTemplatePreview from "../SchichtenverzeichnisTemplatePreview";
+import SchichtenverzeichnisForm from "../SchichtenverzeichnisForm";
 
 export default function SchichtenverzeichnisNewPage() {
-  return <SchichtenverzeichnisTemplatePreview />;
+  return <SchichtenverzeichnisForm />;
 }

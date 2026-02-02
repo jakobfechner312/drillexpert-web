@@ -131,8 +131,8 @@ export async function POST(req: Request) {
     if (conditions.includes("regen")) mark(WX.regen.x, WX.regen.y);
     if (conditions.includes("frost")) mark(WX.frost.x, WX.frost.y);
 
-    draw(data.weather?.tempMaxC != null ? String(data.weather.tempMaxC) : "", 735, outH - 103, 9);
-    draw(data.weather?.tempMinC != null ? String(data.weather.tempMinC) : "", 780, outH - 103, 9);
+    draw(data.weather?.tempMaxC != null ? String(data.weather.tempMaxC) : "", 735, outH - 104, 9);
+    draw(data.weather?.tempMinC != null ? String(data.weather.tempMinC) : "", 785, outH - 104, 9);
 
     // ===== TRANSPORT (ausklappbar) =====
     // erwartet: data.transportRows = [{from,to,km,time}, ...]
@@ -146,7 +146,7 @@ export async function POST(req: Request) {
       from: 590,
       to: 670,
       km: 750,
-      time: 795,
+      time: 792,
     };
 
     // zeichne max 2 Zeilen (bei Bedarf auf 3 erhöhen)
@@ -211,10 +211,10 @@ export async function POST(req: Request) {
 
     const COL = {
       boNr: 26,
-      gebohrtVon: 55,
-      gebohrtBis: 78,
-      verrohrtVon: 100,
-      verrohrtBis: 120,
+      gebohrtVon: 51,
+      gebohrtBis: 72,
+      verrohrtVon: 95,
+      verrohrtBis: 115,
       rb: 148,
       ek: 165,
       dk: 182,
@@ -229,7 +229,7 @@ export async function POST(req: Request) {
 
       schachtenVon: 340,
       schachtenBis: 360,
-      schachtenZeit: 385,
+      schachtenZeit: 381,
 
       gp: 407,
       kp: 428,
@@ -238,7 +238,7 @@ export async function POST(req: Request) {
       bkb: 500,
       kkLv: 525,
 
-      spt: 580,
+      spt: 577,
 
       tonVon: 645,
       tonBis: 665,
@@ -247,7 +247,7 @@ export async function POST(req: Request) {
       zementBentVon: 730,
       zementBentBis: 750,
       betonVon: 775,
-      betonBis: 800,
+      betonBis: 795,
     };
 
     const getProbenFlags = (row: any): string[] => {
@@ -267,7 +267,7 @@ export async function POST(req: Request) {
       return flags;
     };
 
-    rows.slice(0, 8).forEach((row: any, i: number) => {
+    rows.slice(0, 5).forEach((row: any, i: number) => {
       const y = tableStartY - i * rowH;
 
       draw(t(row.boNr, 6), COL.boNr, y, 8);
@@ -318,8 +318,8 @@ export async function POST(req: Request) {
     const umsetzen = Array.isArray(data.umsetzenRows) ? data.umsetzenRows : [];
 
     // Start-Y muss die ERSTE Datenzeile treffen (nicht die Überschrift)
-    const umsetzenStartY = 285;     // ggf. minimal anpassen
-    const umsetzenRowH = 19;
+    const umsetzenStartY = 284;     // ggf. minimal anpassen
+    const umsetzenRowH = 18;
 
     // ✅ Wichtig: Begründung/Wartezeit gehören optisch in die "zweite Zeile" der Zelle
     const REASON_LINE_OFFSET = 8;   // <- feinjustieren (6–10 typisch)
@@ -328,12 +328,12 @@ export async function POST(req: Request) {
       von: 60,
       auf: 135,
       entfernungM: 255,
-      zeit: 300,
+      zeit: 293,
       begruendung: 375,
       wartezeit: 475,
     };
 
-    umsetzen.slice(0, 6).forEach((r: any, i: number) => {
+    umsetzen.slice(0, 5).forEach((r: any, i: number) => {
       const y = umsetzenStartY - i * umsetzenRowH;
 
       // erste Zeile (von/auf/entfernung/zeit)
@@ -342,12 +342,12 @@ export async function POST(req: Request) {
       draw(t(r.entfernungM, 6), UCOL.entfernungM, y + 7, 8);
       draw(t(r.zeit, 10), UCOL.zeit, y + 7, 8);
 
-      // zweite Zeile (Begründung/Wartezeit) -> immer tiefer
-      const y2 = y - REASON_LINE_OFFSET;
-
-      // Option A: IMMER in die 2. Zeile schreiben
-      draw(t(r.begruendung, 30), UCOL.begruendung, y2, 8);
-      draw(t(r.wartezeit, 30), UCOL.wartezeit, y2, 8);
+      // zweite Zeile (Begründung/Wartezeit) -> nur für die ersten 4 Zeilen
+      if (i < 4) {
+        const y2 = y - REASON_LINE_OFFSET;
+        draw(t(r.begruendung, 30), UCOL.begruendung, y2, 8);
+        draw(t(r.wartezeit, 30), UCOL.wartezeit, y2, 8);
+      }
 
       // Option B (wenn du willst): nur wenn Text vorhanden
       // if ((r.begruendung ?? "").trim()) draw(t(r.begruendung, 30), UCOL.begruendung, y2, 8);
@@ -363,7 +363,7 @@ export async function POST(req: Request) {
 
     const PCOL = {
       bohrNr: 40,
-      pegelDm: 65,
+      pegelDm: 60,
 
       // ROHRE
       sumpfVon: 95,
@@ -398,7 +398,7 @@ export async function POST(req: Request) {
       klarpump: 760,
     };
 
-    pegelRows.slice(0, 4).forEach((r: any, i: number) => {
+    pegelRows.slice(0, 3).forEach((r: any, i: number) => {
       const y = pegelStartY - i * pegelRowH;
 
       draw(t(r.bohrNr, 6), PCOL.bohrNr, y, 8);

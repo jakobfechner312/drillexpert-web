@@ -261,7 +261,7 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
     return flags;
   };
 
-  rows.slice(0, 8).forEach((row: any, i: number) => {
+  rows.slice(0, 5).forEach((row: any, i: number) => {
     const y = tableStartY - i * rowH;
 
     draw(t(row.boNr, 6), COL.boNr, y, 8);
@@ -318,12 +318,12 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
     von: 60,
     auf: 135,
     entfernungM: 255,
-    zeit: 300,
+    zeit: 275,
     begruendung: 375,
     wartezeit: 475,
   };
 
-  umsetzen.slice(0, 6).forEach((r: any, i: number) => {
+  umsetzen.slice(0, 5).forEach((r: any, i: number) => {
     const y = umsetzenStartY - i * umsetzenRowH;
 
     draw(t(r.von, 18), UCOL.von, y + 6, 8);
@@ -331,9 +331,11 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
     draw(t(r.entfernungM, 6), UCOL.entfernungM, y + 7, 8);
     draw(t(r.zeit, 10), UCOL.zeit, y + 7, 8);
 
-    const y2 = y - REASON_LINE_OFFSET;
-    draw(t(r.begruendung, 30), UCOL.begruendung, y2, 8);
-    draw(t(r.wartezeit, 30), UCOL.wartezeit, y2, 8);
+    if (i < 4) {
+      const y2 = y - REASON_LINE_OFFSET;
+      draw(t(r.begruendung, 30), UCOL.begruendung, y2, 8);
+      draw(t(r.wartezeit, 30), UCOL.wartezeit, y2, 8);
+    }
   });
 
   // ===== PEGELAUSBAU =====
@@ -343,7 +345,7 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
 
   const PCOL = {
     bohrNr: 40,
-    pegelDm: 65,
+    pegelDm: 10,
 
     sumpfVon: 95,
     sumpfBis: 120,
@@ -375,7 +377,7 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
     klarpump: 760,
   };
 
-  pegelRows.slice(0, 4).forEach((r: any, i: number) => {
+  pegelRows.slice(0, 3).forEach((r: any, i: number) => {
     const y = pegelStartY - i * pegelRowH;
 
     draw(t(r.bohrNr, 6), PCOL.bohrNr, y, 8);

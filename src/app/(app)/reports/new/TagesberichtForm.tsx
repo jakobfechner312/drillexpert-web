@@ -617,11 +617,21 @@ if (mode === "edit") {
   });
 }, [mode, report?.signatures?.clientOrManagerSigPng, report?.signatures?.drillerSigPng]);
 
-  const saveSignatureToState = () => {
+  const saveClientSignature = () => {
     const clientPng = sigClientRef.current?.isEmpty()
       ? ""
       : sigClientRef.current?.getTrimmedCanvas().toDataURL("image/png");
 
+    setReport((p) => ({
+      ...p,
+      signatures: {
+        ...(p.signatures ?? { clientOrManagerName: "", drillerName: "" }),
+        clientOrManagerSigPng: clientPng || "",
+      },
+    }));
+  };
+
+  const saveDrillerSignature = () => {
     const drillerPng = sigDrillerRef.current?.isEmpty()
       ? ""
       : sigDrillerRef.current?.getTrimmedCanvas().toDataURL("image/png");
@@ -630,7 +640,6 @@ if (mode === "edit") {
       ...p,
       signatures: {
         ...(p.signatures ?? { clientOrManagerName: "", drillerName: "" }),
-        clientOrManagerSigPng: clientPng || "",
         drillerSigPng: drillerPng || "",
       },
     }));
@@ -638,12 +647,12 @@ if (mode === "edit") {
 
   const clearClientSig = () => {
     sigClientRef.current?.clear();
-    saveSignatureToState();
+    saveClientSignature();
   };
 
   const clearDrillerSig = () => {
     sigDrillerRef.current?.clear();
-    saveSignatureToState();
+    saveDrillerSignature();
   };
 
   function update<K extends keyof Tagesbericht>(key: K, value: Tagesbericht[K]) {
@@ -766,76 +775,126 @@ if (mode === "edit") {
       client: "Stadt Freiburg",
       name: "Team A",
       dailyReportNo: "TB-001",
-      vehicles: "LKW 7.5t, Bohrgerät X2",
+      vehicles: "LKW 7.5t, Bohrgerät X2, Sprinter",
       aNr: "A-2026-001",
       device: "Bohrgerät BG-12",
       trailer: "Anhänger 2t",
       workTimeRows: [
         { from: "07:00", to: "12:00" },
-        { from: "12:30", to: "16:00" },
+        { from: "12:30", to: "16:30" },
       ],
       breakRows: [
         { from: "09:30", to: "09:45" },
         { from: "12:00", to: "12:30" },
       ],
       weather: {
-        conditions: ["trocken"],
+        conditions: ["trocken", "regen"],
         tempMaxC: 18,
         tempMinC: 8,
       },
       transportRows: [
         { from: "Lager", to: "Baustelle", km: 12, time: "00:20" },
+        { from: "Baustelle", to: "Deponie", km: 8, time: "00:15" },
       ],
       ruhewasserVorArbeitsbeginnM: 2.4,
       entfernungWohnwagenBaustelleKm: 12,
       entfernungWohnwagenBaustelleZeit: "00:20",
-      workCycles: ["Bohren", "Verrohren"],
-      otherWork: "Material angeliefert, Baustelle eingerichtet.",
+      workStartBefore: 6.5,
+      workStartAfter: 7.0,
+      workStartDistanceM: 250,
+      workCycles: ["Bohren", "Verrohren", "Verfüllen"],
+      otherWork: "Material angeliefert, Baustelle eingerichtet, Sondierung.",
       remarks: "Keine besonderen Vorkommnisse.",
-      tableRows: [
-        {
-          ...emptyTableRow(),
-          boNr: "B1",
-          gebohrtVon: "0.0",
-          gebohrtBis: "12.5",
-          verrohrtVon: "0.0",
-          verrohrtBis: "10.0",
-          verrohrtFlags: ["RB"],
-          vollbohrVon: "12.5",
-          vollbohrBis: "150",
-          probenFlags: ["GP"],
-          spt: "N/A",
-          verfuellung: {
-            tonVon: "0.0",
-            tonBis: "2.0",
-            bohrgutVon: "2.0",
-            bohrgutBis: "12.5",
-            zementBentVon: "",
-            zementBentBis: "",
-            betonVon: "",
-            betonBis: "",
-          },
+      tableRows: Array.from({ length: 5 }, (_, i) => ({
+        ...emptyTableRow(),
+        boNr: `B${i + 1}`,
+        gebohrtVon: "0.0",
+        gebohrtBis: String(6 + i * 1.5),
+        verrohrtVon: "0.0",
+        verrohrtBis: String(5 + i * 1.2),
+        verrohrtFlags: i % 4 === 0 ? ["RB"] : i % 4 === 1 ? ["EK"] : i % 4 === 2 ? ["DK"] : ["S"],
+        vollbohrVon: String(6 + i * 1.5),
+        vollbohrBis: String(7 + i * 1.7),
+        hindernisVon: String(2 + i * 0.4),
+        hindernisBis: String(2.1 + i * 0.4),
+        hindernisZeit: "00:05",
+        schachtenVon: "0.5",
+        schachtenBis: "1.0",
+        schachtenZeit: "00:15",
+        probenFlags: i % 2 === 0 ? ["GP", "KP"] : ["SP", "WP"],
+        spt: "12/30",
+        verfuellung: {
+          tonVon: "0.0",
+          tonBis: "1.5",
+          bohrgutVon: "1.5",
+          bohrgutBis: String(6 + i * 1.5),
+          zementBentVon: String(6 + i * 1.5),
+          zementBentBis: String(6.5 + i * 1.5),
+          betonVon: String(6.5 + i * 1.5),
+          betonBis: String(7 + i * 1.7),
         },
-      ],
-      workers: [
-        {
-          ...emptyWorker(),
-          name: "Max Mustermann",
-          reineArbeitsStd: "8",
-          wochenendfahrt: "0",
-          ausfallStd: "0",
-          ausloeseT: true,
-          ausloeseN: false,
-          arbeitsakteNr: "AA-1001",
-          stunden: Array(16).fill(""),
-        },
-      ],
-      umsetzenRows: [
-        { ...emptyUmsetzenRow(), von: "P1", auf: "P2", entfernungM: "120", zeit: "00:25", begruendung: "Zugang", wartezeit: "0" },
-      ],
-      pegelAusbauRows: [
-        { ...emptyPegelAusbauRow(), bohrNr: "B1", pegelDm: "DN100", sumpfVon: "10.0", sumpfBis: "12.5", filterVon: "6.0", filterBis: "10.0" },
-      ],
+      })),
+      workers: Array.from({ length: 3 }, (_, i) => ({
+        ...emptyWorker(),
+        name: i === 0 ? "Max Mustermann" : i === 1 ? "Erika Beispiel" : "Tim B.",
+        reineArbeitsStd: i === 2 ? "6.5" : "8",
+        wochenendfahrt: "0",
+        ausfallStd: i === 1 ? "0.5" : "0",
+        ausloeseT: i === 0,
+        ausloeseN: i === 1,
+        arbeitsakteNr: `AA-100${i + 1}`,
+        stunden: Array(16)
+          .fill("")
+          .map((_, j) => (j % (i + 2) === 0 ? "1" : "")),
+      })),
+      umsetzenRows: Array.from({ length: 5 }, (_, i) => ({
+        ...emptyUmsetzenRow(),
+        von: `P${i + 1}`,
+        auf: `P${i + 2}`,
+        entfernungM: String(80 + i * 15),
+        zeit: "00:15",
+        begruendung: "Umsetzen",
+        wartezeit: String(i),
+      })),
+      pegelAusbauRows: Array.from({ length: 3 }, (_, i) => ({
+        ...emptyPegelAusbauRow(),
+        bohrNr: `B${i + 1}`,
+        pegelDm: i % 2 === 0 ? "DN100" : "DN80",
+        sumpfVon: String(8 + i),
+        sumpfBis: String(9 + i),
+        filterVon: String(4 + i),
+        filterBis: String(8 + i),
+        rohrePvcVon: "0.0",
+        rohrePvcBis: String(4 + i),
+        aufsatzPvcVon: String(4 + i),
+        aufsatzPvcBis: String(4.5 + i),
+        aufsatzStahlVon: String(4.5 + i),
+        aufsatzStahlBis: String(5 + i),
+        filterkiesVon: String(4 + i),
+        filterkiesBis: String(8 + i),
+        tonVon: "0.0",
+        tonBis: "1.5",
+        sandVon: "1.5",
+        sandBis: "2.5",
+        zementBentVon: String(8 + i),
+        zementBentBis: String(8.5 + i),
+        bohrgutVon: String(8.5 + i),
+        bohrgutBis: String(9 + i),
+        sebaKap: i % 2 === 0,
+        boKap: i % 3 === 0,
+        hydrKap: i % 2 === 1,
+        fernGask: i % 3 === 1,
+        passavant: i % 2 === 0,
+        betonSockel: true,
+        abstHalter: i % 2 === 0,
+        klarpump: i % 3 === 2,
+      })),
+      signatures: {
+        clientOrManagerName: "Bauleiter: T. Becker",
+        drillerName: "Max Mustermann",
+        clientOrManagerSigPng: "",
+        drillerSigPng: "",
+      },
     };
 
     setReport(filled);
@@ -853,6 +912,10 @@ if (mode === "edit") {
   }
 
   /** ---------- Tabelle ---------- */
+  const MAX_TABLE_ROWS = 5;
+  const MAX_UMSETZEN_ROWS = 5;
+  const MAX_PEGEL_ROWS = 3;
+
   const safeTableRows = useMemo<TableRow[]>(
     () => (Array.isArray(report.tableRows) && report.tableRows.length ? report.tableRows : [emptyTableRow()]),
     [report.tableRows]
@@ -869,6 +932,7 @@ if (mode === "edit") {
   function addRow() {
     setReport((p) => {
       const rows = Array.isArray(p.tableRows) && p.tableRows.length ? [...p.tableRows] : [emptyTableRow()];
+      if (rows.length >= MAX_TABLE_ROWS) return { ...p, tableRows: rows };
       rows.push(emptyTableRow());
       return { ...p, tableRows: rows };
     });
@@ -900,6 +964,7 @@ if (mode === "edit") {
   function addUmsetzenRow() {
     setReport((p) => {
       const rows = Array.isArray(p.umsetzenRows) && p.umsetzenRows.length ? [...p.umsetzenRows] : [];
+      if (rows.length >= MAX_UMSETZEN_ROWS) return { ...p, umsetzenRows: rows.length ? rows : [emptyUmsetzenRow()] };
       rows.push(emptyUmsetzenRow());
       return { ...p, umsetzenRows: rows.length ? rows : [emptyUmsetzenRow()] };
     });
@@ -992,6 +1057,7 @@ if (mode === "edit") {
   function addPegelRow() {
     setReport((p) => {
       const rows = Array.isArray(p.pegelAusbauRows) && p.pegelAusbauRows.length ? [...p.pegelAusbauRows] : [];
+      if (rows.length >= MAX_PEGEL_ROWS) return { ...p, pegelAusbauRows: rows.length ? rows : [emptyPegelAusbauRow()] };
       rows.push(emptyPegelAusbauRow());
       return { ...p, pegelAusbauRows: rows.length ? rows : [emptyPegelAusbauRow()] };
     });
@@ -1027,8 +1093,39 @@ if (mode === "edit") {
     ["klarpump", "Klarpump."],
   ];
 
+  const GroupCard = ({
+    title,
+    badge,
+    children,
+  }: {
+    title: string;
+    badge?: string;
+    children: React.ReactNode;
+  }) => (
+    <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between gap-3 bg-sky-50/60 px-4 py-2 border-b border-slate-200/70">
+        <h2 className="text-sm font-semibold text-sky-900 tracking-wide">{title}</h2>
+        {badge ? (
+          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            {badge}
+          </span>
+        ) : null}
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+
+  const SubGroup = ({ title, children }: { title: string; children: React.ReactNode }) => (
+    <div className="rounded-xl border border-slate-200/70 bg-white">
+      <div className="border-b border-slate-200/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+        {title}
+      </div>
+      <div className="p-3">{children}</div>
+    </div>
+  );
+
   return (
-    <div className="mt-8 space-y-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
+    <div className="mt-6 space-y-6 max-w-[1600px] mx-auto w-full px-3 sm:px-5 lg:px-6 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
       {projectModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
@@ -1119,16 +1216,23 @@ if (mode === "edit") {
           </div>
         </div>
       )}
-      {/* ======================= KOPF ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold text-sky-900">Kopf</h2>
-
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          {/* LINKS */}
-          <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-            <h3 className="text-lg font-semibold text-sky-900">Allgemein</h3>
-
-            <div className="mt-4 grid gap-4">
+      {/* ======================= KOPF (PDF-LAYOUT) ======================= */}
+      <GroupCard title="Tagesbericht" badge="Kopfbereich">
+        <div className="flex flex-wrap items-center justify-end gap-3 mb-4">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            Nr.
+            <input
+              className="w-40 rounded-xl border px-3 py-2 text-sm bg-white"
+              value={report.dailyReportNo ?? ""}
+              onChange={(e) => update("dailyReportNo", e.target.value)}
+              placeholder="TB-001"
+            />
+          </label>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.1fr_1.1fr_1fr]">
+          {/* LINKS: Datum / Projekt / Auftraggeber */}
+          <SubGroup title="Stammdaten">
+            <div className="grid gap-3">
               <label className="space-y-1">
                 <span className="text-sm text-slate-600">Datum</span>
                 <input
@@ -1144,361 +1248,266 @@ if (mode === "edit") {
                   className="w-full rounded-xl border p-3"
                   value={report.project ?? ""}
                   onChange={(e) => update("project", e.target.value)}
-                  placeholder="z.B. Baustelle Freiburg Nord"
                 />
               </label>
-
               <label className="space-y-1">
                 <span className="text-sm text-slate-600">Auftraggeber</span>
                 <input
                   className="w-full rounded-xl border p-3"
                   value={report.client ?? ""}
                   onChange={(e) => update("client", e.target.value)}
-                  placeholder="z.B. Stadt Freiburg"
                 />
               </label>
             </div>
-          </section>
+          </SubGroup>
 
-          {/* RECHTS */}
-          <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-            <h3 className="text-lg font-semibold text-sky-900">Oben rechts</h3>
-            <p className="mt-1 text-sm text-slate-600">Fahrzeuge / A.Nr. / Gerät + Arbeitszeit & Pausen</p>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <label className="space-y-1">
+          {/* MITTE: Fahrzeuge / A.Nr. / Gerät + Zeiten */}
+          <SubGroup title="Fahrzeuge & Zeiten">
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="space-y-1 md:col-span-3">
                 <span className="text-sm text-slate-600">Fahrzeuge</span>
                 <input className="w-full rounded-xl border p-3" value={report.vehicles ?? ""} onChange={(e) => update("vehicles", e.target.value)} />
               </label>
-
               <label className="space-y-1">
                 <span className="text-sm text-slate-600">A.Nr.</span>
                 <input className="w-full rounded-xl border p-3" value={report.aNr ?? ""} onChange={(e) => update("aNr", e.target.value)} />
               </label>
-
-              <label className="space-y-1">
+              <label className="space-y-1 md:col-span-2">
                 <span className="text-sm text-slate-600">Gerät</span>
                 <input className="w-full rounded-xl border p-3" value={report.device ?? ""} onChange={(e) => update("device", e.target.value)} />
               </label>
             </div>
 
-           <div className="mt-4 rounded-xl border p-4">
-            <div className="flex items-center justify-between">
+            <div className="mt-4 rounded-xl border border-slate-200/70 p-3 bg-slate-50/60">
+              <div className="flex items-center justify-between">
                 <h4 className="font-medium">Arbeitszeit & Pausen</h4>
                 <div className="flex gap-2">
-                <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addWorkAndBreakRow}>+ Zeile</button>
-                <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastWorkAndBreakRow}>– Zeile</button>
+                  <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={addWorkAndBreakRow}>+ Zeile</button>
+                  <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={removeLastWorkAndBreakRow}>– Zeile</button>
                 </div>
-            </div>
-
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-slate-200/70 bg-slate-50 p-3">
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-slate-200/70 bg-white p-3">
                   <div className="text-sm font-medium text-slate-700">Arbeitszeit</div>
                   <div className="mt-2 space-y-3">
                     {safeWorkTimes.slice(0, 2).map((r, i) => (
                       <div key={i} className="grid grid-cols-2 gap-3">
-                        <input type="time" className="w-full rounded-xl border p-3"
-                          value={r.from ?? ""} onChange={(e) => setWorkTimeRow(i, { from: e.target.value })} />
-                        <input type="time" className="w-full rounded-xl border p-3"
-                          value={r.to ?? ""} onChange={(e) => setWorkTimeRow(i, { to: e.target.value })} />
+                        <input type="time" className="w-full rounded-xl border p-3" value={r.from ?? ""} onChange={(e) => setWorkTimeRow(i, { from: e.target.value })} />
+                        <input type="time" className="w-full rounded-xl border p-3" value={r.to ?? ""} onChange={(e) => setWorkTimeRow(i, { to: e.target.value })} />
                       </div>
                     ))}
                   </div>
                 </div>
-                <div className="rounded-xl border border-slate-200/70 bg-slate-50 p-3">
+                <div className="rounded-xl border border-slate-200/70 bg-white p-3">
                   <div className="text-sm font-medium text-slate-700">Pausen</div>
                   <div className="mt-2 space-y-3">
                     {safeBreaks.slice(0, 2).map((r, i) => (
                       <div key={i} className="grid grid-cols-2 gap-3">
-                        <input type="time" className="w-full rounded-xl border p-3"
-                          value={r.from ?? ""} onChange={(e) => setBreakRow(i, { from: e.target.value })} />
-                        <input type="time" className="w-full rounded-xl border p-3"
-                          value={r.to ?? ""} onChange={(e) => setBreakRow(i, { to: e.target.value })} />
+                        <input type="time" className="w-full rounded-xl border p-3" value={r.from ?? ""} onChange={(e) => setBreakRow(i, { from: e.target.value })} />
+                        <input type="time" className="w-full rounded-xl border p-3" value={r.to ?? ""} onChange={(e) => setBreakRow(i, { to: e.target.value })} />
                       </div>
                     ))}
                   </div>
                 </div>
+              </div>
             </div>
+          </SubGroup>
+
+          {/* RECHTS: Wetter / Transport / Ruhewasser */}
+          <SubGroup title="Wetter / Transport / Entfernung">
+            <div className="rounded-xl border border-slate-200/70 p-3 bg-slate-50/60">
+              <h3 className="font-medium">Wetter</h3>
+              <div className="mt-3 flex flex-wrap gap-3">
+                {(["trocken", "regen", "frost"] as const).map((c) => (
+                  <label key={c} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={(report.weather?.conditions ?? []).includes(c)}
+                      onChange={(e) => {
+                        const cur = new Set(report.weather?.conditions ?? []);
+                        if (e.target.checked) cur.add(c);
+                        else cur.delete(c);
+                        setReport((p) => ({
+                          ...p,
+                          weather: {
+                            ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
+                            conditions: Array.from(cur),
+                          },
+                        }));
+                      }}
+                    />
+                    <span>{c}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-sm text-slate-600">Temp. Max (°C)</span>
+                  <input
+                    className="w-full rounded-xl border p-3"
+                    inputMode="numeric"
+                    value={
+                      typeof report.weather?.tempMaxC === "number" && Number.isFinite(report.weather?.tempMaxC)
+                        ? String(report.weather?.tempMaxC)
+                        : ""
+                    }
+                    onChange={(e) =>
+                      setReport((p) => ({
+                        ...p,
+                        weather: {
+                          ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
+                          tempMaxC:
+                            e.target.value === "" || Number.isNaN(Number(e.target.value))
+                              ? null
+                              : Number(e.target.value),
+                        },
+                      }))
+                    }
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-sm text-slate-600">Temp. Min (°C)</span>
+                  <input
+                    className="w-full rounded-xl border p-3"
+                    inputMode="numeric"
+                    value={
+                      typeof report.weather?.tempMinC === "number" && Number.isFinite(report.weather?.tempMinC)
+                        ? String(report.weather?.tempMinC)
+                        : ""
+                    }
+                    onChange={(e) =>
+                      setReport((p) => ({
+                        ...p,
+                        weather: {
+                          ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
+                          tempMinC:
+                            e.target.value === "" || Number.isNaN(Number(e.target.value))
+                              ? null
+                              : Number(e.target.value),
+                        },
+                      }))
+                    }
+                  />
+                </label>
+              </div>
             </div>
-          </section>
+
+            <div className="rounded-xl border border-slate-200/70 p-3 bg-white">
+              <div className="flex items-center justify-between">
+                <h3 className="font-medium">Transport</h3>
+                <div className="flex gap-2">
+                  <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={addTransportRow}>+ Zeile</button>
+                  <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={removeLastTransportRow}>– Zeile</button>
+                </div>
+              </div>
+              <div className="mt-3 space-y-3">
+                {safeTransport.map((r, i) => (
+                  <div key={i} className="grid gap-3 md:grid-cols-4">
+                    <input className="rounded-xl border p-3" value={r.from ?? ""} onChange={(e) => setTransportRow(i, { from: e.target.value })} placeholder="von" />
+                    <input className="rounded-xl border p-3" value={r.to ?? ""} onChange={(e) => setTransportRow(i, { to: e.target.value })} placeholder="nach" />
+                    <input className="rounded-xl border p-3" value={r.km ?? ""} onChange={(e) => setTransportRow(i, { km: e.target.value === "" ? null : Number(e.target.value) })} placeholder="km" />
+                    <input className="rounded-xl border p-3" value={r.time ?? ""} onChange={(e) => setTransportRow(i, { time: e.target.value })} placeholder="Zeit" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200/70 p-3 bg-white">
+              <h3 className="font-medium">Ruhewasser / Entfernung</h3>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <label className="space-y-1">
+                  <span className="min-h-[32px] text-sm leading-4 text-slate-600">Ruhewasser (m)</span>
+                  <input
+                    className="w-full rounded-xl border p-3"
+                    inputMode="numeric"
+                    value={report.ruhewasserVorArbeitsbeginnM ?? ""}
+                    onChange={(e) =>
+                      update(
+                        "ruhewasserVorArbeitsbeginnM",
+                        e.target.value === "" ? null : Number(e.target.value)
+                      )
+                    }
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="min-h-[32px] text-sm leading-4 text-slate-600">Entfernung (km)</span>
+                  <input
+                    className="w-full rounded-xl border p-3"
+                    inputMode="numeric"
+                    value={report.entfernungWohnwagenBaustelleKm ?? ""}
+                    onChange={(e) =>
+                      update(
+                        "entfernungWohnwagenBaustelleKm",
+                        e.target.value === "" ? null : Number(e.target.value)
+                      )
+                    }
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="min-h-[32px] text-sm leading-4 text-slate-600">Zeit</span>
+                  <input
+                    className="w-full rounded-xl border p-3"
+                    value={report.entfernungWohnwagenBaustelleZeit ?? ""}
+                    onChange={(e) =>
+                      update("entfernungWohnwagenBaustelleZeit", e.target.value)
+                    }
+                  />
+                </label>
+              </div>
+            </div>
+          </SubGroup>
         </div>
-      </section>
-      {/* ======================= WETTER + TRANSPORT ======================= */}
-    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-    <h2 className="text-lg font-semibold text-sky-900">Wetter / Transport</h2>
+      </GroupCard>
 
-    {/* Wetter */}
-    <div className="mt-4 rounded-xl border p-4">
-        <h3 className="font-medium">Wetter</h3>
-
-        <div className="mt-3 flex flex-wrap gap-4">
-        {(["trocken", "regen", "frost"] as const).map((c) => (
-            <label key={c} className="flex items-center gap-2 text-sm">
-            <input
-                type="checkbox"
-                checked={(report.weather?.conditions ?? []).includes(c)}
-                onChange={(e) => {
-                const cur = new Set(report.weather?.conditions ?? []);
-                if (e.target.checked) cur.add(c);
-                else cur.delete(c);
-
-                setReport((p) => ({
-                    ...p,
-                    weather: {
-                    ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
-                    conditions: Array.from(cur),
-                    },
-                }));
-                }}
-            />
-            <span>{c}</span>
-            </label>
-        ))}
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <label className="space-y-1">
-            <span className="text-sm text-slate-600">Temp. Max (°C)</span>
-            <input
-            className="w-full rounded-xl border p-3"
-            inputMode="numeric"
-            value={
-              typeof report.weather?.tempMaxC === "number" && Number.isFinite(report.weather?.tempMaxC)
-                ? String(report.weather?.tempMaxC)
-                : ""
-            }
-            onChange={(e) =>
-                setReport((p) => ({
-                ...p,
-                weather: {
-                    ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
-                    tempMaxC:
-                      e.target.value === "" || Number.isNaN(Number(e.target.value))
-                        ? null
-                        : Number(e.target.value),
-                },
-                }))
-            }
-            placeholder="z.B. 12"
-            />
-        </label>
-
-        <label className="space-y-1">
-            <span className="text-sm text-slate-600">Temp. Min (°C)</span>
-            <input
-            className="w-full rounded-xl border p-3"
-            inputMode="numeric"
-            value={
-              typeof report.weather?.tempMinC === "number" && Number.isFinite(report.weather?.tempMinC)
-                ? String(report.weather?.tempMinC)
-                : ""
-            }
-            onChange={(e) =>
-                setReport((p) => ({
-                ...p,
-                weather: {
-                    ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
-                    tempMinC:
-                      e.target.value === "" || Number.isNaN(Number(e.target.value))
-                        ? null
-                        : Number(e.target.value),
-                },
-                }))
-            }
-            placeholder="z.B. -1"
-            />
-        </label>
-        </div>
-    </div>
-    </section>
-            {/* Ruhewasser / Entfernung */}
-<div className="mt-4 rounded-xl border p-4">
-  <h3 className="font-medium">Ruhewasser / Entfernung</h3>
-
-  <div className="mt-3 grid gap-4 md:grid-cols-3">
-    {/* Ruhewasser vor Arbeitsbeginn */}
-    <label className="space-y-1">
-      <span className="text-sm text-slate-600">
-        Ruhewasser vor Arbeitsbeginn (m)
-      </span>
-      <input
-        className="w-full rounded-xl border p-3"
-        inputMode="numeric"
-        value={report.ruhewasserVorArbeitsbeginnM ?? ""}
-        onChange={(e) =>
-          update(
-            "ruhewasserVorArbeitsbeginnM",
-            e.target.value === "" ? null : Number(e.target.value)
-          )
-        }
-        placeholder="z. B. 2.4"
-      />
-    </label>
-
-    {/* Entfernung Wohnwagen / Baustelle (km) */}
-    <label className="space-y-1">
-      <span className="text-sm text-slate-600">
-        Entfernung Wohnwagen / Baustelle (km)
-      </span>
-      <input
-        className="w-full rounded-xl border p-3"
-        inputMode="numeric"
-        value={report.entfernungWohnwagenBaustelleKm ?? ""}
-        onChange={(e) =>
-          update(
-            "entfernungWohnwagenBaustelleKm",
-            e.target.value === "" ? null : Number(e.target.value)
-          )
-        }
-        placeholder="z. B. 12"
-      />
-    </label>
-
-    {/* Zeit */}
-        <label className="space-y-1">
-        <span className="text-sm text-slate-600">Zeit</span>
-        <input
-            className="w-full rounded-xl border p-3"
-            value={report.entfernungWohnwagenBaustelleZeit ?? ""}
-            onChange={(e) =>
-            update("entfernungWohnwagenBaustelleZeit", e.target.value)
-            }
-            placeholder="z. B. 00:20"
-        />
-        </label>
-    </div>
-    </div>
-
-
-    {/* Transport (ausklappbar) */}
-    <section className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-    <div className="flex items-center justify-between gap-3">
-        <div>
-        <h3 className="font-medium">Transport</h3>
-        <p className="mt-1 text-sm text-slate-600">von → nach, km, Zeit</p>
-        </div>
-
+      {/* ======================= ARBEITER (TABELLENLAYOUT) ======================= */}
+      <GroupCard title="Arbeitsakte / Stunden" badge="Personal">
         <div className="flex gap-2">
-        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addTransportRow}>
-            + Zeile
-        </button>
-        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastTransportRow}>
-            – Zeile
-        </button>
-        </div>
-    </div>
-
-    <div className="mt-4 space-y-3">
-        {safeTransport.map((r, i) => (
-        <div key={i} className="grid gap-3 md:grid-cols-4">
-            <input
-            className="rounded-xl border p-3"
-            value={r.from ?? ""}
-            onChange={(e) => setTransportRow(i, { from: e.target.value })}
-            placeholder="von"
-            />
-            <input
-            className="rounded-xl border p-3"
-            value={r.to ?? ""}
-            onChange={(e) => setTransportRow(i, { to: e.target.value })}
-            placeholder="nach"
-            />
-            <input
-            className="rounded-xl border p-3"
-            value={r.km ?? ""}
-            onChange={(e) => setTransportRow(i, { km: e.target.value === "" ? null : Number(e.target.value) })}
-            placeholder="km"
-            />
-            <input
-            className="rounded-xl border p-3"
-            value={r.time ?? ""}
-            onChange={(e) => setTransportRow(i, { time: e.target.value })}
-            placeholder="Zeit"
-            />
-        </div>
-        ))}
-    </div>
-    </section>
-
-      {/* ======================= ARBEITER ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold text-sky-900">Arbeiter / Arbeitsakte</h2>
-
-        <div className="mt-3 flex gap-3">
           <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addWorker}>+ Arbeiter</button>
           <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastWorker}>– Arbeiter</button>
           <span className="text-sm text-slate-500 self-center">Arbeiter: {safeWorkers.length}</span>
         </div>
 
-        <div className="mt-4 space-y-4">
-          {safeWorkers.map((w, idx) => (
-            <div key={idx} className="rounded-xl border p-4">
-              <div className="grid gap-3 md:grid-cols-12">
-                <div className="md:col-span-3">
-                  <label className="space-y-1">
-                    <span className="text-sm text-slate-600">Name</span>
-                    <input className="w-full rounded-xl border p-3" value={w.name ?? ""} onChange={(e) => setWorker(idx, { name: e.target.value })} />
-                  </label>
+        <div className="mt-4 overflow-x-auto rounded-xl border">
+          <div className="min-w-[840px] w-full">
+            <div className="grid w-full grid-cols-[220px_80px_80px_80px_50px_50px_repeat(16,minmax(32px,1fr))] border-b text-[12px] font-medium text-slate-600">
+              <div className="border-b border-r px-2 py-2">Name</div>
+              <div className="border-b border-r px-2 py-2">Reine Std.</div>
+              <div className="border-b border-r px-2 py-2">Wochenend</div>
+              <div className="border-b border-r px-2 py-2">Ausfall</div>
+              <div className="border-b border-r px-2 py-2 text-center">T</div>
+              <div className="border-b border-r px-2 py-2 text-center">N</div>
+              {Array.from({ length: 16 }).map((_, i) => (
+                <div key={i} className="border-b border-r px-1 py-2 text-center">{i + 1}</div>
+              ))}
+            </div>
+
+            {safeWorkers.map((w, idx) => (
+              <div
+                key={idx}
+                className="grid w-full grid-cols-[220px_80px_80px_80px_50px_50px_repeat(16,minmax(32px,1fr))] text-[12px]"
+              >
+                <div className="border-b border-r px-2 py-1">
+                  <input className="w-full rounded border px-2 py-1 text-[12px]" value={w.name ?? ""} onChange={(e) => setWorker(idx, { name: e.target.value })} />
                 </div>
-
-                <div className="md:col-span-2">
-                  <label className="space-y-1">
-                    <span className="text-sm text-slate-600">Reine Arbeits Std.</span>
-                    <input className="w-full rounded-xl border p-3" value={w.reineArbeitsStd ?? ""} onChange={(e) => setWorker(idx, { reineArbeitsStd: e.target.value })} />
-                  </label>
+                <div className="border-b border-r px-2 py-1">
+                  <input className="w-full rounded border px-2 py-1 text-center text-[12px]" value={w.reineArbeitsStd ?? ""} onChange={(e) => setWorker(idx, { reineArbeitsStd: e.target.value })} />
                 </div>
-
-                <div className="md:col-span-2">
-                  <label className="space-y-1">
-                    <span className="text-sm text-slate-600">Wochenendfahrt</span>
-                    <input className="w-full rounded-xl border p-3" value={w.wochenendfahrt ?? ""} onChange={(e) => setWorker(idx, { wochenendfahrt: e.target.value })} />
-                  </label>
+                <div className="border-b border-r px-2 py-1">
+                  <input className="w-full rounded border px-2 py-1 text-center text-[12px]" value={w.wochenendfahrt ?? ""} onChange={(e) => setWorker(idx, { wochenendfahrt: e.target.value })} />
                 </div>
-
-                <div className="md:col-span-2">
-                  <label className="space-y-1">
-                    <span className="text-sm text-slate-600">Ausfall Std.</span>
-                    <input className="w-full rounded-xl border p-3" value={w.ausfallStd ?? ""} onChange={(e) => setWorker(idx, { ausfallStd: e.target.value })} />
-                  </label>
+                <div className="border-b border-r px-2 py-1">
+                  <input className="w-full rounded border px-2 py-1 text-center text-[12px]" value={w.ausfallStd ?? ""} onChange={(e) => setWorker(idx, { ausfallStd: e.target.value })} />
                 </div>
-
-                {/* ✅ Auslöse: nur T / N */}
-                <div className="md:col-span-2 rounded-xl border p-3">
-                <div className="text-sm text-slate-600 mb-2">Auslöse</div>
-
-                <div className="flex flex-col gap-2">
-                    <label className="flex items-center gap-2 text-sm">
+                <div className="border-b border-r flex items-center justify-center">
+                  <input type="checkbox" checked={!!w.ausloeseT} onChange={(e) => setWorker(idx, { ausloeseT: e.target.checked })} />
+                </div>
+                <div className="border-b border-r flex items-center justify-center">
+                  <input type="checkbox" checked={!!w.ausloeseN} onChange={(e) => setWorker(idx, { ausloeseN: e.target.checked })} />
+                </div>
+                {(Array.isArray(w.stunden) ? w.stunden : Array(16).fill("")).slice(0, 16).map((val, j) => (
+                  <div key={j} className="border-b border-r px-1 py-1">
                     <input
-                        type="checkbox"
-                        checked={!!w.ausloeseT}
-                        onChange={(e) =>
-                        setWorker(idx, { ausloeseT: e.target.checked })
-                        }
-                    />
-                    <span>T</span>
-                    </label>
-
-                    <label className="flex items-center gap-2 text-sm">
-                    <input
-                        type="checkbox"
-                        checked={!!w.ausloeseN}
-                        onChange={(e) =>
-                        setWorker(idx, { ausloeseN: e.target.checked })
-                        }
-                    />
-                    <span>N</span>
-                    </label>
-                </div>
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-xl border p-3">
-                <div className="text-sm text-slate-600 mb-2">Arbeitstakt/Stunden (Kästchen)</div>
-                <div className="grid gap-2 grid-cols-8 md:grid-cols-16">
-                  {(Array.isArray(w.stunden) ? w.stunden : Array(16).fill("")).slice(0, 16).map((val, j) => (
-                    <input
-                      key={j}
-                      className="rounded-lg border p-2 text-center"
+                      className="w-full rounded border px-1 py-1 text-center text-[12px]"
                       value={val ?? ""}
                       onChange={(e) => {
                         const st = Array.isArray(w.stunden) ? [...w.stunden] : Array(16).fill("");
@@ -1506,22 +1515,30 @@ if (mode === "edit") {
                         setWorker(idx, { stunden: st });
                       }}
                     />
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </section>
+      </GroupCard>
 
       {/* ======================= TABELLE ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold text-sky-900">Tabelle (Bohrung / Proben / Verfüllung)</h2>
+      <GroupCard title="Tabelle (Bohrung / Proben / Verfüllung)" badge="Kernbereich">
 
         <div className="mt-3 flex gap-3">
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addRow}>+ Zeile</button>
+          <button
+            type="button"
+            className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+            onClick={addRow}
+            disabled={safeTableRows.length >= MAX_TABLE_ROWS}
+          >
+            + Zeile
+          </button>
           <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastRow}>– Zeile</button>
-          <span className="text-sm text-slate-500 self-center">Zeilen: {safeTableRows.length}</span>
+          <span className="text-sm text-slate-500 self-center">
+            Zeilen: {safeTableRows.length} / {MAX_TABLE_ROWS}
+          </span>
         </div>
 
         <div className="mt-4 space-y-4">
@@ -1605,16 +1622,24 @@ if (mode === "edit") {
             </div>
           ))}
         </div>
-      </section>
+      </GroupCard>
 
       {/* ======================= UMSETZEN ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm mt-4">
-        <h2 className="text-lg font-semibold text-sky-900">Umsetzen</h2>
+      <GroupCard title="Umsetzen" badge="Logistik">
 
         <div className="mt-3 flex gap-3">
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addUmsetzenRow}>+ Zeile</button>
+          <button
+            type="button"
+            className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+            onClick={addUmsetzenRow}
+            disabled={safeUmsetzen.length >= MAX_UMSETZEN_ROWS}
+          >
+            + Zeile
+          </button>
           <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastUmsetzenRow}>– Zeile</button>
-          <span className="text-sm text-slate-500 self-center">Zeilen: {safeUmsetzen.length}</span>
+          <span className="text-sm text-slate-500 self-center">
+            Zeilen: {safeUmsetzen.length} / {MAX_UMSETZEN_ROWS}
+          </span>
         </div>
 
         <div className="mt-4 space-y-3">
@@ -1631,16 +1656,24 @@ if (mode === "edit") {
             </div>
           ))}
         </div>
-      </section>
+      </GroupCard>
 
       {/* ======================= PEGELAUSBAU ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm mt-6">
-        <h2 className="text-lg font-semibold text-sky-900">Pegelausbau</h2>
+      <GroupCard title="Pegelausbau" badge="Ausbau">
 
         <div className="mt-3 flex gap-3">
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addPegelRow}>+ Zeile</button>
+          <button
+            type="button"
+            className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+            onClick={addPegelRow}
+            disabled={safePegel.length >= MAX_PEGEL_ROWS}
+          >
+            + Zeile
+          </button>
           <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastPegelRow}>– Zeile</button>
-          <span className="text-sm text-slate-500 self-center">Zeilen: {safePegel.length}</span>
+          <span className="text-sm text-slate-500 self-center">
+            Zeilen: {safePegel.length} / {MAX_PEGEL_ROWS}
+          </span>
         </div>
 
         {safePegel.map((r, i) => (
@@ -1711,12 +1744,9 @@ if (mode === "edit") {
             </div>
           </div>
         ))}
-      </section>
+      </GroupCard>
       {/* ======================= SONSTIGE / BEMERKUNGEN / UNTERSCHRIFTEN ======================= */}
-      <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm mt-6">
-    <h2 className="text-lg font-semibold text-sky-900">
-      Sonstige / Bemerkungen / Unterschriften
-    </h2>
+      <GroupCard title="Sonstige / Bemerkungen / Unterschriften" badge="Abschluss">
 
     {/* Texte */}
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -1787,7 +1817,7 @@ if (mode === "edit") {
             <button
               type="button"
               className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
-              onClick={saveSignatureToState}
+              onClick={saveClientSignature}
             >
               Übernehmen
             </button>
@@ -1836,14 +1866,14 @@ if (mode === "edit") {
             <button
               type="button"
               className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
-              onClick={saveSignatureToState}
+              onClick={saveDrillerSignature}
             >
               Übernehmen
             </button>
           </div>
         </div>
       </div>
-    </section>
+    </GroupCard>
 
       {/* ======================= BUTTONS ======================= */}
       <div className="flex flex-col gap-3 sm:flex-row">

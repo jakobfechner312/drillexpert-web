@@ -70,7 +70,7 @@ function AppTopbar({
 
   return (
     <header className="sticky top-0 z-50 border-b border-base-border bg-white/80 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="relative h-10 w-40">
             <Image
@@ -146,7 +146,7 @@ function AppTopbar({
 
 function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+    <div className="mx-auto grid max-w-[1600px] gap-6 px-4 py-6 lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="hidden lg:block">
         <nav className="rounded-2xl border border-base-border bg-white p-3 shadow-soft">
           <div className="mb-2 text-xs font-semibold text-base-muted">
