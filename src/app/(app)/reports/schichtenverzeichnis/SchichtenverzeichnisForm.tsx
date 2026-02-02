@@ -341,9 +341,8 @@ export default function SchichtenverzeichnisForm() {
       if (current) localStorage.setItem("sv_offsets_backup", current);
       localStorage.setItem("sv_offsets", JSON.stringify(snapshot));
       const historyRaw = localStorage.getItem("sv_offsets_history");
-      const history = Array.isArray(historyRaw ? JSON.parse(historyRaw) : null)
-        ? (JSON.parse(historyRaw) as any[])
-        : [];
+      const parsedHistory = historyRaw ? JSON.parse(historyRaw) : null;
+      const history = Array.isArray(parsedHistory) ? (parsedHistory as any[]) : [];
       history.push(snapshot);
       localStorage.setItem("sv_offsets_history", JSON.stringify(history.slice(-20)));
     } catch {
