@@ -22,6 +22,16 @@ export async function POST(req: Request) {
     const templateBytes = fs.readFileSync(templatePath);
     const srcDoc = await PDFDocument.load(templateBytes);
     const srcPage = srcDoc.getPages()[0];
+    try {
+      const stat = fs.statSync(templatePath);
+      console.log("[PREVIEW tpl]", {
+        path: templatePath,
+        size: stat.size,
+        mtime: stat.mtime?.toISOString?.() ?? String(stat.mtime),
+        srcW: srcPage.getWidth(),
+        srcH: srcPage.getHeight(),
+      });
+    } catch {}
 
     const outDoc = await PDFDocument.create();
     const font = await outDoc.embedFont(StandardFonts.Helvetica);
@@ -53,6 +63,35 @@ export async function POST(req: Request) {
       });
     };
 
+    const drawWrapped = (text: string, x: number, y: number, maxWidth: number, opts?: { size?: number; lineHeight?: number; maxLines?: number }) => {
+      const size = opts?.size ?? 10;
+      const lineHeight = opts?.lineHeight ?? 10;
+      const maxLines = opts?.maxLines ?? 2;
+      const raw = (text ?? "").toString().trim();
+      if (!raw) return;
+
+      const words = raw.split(/\s+/);
+      const lines: string[] = [];
+      let current = "";
+
+      for (const w of words) {
+        const next = current ? `${current} ${w}` : w;
+        const width = font.widthOfTextAtSize(next, size);
+        if (width <= maxWidth || !current) {
+          current = next;
+        } else {
+          lines.push(current);
+          current = w;
+          if (lines.length >= maxLines) break;
+        }
+      }
+      if (lines.length < maxLines && current) lines.push(current);
+
+      lines.slice(0, maxLines).forEach((line, i) => {
+        draw(line, x, y - i * lineHeight, size);
+      });
+    };
+
     // Helfer für sichere Strings
     const t = (v: any, max = 12) => (v == null ? "" : String(v)).slice(0, max);
 
@@ -69,12 +108,13 @@ export async function POST(req: Request) {
 
     // ===== Kopfbereich =====
     draw(data.date ?? "", 38, outH - 68, 10);
-    draw(data.project ?? "", 160, outH - 58, 10);
-    draw(data.client ?? "", 140, outH - 81, 10);
+    draw(data.project ?? "", 155, outH - 58, 10);
+    draw(data.client ?? "", 155, outH - 81, 10);
 
-    draw(String(data.vehicles ?? ""), 417, outH - 70, 10);
-    draw(String(data.aNr ?? ""), 530, outH - 58, 10);
-    draw(String(data.device ?? ""), 515, outH - 85, 10);
+    // Fahrzeuge: Umbruch bei zu langem Text
+    drawWrapped(String(data.vehicles ?? ""), 417, outH - 67, 70, { size: 9, lineHeight: 9, maxLines: 3 });
+    draw(String(data.aNr ?? ""), 483, outH - 68, 9);
+    draw(String(data.device ?? ""), 483, outH - 86, 8);
 
     // ===== Arbeitszeit + Pausen (max 2 Zeilen) =====
     const workTimes = Array.isArray(data.workTimeRows) ? data.workTimeRows : [];
@@ -144,7 +184,7 @@ export async function POST(req: Request) {
 
     const TCOL = {
       from: 590,
-      to: 670,
+      to: 685,
       km: 750,
       time: 792,
     };
@@ -175,7 +215,7 @@ export async function POST(req: Request) {
     const STUNDEN_BOXES = 15;
 
     const WCOL = {
-      name: 38,
+      name: 30,
       reineArbeitsStd: 150,
       wochenendfahrt: 180,
       ausfallStd: 220,
@@ -497,7 +537,7 @@ export async function POST(req: Request) {
     // Sonstige Arbeiten (data.otherWork)
     drawMultiline(String(data.otherWork ?? ""), BOTTOM.otherWorkX, BOTTOM.otherWorkY, {
       size: 9,
-      lineHeight: 12,
+      lineHeight: 15,
       maxLines: BOTTOM.otherWorkMaxLines,
       maxCharsPerLine: 52,
     });
@@ -505,14 +545,12 @@ export async function POST(req: Request) {
     // Bemerkungen / Anordnungen / Besuche (data.remarks)
     drawMultiline(String(data.remarks ?? ""), BOTTOM.remarksX, BOTTOM.remarksY, {
       size: 9,
-      lineHeight: 12,
+      lineHeight: 15,
       maxLines: BOTTOM.remarksMaxLines,
-      maxCharsPerLine: 60,
+      maxCharsPerLine: 50,
     });
 
-    // Unterschriften: nur Name rein (wenn du willst später: echte Signatur als Bild/Canvas)
-    draw(String(data.signatures?.clientOrManagerName ?? ""), BOTTOM.sigClientNameX, BOTTOM.sigClientNameY, 9);
-    draw(String(data.signatures?.drillerName ?? ""), BOTTOM.sigDrillerNameX, BOTTOM.sigDrillerNameY, 9);
+    // Unterschriften: keine Namen drucken
 
     // ===== SIGNATURE IMAGES (PNG Base64) =====
 
@@ -526,10 +564,10 @@ export async function POST(req: Request) {
 
       // TODO: Koordinaten feinjustieren
       page.drawImage(pngImage, {
-        x: 470,   // <- anpassen
-        y: 30,    // <- anpassen
-        width: 150,
-        height: 55,
+        x: 480,   // <- anpassen
+        y: 34,    // <- anpassen
+        width: 120,
+        height: 40,
       });
     }
 
@@ -542,10 +580,10 @@ export async function POST(req: Request) {
       const pngImage = await outDoc.embedPng(pngBytes);
 
       page.drawImage(pngImage, {
-        x: 470,  // <- anpassen
-        y: 85,   // <- anpassen
-        width: 150,
-        height: 50,
+        x: 480,  // <- anpassen
+        y: 90,   // <- anpassen
+        width: 120,
+        height: 40,
       });
     }
 

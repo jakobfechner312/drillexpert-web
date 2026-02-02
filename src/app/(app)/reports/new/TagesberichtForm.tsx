@@ -621,9 +621,14 @@ if (mode === "edit") {
 
   const sigClientRef = useRef<SignatureCanvas>(null);
   const sigDrillerRef = useRef<SignatureCanvas>(null);
+  const skipSigHydrateRef = useRef(false);
 
   useEffect(() => {
   if (mode !== "edit") return;
+  if (skipSigHydrateRef.current) {
+    skipSigHydrateRef.current = false;
+    return;
+  }
 
   const c = report?.signatures?.clientOrManagerSigPng;
   const d = report?.signatures?.drillerSigPng;
@@ -649,6 +654,7 @@ if (mode === "edit") {
 }, [mode, report?.signatures?.clientOrManagerSigPng, report?.signatures?.drillerSigPng]);
 
   const saveClientSignature = () => {
+    skipSigHydrateRef.current = true;
     const clientPng = sigClientRef.current?.isEmpty()
       ? ""
       : sigClientRef.current?.getTrimmedCanvas().toDataURL("image/png");
@@ -660,9 +666,11 @@ if (mode === "edit") {
         clientOrManagerSigPng: clientPng || "",
       },
     }));
+
   };
 
   const saveDrillerSignature = () => {
+    skipSigHydrateRef.current = true;
     const drillerPng = sigDrillerRef.current?.isEmpty()
       ? ""
       : sigDrillerRef.current?.getTrimmedCanvas().toDataURL("image/png");
@@ -674,6 +682,7 @@ if (mode === "edit") {
         drillerSigPng: drillerPng || "",
       },
     }));
+
   };
 
   const clearClientSig = () => {
@@ -932,6 +941,7 @@ if (mode === "edit") {
   }
 
   async function openTestPdf() {
+    console.log("[PREVIEW payload]", report);
     const res = await fetch("/api/pdf/tagesbericht", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

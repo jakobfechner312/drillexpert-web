@@ -20,6 +20,16 @@ export default function MyReportsPage() {
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
 
+  const deleteReport = async (reportId: string) => {
+    if (!confirm("Bericht wirklich löschen?")) return;
+    const { error } = await supabase.from("reports").delete().eq("id", reportId);
+    if (error) {
+      setErr("Löschen fehlgeschlagen: " + error.message);
+      return;
+    }
+    setReports((prev) => prev.filter((x) => x.id !== reportId));
+  };
+
   const load = async () => {
     setLoading(true);
     setErr(null);
@@ -130,6 +140,13 @@ export default function MyReportsPage() {
                     >
                       ✏️
                     </Link>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                      onClick={() => deleteReport(r.id)}
+                    >
+                      Löschen
+                    </button>
                   </div>
                 </li>
               ))}

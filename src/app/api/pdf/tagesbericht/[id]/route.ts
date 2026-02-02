@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { generateTagesberichtPdf } from "@/lib/pdf/tagesbericht";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -21,13 +20,26 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!report) return NextResponse.json({ error: "Report nicht gefunden." }, { status: 404 });
 
-    const pdfBytes = await generateTagesberichtPdf(report.data);
+    console.log("[SAVED data]", report.data);
+
+    const origin = new URL(req.url).origin;
+    const previewUrl = new URL("/api/pdf/tagesbericht", origin);
+    const res = await fetch(previewUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(report.data),
+    });
+    if (!res.ok) {
+      return NextResponse.json({ error: "Preview render failed" }, { status: 500 });
+    }
+    const pdfBytes = new Uint8Array(await res.arrayBuffer());
 
     const body = Buffer.from(pdfBytes);
     return new NextResponse(body, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename="tagesbericht-${id}.pdf"`,
+        "Cache-Control": "no-store",
       },
     });
   } catch (e: any) {

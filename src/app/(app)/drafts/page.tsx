@@ -16,6 +16,16 @@ export default function DraftsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
 
+  const deleteDraft = async (draftId: string) => {
+    if (!confirm("Entwurf wirklich löschen?")) return;
+    const { error } = await supabase.from("drafts").delete().eq("id", draftId);
+    if (error) {
+      setErr("Löschen fehlgeschlagen: " + error.message);
+      return;
+    }
+    setDrafts((prev) => prev.filter((x) => x.id !== draftId));
+  };
+
   const load = async () => {
     setLoading(true);
     setErr(null);
@@ -94,6 +104,13 @@ export default function DraftsPage() {
                     >
                       Öffnen
                     </Link>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                      onClick={() => deleteDraft(d.id)}
+                    >
+                      Löschen
+                    </button>
                   </div>
                 </li>
               ))}
