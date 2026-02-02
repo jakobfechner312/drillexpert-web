@@ -126,6 +126,37 @@ type TagesberichtFormProps = {
   mode?: "create" | "edit";
 };
 
+const GroupCard = ({
+  title,
+  badge,
+  children,
+}: {
+  title: string;
+  badge?: string;
+  children: React.ReactNode;
+}) => (
+  <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm overflow-hidden">
+    <div className="flex items-center justify-between gap-3 bg-sky-50/60 px-4 py-2 border-b border-slate-200/70">
+      <h2 className="text-sm font-semibold text-sky-900 tracking-wide">{title}</h2>
+      {badge ? (
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+          {badge}
+        </span>
+      ) : null}
+    </div>
+    <div className="p-4">{children}</div>
+  </section>
+);
+
+const SubGroup = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <div className="rounded-xl border border-slate-200/70 bg-white">
+    <div className="border-b border-slate-200/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+      {title}
+    </div>
+    <div className="p-3">{children}</div>
+  </div>
+);
+
 function normalizeTagesbericht(raw: unknown): Tagesbericht {
   const base = createDefaultTagesbericht();
 
@@ -476,7 +507,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create" 
         const target = await ensureSaveTarget();
         if (!target) return;
 
-        const pid = target.projectId; // string | null
+        const { scope, projectId: pid } = target;
 
         // ✅ DB-seitig: gleicher Key für denselben Save-Vorgang
         if (!reportSaveKeyRef.current) {
@@ -534,7 +565,7 @@ if (mode === "edit") {
 
   const payload = {
     user_id: user.id,
-    project_id: saveScope === "project" ? pid : null,
+    project_id: scope === "project" ? pid : null,
     report_type: "tagesbericht",
     title,
     data: currentReport,
@@ -1092,37 +1123,6 @@ if (mode === "edit") {
     ["abstHalter", "Abst.-Halter"],
     ["klarpump", "Klarpump."],
   ];
-
-  const GroupCard = ({
-    title,
-    badge,
-    children,
-  }: {
-    title: string;
-    badge?: string;
-    children: React.ReactNode;
-  }) => (
-    <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between gap-3 bg-sky-50/60 px-4 py-2 border-b border-slate-200/70">
-        <h2 className="text-sm font-semibold text-sky-900 tracking-wide">{title}</h2>
-        {badge ? (
-          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-            {badge}
-          </span>
-        ) : null}
-      </div>
-      <div className="p-4">{children}</div>
-    </section>
-  );
-
-  const SubGroup = ({ title, children }: { title: string; children: React.ReactNode }) => (
-    <div className="rounded-xl border border-slate-200/70 bg-white">
-      <div className="border-b border-slate-200/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-        {title}
-      </div>
-      <div className="p-3">{children}</div>
-    </div>
-  );
 
   return (
     <div className="mt-6 space-y-6 max-w-[1600px] mx-auto w-full px-3 sm:px-5 lg:px-6 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">

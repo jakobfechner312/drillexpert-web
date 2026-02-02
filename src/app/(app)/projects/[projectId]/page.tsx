@@ -138,6 +138,16 @@ export default function ProjectDetailPage() {
     setReports((prev) => prev.filter((x) => x.id !== reportId));
   };
 
+  const deleteFile = async (name: string) => {
+    if (!confirm("Datei wirklich löschen?")) return;
+    const { error } = await supabase.storage.from("dropData").remove([`${projectId}/${name}`]);
+    if (error) {
+      alert("Löschen fehlgeschlagen: " + error.message);
+      return;
+    }
+    setFiles((prev) => prev.filter((x) => x.name !== name));
+  };
+
   const uploadFiles = async (fileList: FileList | File[]) => {
     if (!fileList || fileList.length === 0) return;
     setUploading(true);
@@ -402,6 +412,15 @@ export default function ProjectDetailPage() {
                             ✏️
                           </Link>
                         )}
+                        {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
+                          <button
+                            type="button"
+                            className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                            onClick={() => deleteReport(item.id)}
+                          >
+                            Löschen
+                          </button>
+                        )}
                       </div>
                     </li>
                   ) : (
@@ -417,13 +436,22 @@ export default function ProjectDetailPage() {
                           </div>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                        onClick={() => openFile(item.name)}
-                      >
-                        Öffnen
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                          onClick={() => openFile(item.name)}
+                        >
+                          Öffnen
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                          onClick={() => deleteFile(item.name)}
+                        >
+                          Löschen
+                        </button>
+                      </div>
                     </li>
                   )
                 )}
