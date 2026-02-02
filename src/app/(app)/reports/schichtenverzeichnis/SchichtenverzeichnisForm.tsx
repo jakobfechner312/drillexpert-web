@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/browser";
+import { useDraftActions } from "@/components/DraftActions";
 
 type FormData = Record<string, string>;
 type SchichtRow = {
@@ -135,7 +137,30 @@ const emptyGroundwaterRow = (): GroundwaterRow => ({
   bohrtiefe: "",
 });
 
-export default function SchichtenverzeichnisForm() {
+type SchichtenverzeichnisFormProps = {
+  projectId?: string;
+};
+
+export default function SchichtenverzeichnisForm({ projectId }: SchichtenverzeichnisFormProps) {
+  type SaveScope = "unset" | "project" | "my_reports";
+
+  const savingRef = useRef(false);
+  const reportSaveKeyRef = useRef<string | null>(null);
+
+  const [saveScope, setSaveScope] = useState<SaveScope>(projectId ? "project" : "unset");
+  const [localProjectId, setLocalProjectId] = useState<string | null>(null);
+  const effectiveProjectId = projectId ?? localProjectId;
+
+  const pendingSaveResolveRef = useRef<
+    ((v: { scope: SaveScope; projectId: string | null } | undefined) => void) | null
+  >(null);
+
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projectUiLoading, setProjectUiLoading] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
+
   const [data, setData] = useState<FormData>(initialData);
   const [loading, setLoading] = useState(false);
   const [schichtRows, setSchichtRows] = useState<SchichtRow[]>([
@@ -188,6 +213,210 @@ export default function SchichtenverzeichnisForm() {
     proben_nr: "0",
     proben_tiefe: "0",
   });
+
+  const supabase = useMemo(() => createClient(), []);
+  const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
+
+  const loadMyProjects = useCallback(async () => {
+    setProjectUiLoading(true);
+
+    const { data: userRes } = await supabase.auth.getUser();
+    const user = userRes.user;
+
+    if (!user) {
+      setProjectUiLoading(false);
+      alert("Nicht eingeloggt.");
+      return;
+    }
+
+    const { data: projData, error } = await supabase
+      .from("projects")
+      .select("id,name")
+      .order("created_at", { ascending: false });
+
+    setProjectUiLoading(false);
+
+    if (error) {
+      console.error(error);
+      alert("Projekte laden fehlgeschlagen: " + error.message);
+      return;
+    }
+
+    setProjects((projData ?? []) as { id: string; name: string }[]);
+  }, [supabase]);
+
+  const ensureSaveTarget = useCallback(async (): Promise<{ scope: SaveScope; projectId: string | null } | null> => {
+    if (saveScope === "my_reports") {
+      return { scope: "my_reports", projectId: null };
+    }
+
+    if (effectiveProjectId) {
+      return { scope: "project", projectId: effectiveProjectId };
+    }
+
+    await loadMyProjects();
+    setProjectModalOpen(true);
+
+    const result = await new Promise<{ scope: SaveScope; projectId: string | null } | undefined>((resolve) => {
+      pendingSaveResolveRef.current = resolve;
+    });
+
+    pendingSaveResolveRef.current = null;
+    return result ?? null;
+  }, [saveScope, effectiveProjectId, loadMyProjects]);
+
+  const createProject = useCallback(async () => {
+    const name = newProjectName.trim();
+    if (!name) return alert("Bitte Projektnamen eingeben.");
+
+    setCreatingProject(true);
+
+    const { data: userRes, error: userErr } = await supabase.auth.getUser();
+    const user = userRes?.user;
+
+    if (userErr || !user) {
+      setCreatingProject(false);
+      return alert("Nicht eingeloggt.");
+    }
+
+    const { data: proj, error: projErr } = await supabase
+      .from("projects")
+      .insert({
+        name,
+        owner_id: user.id,
+        created_by: user.id,
+      })
+      .select("id,name")
+      .single();
+
+    if (projErr || !proj) {
+      setCreatingProject(false);
+      console.error(projErr);
+      return alert("Projekt anlegen fehlgeschlagen: " + (projErr?.message ?? "unknown"));
+    }
+
+    const { error: memErr } = await supabase.from("project_members").insert({
+      project_id: proj.id,
+      user_id: user.id,
+      role_in_project: "owner",
+    });
+
+    if (memErr) {
+      setCreatingProject(false);
+      console.error(memErr);
+      return alert("Mitgliedschaft anlegen fehlgeschlagen: " + memErr.message);
+    }
+
+    setProjects((prev) => [{ id: proj.id, name: proj.name }, ...prev]);
+    setSaveScope("project");
+    setLocalProjectId(proj.id);
+    setNewProjectName("");
+    setProjectModalOpen(false);
+
+    pendingSaveResolveRef.current?.({ scope: "project", projectId: proj.id });
+    pendingSaveResolveRef.current = null;
+
+    setCreatingProject(false);
+  }, [newProjectName, supabase]);
+
+  useEffect(() => {
+    setSaveDraftHandler(null);
+    setSaveReportHandler(async () => {
+      if (savingRef.current) return;
+      savingRef.current = true;
+
+      try {
+        const { data: userRes } = await supabase.auth.getUser();
+        const user = userRes.user;
+        if (!user) return alert("Nicht eingeloggt.");
+
+        const target = await ensureSaveTarget();
+        if (!target) return;
+        const { scope, projectId } = target;
+
+        if (!reportSaveKeyRef.current) {
+          reportSaveKeyRef.current = crypto.randomUUID();
+        }
+
+        const title =
+          data.projekt_name?.trim()
+            ? `Schichtenverzeichnis – ${data.projekt_name}${data.datum ? ` (${data.datum})` : ""}`
+            : `Schichtenverzeichnis (${data.datum ?? ""})`;
+
+        const reportData = {
+          ...data,
+          grundwasser_rows: grundwasserRows,
+          schicht_rows: schichtRows,
+          schicht_row_height: Number(schichtRowHeight) || 200,
+          schicht_start_offset_page_1: Number(schichtStartOffsetPage1) || 0,
+          schicht_start_offset_page_2: Number(schichtStartOffsetPage2) || 0,
+          schicht_x_offset_page_1: Number(schichtXOffsetPage1) || 0,
+          schicht_x_offset_page_2: Number(schichtXOffsetPage2) || 0,
+          schicht_rows_per_page: Number(schichtRowsPerPage1) || 4,
+          schicht_rows_per_page_1: Number(schichtRowsPerPage1) || 4,
+          schicht_rows_per_page_2: Number(schichtRowsPerPage2) || 8,
+          schicht_x_offsets_page_1: Object.fromEntries(
+            Object.entries(schichtXOffsetsPage1).map(([k, v]) => [k, Number(v) || 0])
+          ),
+          schicht_x_offsets_page_2: Object.fromEntries(
+            Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
+          ),
+          schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
+        };
+
+        const payload = {
+          user_id: user.id,
+          project_id: scope === "project" ? projectId : null,
+          report_type: "schichtenverzeichnis",
+          title,
+          data: reportData,
+          status: "final",
+          idempotency_key: reportSaveKeyRef.current,
+        };
+
+        const { error } = await supabase.from("reports").insert(payload);
+
+        if (error) {
+          if (typeof error === "object" && error && "code" in error && (error as { code?: string }).code === "23505") {
+            reportSaveKeyRef.current = null;
+            alert("Bericht war schon gespeichert ✅");
+            return;
+          }
+          console.error(error);
+          alert("Bericht speichern fehlgeschlagen: " + error.message);
+          return;
+        }
+
+        reportSaveKeyRef.current = null;
+        alert("Bericht gespeichert ✅");
+      } finally {
+        savingRef.current = false;
+      }
+    });
+
+    return () => {
+      setSaveDraftHandler(null);
+      setSaveReportHandler(null);
+    };
+  }, [
+    data,
+    grundwasserRows,
+    schichtRows,
+    schichtRowHeight,
+    schichtStartOffsetPage1,
+    schichtStartOffsetPage2,
+    schichtXOffsetPage1,
+    schichtXOffsetPage2,
+    schichtRowsPerPage1,
+    schichtRowsPerPage2,
+    schichtXOffsetsPage1,
+    schichtXOffsetsPage2,
+    schichtRowOffsetsPage2,
+    ensureSaveTarget,
+    setSaveDraftHandler,
+    setSaveReportHandler,
+    supabase,
+  ]);
 
   useEffect(() => {
     try {
@@ -499,6 +728,92 @@ export default function SchichtenverzeichnisForm() {
 
   return (
     <div className="space-y-6">
+      {projectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-sky-900">Projekt auswählen</h3>
+              <button
+                type="button"
+                className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50"
+                onClick={() => {
+                  setProjectModalOpen(false);
+                  pendingSaveResolveRef.current?.(undefined);
+                  pendingSaveResolveRef.current = null;
+                }}
+              >
+                Schließen
+              </button>
+            </div>
+            <div className="mt-3">
+              <button
+                type="button"
+                className="w-full rounded-xl border px-3 py-3 text-left hover:bg-slate-50"
+                onClick={() => {
+                  setSaveScope("my_reports");
+                  setProjectModalOpen(false);
+                  pendingSaveResolveRef.current?.({ scope: "my_reports", projectId: null });
+                  pendingSaveResolveRef.current = null;
+                }}
+              >
+                <div className="font-medium">Meine Berichte</div>
+                <div className="text-xs text-slate-500">Speichert ohne Projekt-Zuordnung</div>
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-4">
+              <div className="rounded-xl border p-3">
+                <div className="text-sm font-medium">Neues Projekt</div>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    className="flex-1 rounded-xl border p-3"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    placeholder="z.B. Baustelle Freiburg Nord"
+                  />
+                  <button
+                    type="button"
+                    className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                    disabled={creatingProject}
+                    onClick={createProject}
+                  >
+                    {creatingProject ? "Erstelle…" : "+ Anlegen"}
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Legt das Projekt an und wählt es automatisch aus.
+                </p>
+              </div>
+
+              {projectUiLoading ? (
+                <p className="text-sm text-slate-600">Lade Projekte…</p>
+              ) : projects.length === 0 ? (
+                <p className="text-sm text-slate-600">Noch keine Projekte vorhanden.</p>
+              ) : (
+                <div className="space-y-2">
+                  {projects.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="w-full rounded-xl border px-3 py-3 text-left hover:bg-slate-50"
+                      onClick={() => {
+                        setSaveScope("project");
+                        setLocalProjectId(p.id);
+                        setProjectModalOpen(false);
+                        pendingSaveResolveRef.current?.({ scope: "project", projectId: p.id });
+                        pendingSaveResolveRef.current = null;
+                      }}
+                    >
+                      <div className="font-medium">{p.name}</div>
+                      <div className="text-xs text-slate-500">{p.id}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">

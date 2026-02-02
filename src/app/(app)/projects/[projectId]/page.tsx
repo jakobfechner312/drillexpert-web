@@ -12,6 +12,7 @@ type ReportRow = {
   created_at: string;
   user_id: string; // Ersteller
   status: string | null;
+  report_type?: string | null;
 };
 type ProjectFile = {
   name: string;
@@ -86,7 +87,7 @@ export default function ProjectDetailPage() {
     // 3) Reports laden
     const { data: reps, error: repsErr } = await supabase
       .from("reports")
-      .select("id,title,created_at,user_id,status")
+      .select("id,title,created_at,user_id,status,report_type")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false });
 
@@ -250,6 +251,7 @@ export default function ProjectDetailPage() {
       title: r.title,
       created_at: r.created_at,
       status: r.status,
+      report_type: r.report_type ?? "tagesbericht",
     }));
 
     const fileItems = files.map((f) => ({
@@ -397,21 +399,26 @@ export default function ProjectDetailPage() {
 
                       <div className="flex items-center gap-2">
                         <Link
-                          href={`/api/pdf/tagesbericht/${item.id}`}
+                          href={
+                            item.report_type === "schichtenverzeichnis"
+                              ? `/api/pdf/schichtenverzeichnis/${item.id}`
+                              : `/api/pdf/tagesbericht/${item.id}`
+                          }
                           target="_blank"
                           className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
                         >
                           Öffnen
                         </Link>
-                        {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
-                          <Link
-                            href={`/projects/${projectId}/reports/${item.id}/edit`}
-                            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                            title="Bearbeiten"
-                          >
-                            ✏️
-                          </Link>
-                        )}
+                        {item.report_type !== "schichtenverzeichnis" &&
+                          canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
+                            <Link
+                              href={`/projects/${projectId}/reports/${item.id}/edit`}
+                              className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                              title="Bearbeiten"
+                            >
+                              ✏️
+                            </Link>
+                          )}
                         {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
                           <button
                             type="button"

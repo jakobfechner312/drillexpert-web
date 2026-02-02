@@ -34,9 +34,7 @@ function AppTopbar({
   const { triggerSaveDraft, triggerSaveReport } = useDraftActions();
   const pathname = usePathname();
   const isReportEditor =
-    pathname === "/reports/new" ||
-    pathname.endsWith("/reports/new") ||
-    pathname.includes("/reports/") && pathname.includes("/edit");
+    pathname.includes("/reports/") && (pathname.endsWith("/new") || pathname.includes("/edit"));
 
   const supabase = useMemo(() => createClient(), []);
   const [userEmail, setUserEmail] = useState<string | null>(null);

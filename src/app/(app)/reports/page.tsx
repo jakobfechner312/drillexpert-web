@@ -9,6 +9,7 @@ type ReportRow = {
   title: string;
   created_at: string;
   status: string | null;
+  report_type?: string | null;
 };
 
 export default function MyReportsPage() {
@@ -34,7 +35,7 @@ export default function MyReportsPage() {
     // ✅ Meine Berichte = project_id IS NULL
     const { data: reps, error: repsErr } = await supabase
       .from("reports")
-      .select("id,title,created_at,status")
+      .select("id,title,created_at,status,report_type")
       .is("project_id", null)
       .order("created_at", { ascending: false });
 
@@ -106,7 +107,11 @@ export default function MyReportsPage() {
                   <div className="flex items-center gap-2">
                     {/* Öffnen */}
                     <Link
-                      href={`/api/pdf/tagesbericht/${r.id}`}
+                      href={
+                        r.report_type === "schichtenverzeichnis"
+                          ? `/api/pdf/schichtenverzeichnis/${r.id}`
+                          : `/api/pdf/tagesbericht/${r.id}`
+                      }
                       target="_blank"
                       className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
                     >
@@ -114,13 +119,15 @@ export default function MyReportsPage() {
                     </Link>
 
                     {/* Edit (kommt als nächster Schritt, wenn du willst) */}
-                    <Link
-                      href={`/reports/${r.id}/edit`}
-                      className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                      title="Bearbeiten"
-                    >
-                      ✏️
-                    </Link>
+                    {r.report_type !== "schichtenverzeichnis" && (
+                      <Link
+                        href={`/reports/${r.id}/edit`}
+                        className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                        title="Bearbeiten"
+                      >
+                        ✏️
+                      </Link>
+                    )}
                   </div>
                 </li>
               ))}

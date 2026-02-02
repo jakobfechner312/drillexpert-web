@@ -16,7 +16,7 @@ export default function ProjectReportsPage() {
     const loadReports = async () => {
       const { data, error } = await supabase
         .from("reports")
-        .select("id, title, created_at, user_id")
+        .select("id, title, created_at, user_id, report_type")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
 
@@ -50,8 +50,13 @@ export default function ProjectReportsPage() {
 
             <div className="flex gap-2">
               <Link
-                href={`/projects/${projectId}/reports/${r.id}`}
+                href={
+                  r.report_type === "schichtenverzeichnis"
+                    ? `/api/pdf/schichtenverzeichnis/${r.id}`
+                    : `/api/pdf/tagesbericht/${r.id}`
+                }
                 className="text-sm underline"
+                target="_blank"
               >
                 Öffnen
               </Link>
