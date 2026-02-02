@@ -73,24 +73,25 @@ export default function ProjectsPage() {
       return;
     }
 
-    const { data: proj, error: projErr } = await supabase
+    const projectId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    const { error: projErr } = await supabase
       .from("projects")
       .insert({
+        id: projectId,
         name,
         owner_id: user.id,
         created_by: user.id,
-      })
-      .select("id,name,created_at")
-      .single();
+      });
 
-    if (projErr || !proj) {
+    if (projErr) {
       setCreatingProject(false);
       setError("Projekt anlegen fehlgeschlagen: " + (projErr?.message ?? "unknown"));
       return;
     }
 
     const { error: memErr } = await supabase.from("project_members").insert({
-      project_id: proj.id,
+      project_id: projectId,
       user_id: user.id,
       role_in_project: "owner",
     });
@@ -101,7 +102,7 @@ export default function ProjectsPage() {
       return;
     }
 
-    setProjects((prev) => [proj, ...prev]);
+    setProjects((prev) => [{ id: projectId, name, created_at: createdAt }, ...prev]);
     setNewProjectName("");
     setCreateOpen(false);
     setCreatingProject(false);
