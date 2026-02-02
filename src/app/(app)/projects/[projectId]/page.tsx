@@ -409,16 +409,19 @@ export default function ProjectDetailPage() {
                         >
                           Öffnen
                         </Link>
-                        {item.report_type !== "schichtenverzeichnis" &&
-                          canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
-                            <Link
-                              href={`/projects/${projectId}/reports/${item.id}/edit`}
-                              className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                              title="Bearbeiten"
-                            >
-                              ✏️
-                            </Link>
-                          )}
+                        {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
+                          <Link
+                            href={
+                              item.report_type === "schichtenverzeichnis"
+                                ? `/projects/${projectId}/reports/schichtenverzeichnis/${item.id}/edit`
+                                : `/projects/${projectId}/reports/${item.id}/edit`
+                            }
+                            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                            title="Bearbeiten"
+                          >
+                            ✏️
+                          </Link>
+                        )}
                         {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
                           <button
                             type="button"

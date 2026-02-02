@@ -3,5 +3,5 @@
 import SchichtenverzeichnisForm from "../SchichtenverzeichnisForm";
 
 export default function SchichtenverzeichnisNewPage() {
-  return <SchichtenverzeichnisForm />;
+  return <SchichtenverzeichnisForm mode="create" />;
 }

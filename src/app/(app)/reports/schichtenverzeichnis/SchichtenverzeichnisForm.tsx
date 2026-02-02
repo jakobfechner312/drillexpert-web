@@ -139,9 +139,15 @@ const emptyGroundwaterRow = (): GroundwaterRow => ({
 
 type SchichtenverzeichnisFormProps = {
   projectId?: string;
+  reportId?: string;
+  mode?: "create" | "edit";
 };
 
-export default function SchichtenverzeichnisForm({ projectId }: SchichtenverzeichnisFormProps) {
+export default function SchichtenverzeichnisForm({
+  projectId,
+  reportId,
+  mode = "create",
+}: SchichtenverzeichnisFormProps) {
   type SaveScope = "unset" | "project" | "my_reports";
 
   const savingRef = useRef(false);
@@ -319,6 +325,47 @@ export default function SchichtenverzeichnisForm({ projectId }: Schichtenverzeic
     setCreatingProject(false);
   }, [newProjectName, supabase]);
 
+  // ======================
+  // LOAD REPORT (EDIT MODE)
+  // ======================
+  useEffect(() => {
+    if (mode !== "edit" || !reportId) return;
+
+    const load = async () => {
+      const { data: row, error } = await supabase
+        .from("reports")
+        .select("data")
+        .eq("id", reportId)
+        .single();
+
+      if (error || !row?.data) {
+        console.error(error);
+        alert("Bericht konnte nicht geladen werden");
+        return;
+      }
+
+      const db = row.data as Record<string, any>;
+      setData((prev) => ({ ...prev, ...(db ?? {}) }));
+      setSchichtRows(Array.isArray(db?.schicht_rows) && db.schicht_rows.length ? db.schicht_rows : [emptySchichtRow()]);
+      setGrundwasserRows(Array.isArray(db?.grundwasser_rows) && db.grundwasser_rows.length ? db.grundwasser_rows : [emptyGroundwaterRow()]);
+
+      if (db?.schicht_row_height != null) setSchichtRowHeight(String(db.schicht_row_height));
+      if (db?.schicht_start_offset_page_1 != null) setSchichtStartOffsetPage1(String(db.schicht_start_offset_page_1));
+      if (db?.schicht_start_offset_page_2 != null) setSchichtStartOffsetPage2(String(db.schicht_start_offset_page_2));
+      if (db?.schicht_x_offset_page_1 != null) setSchichtXOffsetPage1(String(db.schicht_x_offset_page_1));
+      if (db?.schicht_x_offset_page_2 != null) setSchichtXOffsetPage2(String(db.schicht_x_offset_page_2));
+      if (db?.schicht_rows_per_page_1 != null) setSchichtRowsPerPage1(String(db.schicht_rows_per_page_1));
+      if (db?.schicht_rows_per_page_2 != null) setSchichtRowsPerPage2(String(db.schicht_rows_per_page_2));
+      if (db?.schicht_x_offsets_page_1 != null) setSchichtXOffsetsPage1((prev) => ({ ...prev, ...db.schicht_x_offsets_page_1 }));
+      if (db?.schicht_x_offsets_page_2 != null) setSchichtXOffsetsPage2((prev) => ({ ...prev, ...db.schicht_x_offsets_page_2 }));
+      if (db?.schicht_row_offsets_page_2 != null && Array.isArray(db.schicht_row_offsets_page_2)) {
+        setSchichtRowOffsetsPage2(db.schicht_row_offsets_page_2.map((v: number | string) => String(v ?? "0")));
+      }
+    };
+
+    load();
+  }, [mode, reportId, supabase]);
+
   useEffect(() => {
     setSaveDraftHandler(null);
     setSaveReportHandler(async () => {
@@ -363,6 +410,32 @@ export default function SchichtenverzeichnisForm({ projectId }: Schichtenverzeic
           ),
           schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
         };
+
+        if (mode === "edit") {
+          if (!reportId) {
+            alert("Fehler: reportId fehlt im Edit-Modus");
+            return;
+          }
+
+          const { error } = await supabase
+            .from("reports")
+            .update({
+              title,
+              data: reportData,
+              status: "final",
+              project_id: scope === "project" ? projectId : null,
+            })
+            .eq("id", reportId);
+
+          if (error) {
+            console.error(error);
+            alert("Bericht aktualisieren fehlgeschlagen: " + error.message);
+            return;
+          }
+
+          alert("Bericht aktualisiert ✅");
+          return;
+        }
 
         const payload = {
           user_id: user.id,
@@ -416,6 +489,8 @@ export default function SchichtenverzeichnisForm({ projectId }: Schichtenverzeic
     setSaveDraftHandler,
     setSaveReportHandler,
     supabase,
+    mode,
+    reportId,
   ]);
 
   useEffect(() => {

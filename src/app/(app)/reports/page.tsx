@@ -119,15 +119,17 @@ export default function MyReportsPage() {
                     </Link>
 
                     {/* Edit (kommt als nächster Schritt, wenn du willst) */}
-                    {r.report_type !== "schichtenverzeichnis" && (
-                      <Link
-                        href={`/reports/${r.id}/edit`}
-                        className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                        title="Bearbeiten"
-                      >
-                        ✏️
-                      </Link>
-                    )}
+                    <Link
+                      href={
+                        r.report_type === "schichtenverzeichnis"
+                          ? `/reports/schichtenverzeichnis/${r.id}/edit`
+                          : `/reports/${r.id}/edit`
+                      }
+                      className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                      title="Bearbeiten"
+                    >
+                      ✏️
+                    </Link>
                   </div>
                 </li>
               ))}

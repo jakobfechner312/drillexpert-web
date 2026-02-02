@@ -132,7 +132,7 @@ function AppTopbar({
                 className="rounded-2xl bg-black text-white px-4 py-3 font-medium"
                 onClick={triggerSaveReport}
               >
-                Absenden
+                Speichern
               </button>
             </>
           )}
