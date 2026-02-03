@@ -1105,9 +1105,12 @@ if (mode === "edit") {
     });
   }
 
+  const MAX_TRANSPORT_ROWS = 2;
+
   function addTransportRow() {
     setReport((p) => {
       const rows = Array.isArray(p.transportRows) ? [...p.transportRows] : [];
+      if (rows.length >= MAX_TRANSPORT_ROWS) return { ...p, transportRows: rows.length ? rows : [emptyTransportRow()] };
       rows.push(emptyTransportRow());
       return { ...p, transportRows: rows.length ? rows : [emptyTransportRow()] };
     });
@@ -1532,7 +1535,7 @@ if (mode === "edit") {
                     <div className="flex items-center justify-between">
                       <h3 className="font-medium">Transport</h3>
                       <div className="flex gap-2">
-                        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={addTransportRow}>+ Zeile</button>
+                  <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50 disabled:opacity-50" onClick={addTransportRow} disabled={safeTransport.length >= MAX_TRANSPORT_ROWS}>+ Zeile</button>
                         <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={removeLastTransportRow}>– Zeile</button>
                       </div>
                     </div>
