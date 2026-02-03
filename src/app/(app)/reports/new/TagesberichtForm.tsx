@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/browser";
 import { useDraftActions } from "@/components/DraftActions";
 import { useMemo, useRef, useEffect, useState, useCallback } from "react";
 import SignatureCanvas from "react-signature-canvas";
+import { useSearchParams } from "next/navigation";
 
 import type {
   Tagesbericht,
@@ -250,6 +251,8 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
   return r as Tagesbericht;
 }
 export default function TagesberichtForm({ projectId, reportId, mode = "create" }: TagesberichtFormProps) {
+  const searchParams = useSearchParams();
+  const draftId = searchParams.get("draftId");
 
   useEffect(() => {
     console.log("[PROPS CHECK]", { mode, reportId, projectId });
@@ -448,6 +451,32 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create" 
 
     load();
   }, [mode, reportId]);
+
+  // ======================
+  // 🧩 LOAD DRAFT (CREATE MODE)
+  // ======================
+  useEffect(() => {
+    if (mode !== "create" || !draftId) return;
+
+    const supabase = createClient();
+    const loadDraft = async () => {
+      const { data, error } = await supabase
+        .from("drafts")
+        .select("data")
+        .eq("id", draftId)
+        .single();
+
+      if (error || !data?.data) {
+        console.error(error);
+        alert("Entwurf konnte nicht geladen werden");
+        return;
+      }
+
+      setReport(normalizeTagesbericht(data.data));
+    };
+
+    loadDraft();
+  }, [mode, draftId]);
 
   // ================== DRAFT + REPORT SAVE HANDLERS ==================
   const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
@@ -790,8 +819,38 @@ if (mode === "edit") {
     }
   }
 
+  async function downloadPdfToLocal() {
+    try {
+      const payload = reportRef.current;
+      const res = await fetch("/api/pdf/tagesbericht", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        alert("PDF-Download fehlgeschlagen.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const nameBase =
+        payload?.project?.trim()
+          ? `tagesbericht-${payload.project}-${payload.date ?? ""}`
+          : `tagesbericht-${payload?.date ?? "draft"}`;
+      const safeName = nameBase.replace(/[^a-z0-9-_]+/gi, "_");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safeName}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("PDF download failed", e);
+      alert("PDF-Download fehlgeschlagen.");
+    }
+  }
+
   useEffect(() => {
-    if (mode === "edit") return;
+    if (mode === "edit" || draftId) return;
     try {
       const allowAuto = localStorage.getItem("pref_autoload_draft");
       if (allowAuto === "false") return;
@@ -1135,7 +1194,7 @@ if (mode === "edit") {
   ];
 
   return (
-    <div className="mt-6 space-y-6 max-w-[1600px] mx-auto w-full px-3 sm:px-5 lg:px-6 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
+    <div className="mt-6 space-y-6 max-w-[2000px] mx-auto w-full px-4 sm:px-6 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
       {projectModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
@@ -1239,7 +1298,7 @@ if (mode === "edit") {
             />
           </label>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.1fr_1.1fr_1fr]">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-[1.35fr_1.35fr_1.2fr]">
           {/* LINKS: Datum / Projekt / Auftraggeber */}
           <SubGroup title="Stammdaten">
             <div className="grid gap-3">
@@ -1302,8 +1361,8 @@ if (mode === "edit") {
                   <div className="mt-2 space-y-3">
                     {safeWorkTimes.slice(0, 2).map((r, i) => (
                       <div key={i} className="grid grid-cols-2 gap-3">
-                        <input type="time" className="w-full rounded-xl border p-3" value={r.from ?? ""} onChange={(e) => setWorkTimeRow(i, { from: e.target.value })} />
-                        <input type="time" className="w-full rounded-xl border p-3" value={r.to ?? ""} onChange={(e) => setWorkTimeRow(i, { to: e.target.value })} />
+                        <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.from ?? ""} onChange={(e) => setWorkTimeRow(i, { from: e.target.value })} />
+                        <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.to ?? ""} onChange={(e) => setWorkTimeRow(i, { to: e.target.value })} />
                       </div>
                     ))}
                   </div>
@@ -1313,8 +1372,8 @@ if (mode === "edit") {
                   <div className="mt-2 space-y-3">
                     {safeBreaks.slice(0, 2).map((r, i) => (
                       <div key={i} className="grid grid-cols-2 gap-3">
-                        <input type="time" className="w-full rounded-xl border p-3" value={r.from ?? ""} onChange={(e) => setBreakRow(i, { from: e.target.value })} />
-                        <input type="time" className="w-full rounded-xl border p-3" value={r.to ?? ""} onChange={(e) => setBreakRow(i, { to: e.target.value })} />
+                        <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.from ?? ""} onChange={(e) => setBreakRow(i, { from: e.target.value })} />
+                        <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.to ?? ""} onChange={(e) => setBreakRow(i, { to: e.target.value })} />
                       </div>
                     ))}
                   </div>
@@ -1889,15 +1948,22 @@ if (mode === "edit") {
       <div className="flex flex-col gap-3 sm:flex-row">
         <button
           type="button"
-          className="rounded-2xl border border-slate-300 bg-white px-4 py-3 font-medium text-slate-700 hover:bg-slate-50"
+          className="btn btn-secondary"
           onClick={saveDraftToLocalStorage}
         >
           Entwurf speichern (lokal)
         </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={downloadPdfToLocal}
+        >
+          PDF lokal speichern
+        </button>
 
         <button
           type="button"
-          className="rounded-2xl border border-sky-200 bg-white px-4 py-3 font-medium text-sky-700 hover:bg-sky-50"
+          className="btn btn-secondary"
           onClick={fillTestData}
         >
           Testdaten füllen
@@ -1905,7 +1971,7 @@ if (mode === "edit") {
 
         <button
           type="button"
-          className="rounded-2xl border border-sky-600 bg-sky-600 px-4 py-3 font-medium text-white hover:bg-sky-700"
+          className="btn btn-primary"
           onClick={openTestPdf}
         >
           PDF testen

@@ -15,6 +15,7 @@ export default function DraftsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
+  const [query, setQuery] = useState("");
 
   const deleteDraft = async (draftId: string) => {
     if (!confirm("Entwurf wirklich löschen?")) return;
@@ -58,6 +59,12 @@ export default function DraftsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const filteredDrafts = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return drafts;
+    return drafts.filter((d) => (d.title ?? "").toLowerCase().includes(q));
+  }, [drafts, query]);
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
       <div className="flex items-start justify-between gap-4">
@@ -73,48 +80,60 @@ export default function DraftsPage() {
       {!loading && !err && (
         <div className="mt-6 rounded-2xl border">
           <div className="border-b p-4">
-            <h2 className="font-medium">Entwürfe</h2>
-            <p className="mt-1 text-sm text-gray-600">
-              {drafts.length} Einträge
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-medium">Entwürfe</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  {filteredDrafts.length} Einträge
+                </p>
+              </div>
+              <input
+                className="rounded-xl border px-3 py-1.5 text-xs"
+                placeholder="Suchen…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
           </div>
 
-          {drafts.length === 0 ? (
+          {filteredDrafts.length === 0 ? (
             <div className="p-4 text-sm text-gray-600">
-              Noch keine Entwürfe vorhanden.
+              Keine passenden Entwürfe gefunden.
             </div>
           ) : (
-            <ul className="divide-y">
-              {drafts.map((d) => (
-                <li
-                  key={d.id}
-                  className="flex items-center justify-between gap-3 p-4"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{d.title}</div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      {new Date(d.created_at).toLocaleString()}
+            <div className="grid gap-3 p-4 sm:grid-cols-2">
+              {filteredDrafts.map((d) => (
+                <div key={d.id} className="rounded-2xl border p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">{d.title}</div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        {new Date(d.created_at).toLocaleString()}
+                      </div>
                     </div>
+                    <span className="rounded-full border px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                      Entwurf
+                    </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
                     <Link
                       href={`/reports/new?draftId=${d.id}`}
-                      className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                      className="btn btn-secondary btn-xs"
                     >
                       Öffnen
                     </Link>
                     <button
                       type="button"
-                      className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                      className="btn btn-danger btn-xs"
                       onClick={() => deleteDraft(d.id)}
                     >
                       Löschen
                     </button>
                   </div>
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
         </div>
       )}

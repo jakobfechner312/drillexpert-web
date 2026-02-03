@@ -68,7 +68,7 @@ function AppTopbar({
 
   return (
     <header className="sticky top-0 z-50 border-b border-base-border bg-white/80 backdrop-blur">
-      <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <div className="mx-auto flex max-w-[2200px] flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="relative h-10 w-40">
             <Image
@@ -102,14 +102,14 @@ function AppTopbar({
           {userEmail ? (
             <button
               onClick={handleLogout}
-              className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
+              className="btn btn-secondary"
             >
               Logout
             </button>
           ) : (
             <Link
               href="/login"
-              className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
+              className="btn btn-secondary"
             >
               Login
             </Link>
@@ -122,14 +122,14 @@ function AppTopbar({
                   console.log("[Entwurf] click");
                   triggerSaveDraft();
                 }}
-                className="rounded-xl border border-base-border bg-white px-3 py-2 text-sm hover:bg-base-bg"
+                className="btn btn-secondary"
               >
                 Entwurf
               </button>
 
               <button
                 type="button"
-                className="rounded-2xl bg-black text-white px-4 py-3 font-medium"
+                className="btn btn-primary"
                 onClick={triggerSaveReport}
               >
                 Speichern
@@ -144,13 +144,14 @@ function AppTopbar({
 
 function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto grid max-w-[1600px] gap-6 px-4 py-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+    <div className="mx-auto grid max-w-[2200px] gap-6 px-6 py-6 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="hidden lg:block">
         <nav className="rounded-2xl border border-base-border bg-white p-3 shadow-soft">
           <div className="mb-2 text-xs font-semibold text-base-muted">
             Navigation
           </div>
 
+          <SidebarLink href="/dashboard" label="Dashboard" />
           <SidebarLink href="/projects" label="Meine Projekte" />
           <SidebarReports />
           <SidebarLink href="/drafts" label="Meine Entwürfe" />
@@ -166,7 +167,7 @@ function AppLayout({ children }: { children: ReactNode }) {
       </aside>
 
       <main className="min-w-0">
-        <div className="rounded-2xl border border-base-border bg-white p-4 sm:p-5 shadow-soft">
+        <div className="rounded-2xl border border-base-border bg-white p-5 sm:p-6 shadow-soft">
           {children}
         </div>
       </main>

@@ -122,14 +122,14 @@ export default function ProjectsPage() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="btn btn-secondary"
               onClick={() => setCreateOpen(true)}
             >
               + Neues Projekt
             </button>
             <Link
               href="/reports/new"
-              className="rounded-xl border border-sky-600 bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+              className="btn btn-primary"
             >
               + Tagesbericht erstellen
             </Link>
@@ -182,7 +182,7 @@ export default function ProjectsPage() {
               <h3 className="text-lg font-semibold">Neues Projekt</h3>
               <button
                 type="button"
-                className="rounded-xl border px-3 py-2"
+                className="btn btn-secondary"
                 onClick={() => setCreateOpen(false)}
               >
                 Schließen
@@ -202,7 +202,7 @@ export default function ProjectsPage() {
 
               <button
                 type="button"
-                className="w-full rounded-xl border px-3 py-2 hover:bg-gray-50 disabled:opacity-50"
+                className="btn btn-secondary w-full"
                 disabled={creatingProject}
                 onClick={createProject}
               >

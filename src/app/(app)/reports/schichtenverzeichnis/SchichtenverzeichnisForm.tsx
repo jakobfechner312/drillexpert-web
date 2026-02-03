@@ -701,6 +701,60 @@ export default function SchichtenverzeichnisForm({
     }
   };
 
+  const downloadPdfToLocal = async () => {
+    setLoading(true);
+    try {
+      saveOffsetsSnapshot();
+      const params = new URLSearchParams();
+      if (showGrid) params.set("debug", "1");
+      if (Number(gridStep)) params.set("grid", String(Number(gridStep)));
+      const payload = {
+        ...data,
+        grundwasser_rows: grundwasserRows,
+        schicht_rows: schichtRows,
+        schicht_row_height: Number(schichtRowHeight) || 200,
+        schicht_start_offset_page_1: Number(schichtStartOffsetPage1) || 0,
+        schicht_start_offset_page_2: Number(schichtStartOffsetPage2) || 0,
+        schicht_x_offset_page_1: Number(schichtXOffsetPage1) || 0,
+        schicht_x_offset_page_2: Number(schichtXOffsetPage2) || 0,
+        schicht_rows_per_page: Number(schichtRowsPerPage1) || 4,
+        schicht_rows_per_page_1: Number(schichtRowsPerPage1) || 4,
+        schicht_rows_per_page_2: Number(schichtRowsPerPage2) || 8,
+        schicht_x_offsets_page_1: Object.fromEntries(
+          Object.entries(schichtXOffsetsPage1).map(([k, v]) => [k, Number(v) || 0])
+        ),
+        schicht_x_offsets_page_2: Object.fromEntries(
+          Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
+        ),
+        schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
+      };
+
+      const res = await fetch(`/api/pdf/schichtenverzeichnis?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        alert("PDF-Download fehlgeschlagen.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const nameBase =
+        data?.projekt_name?.trim()
+          ? `schichtenverzeichnis-${data.projekt_name}-${data.datum ?? ""}`
+          : `schichtenverzeichnis-${data?.datum ?? "draft"}`;
+      const safeName = nameBase.replace(/[^a-z0-9-_]+/gi, "_");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safeName}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fillTestData = () => {
     setData({
       ...data,
@@ -918,7 +972,7 @@ export default function SchichtenverzeichnisForm({
         </div>
         <button
           type="button"
-          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+          className="btn btn-primary disabled:opacity-60"
           onClick={openPdf}
           disabled={loading}
         >
@@ -926,7 +980,15 @@ export default function SchichtenverzeichnisForm({
         </button>
         <button
           type="button"
-          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="btn btn-secondary disabled:opacity-60"
+          onClick={downloadPdfToLocal}
+          disabled={loading}
+        >
+          PDF lokal speichern
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
           onClick={fillTestData}
         >
           Test füllen

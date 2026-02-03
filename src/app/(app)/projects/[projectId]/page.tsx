@@ -299,6 +299,11 @@ export default function ProjectDetailPage() {
     return "bg-slate-50 text-slate-700 ring-slate-200";
   };
 
+  const typeBadge = (type: string | null | undefined) => {
+    if (type === "schichtenverzeichnis") return { label: "Schichtenverzeichnis", cls: "bg-amber-50 text-amber-800 ring-amber-200" };
+    return { label: "Tagesbericht", cls: "bg-sky-50 text-sky-800 ring-sky-200" };
+  };
+
   const items = useMemo(() => {
     const reportItems = reports.map((r) => ({
       type: "report" as const,
@@ -343,13 +348,13 @@ export default function ProjectDetailPage() {
         <div className="flex flex-wrap gap-2">
           <Link
             href={`/projects/${projectId}/reports/new`}
-            className="rounded-xl border px-3 py-2 hover:bg-gray-50"
+            className="btn btn-secondary"
           >
             + Tagesbericht
           </Link>
           <Link
             href={`/projects/${projectId}/reports/schichtenverzeichnis/new`}
-            className="rounded-xl border px-3 py-2 hover:bg-gray-50"
+            className="btn btn-secondary"
           >
             + Schichtenverzeichnis
           </Link>
@@ -368,7 +373,7 @@ export default function ProjectDetailPage() {
             />
             <button
               type="button"
-              className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+              className="btn btn-secondary"
               onClick={addMemberByEmail}
               disabled={addingMember}
             >
@@ -463,56 +468,65 @@ export default function ProjectDetailPage() {
               <ul className="divide-y rounded-2xl border">
                 {items.map((item) =>
                   item.type === "report" ? (
-                    <li key={`r-${item.id}`} className="flex items-center justify-between gap-3 p-4">
-                      <div className="min-w-0 flex items-center gap-3">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 text-slate-700 ring-1 ring-slate-200">
+                    <li key={`r-${item.id}`} className="p-4">
+                      <div className="flex items-start justify-between gap-3 rounded-2xl border p-4 shadow-sm">
+                        <div className="min-w-0 flex items-start gap-3">
+                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 text-slate-700 ring-1 ring-slate-200">
                           <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
                             <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" strokeWidth="1.6"/>
                             <path d="M14 3v6h6" fill="none" stroke="currentColor" strokeWidth="1.6"/>
                           </svg>
-                        </span>
-                        <div className="min-w-0">
-                          <div className="truncate font-medium">{item.title}</div>
-                          <div className="mt-1 text-xs text-gray-500">
-                            {new Date(item.created_at).toLocaleString()} • Status: {item.status ?? "—"}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="truncate font-medium">{item.title}</div>
+                            <div className="mt-1 text-xs text-gray-500">
+                              {new Date(item.created_at).toLocaleString()}
+                            </div>
+                            <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                              <span>Status</span>
+                              <span className="rounded-full border px-2 py-0.5">{item.status ?? "—"}</span>
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${typeBadge(item.report_type).cls}`}>
+                                {typeBadge(item.report_type).label}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={
-                            item.report_type === "schichtenverzeichnis"
-                              ? `/api/pdf/schichtenverzeichnis/${item.id}`
-                              : `/api/pdf/tagesbericht/${item.id}`
-                          }
-                          target="_blank"
-                          className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                        >
-                          Öffnen
-                        </Link>
-                        {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
-                          <Link
-                            href={
-                              item.report_type === "schichtenverzeichnis"
-                                ? `/projects/${projectId}/reports/schichtenverzeichnis/${item.id}/edit`
-                                : `/projects/${projectId}/reports/${item.id}/edit`
-                            }
-                            className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-                            title="Bearbeiten"
-                          >
-                            ✏️
-                          </Link>
-                        )}
-                        {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
-                          <button
-                            type="button"
-                            className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
-                            onClick={() => deleteReport(item.id)}
-                          >
-                            Löschen
-                          </button>
-                        )}
+                        <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href={
+                      item.report_type === "schichtenverzeichnis"
+                        ? `/api/pdf/schichtenverzeichnis/${item.id}`
+                        : `/api/pdf/tagesbericht/${item.id}`
+                    }
+                    target="_blank"
+                    className="btn btn-secondary btn-xs"
+                  >
+                    Öffnen
+                  </Link>
+                  {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
+                    <Link
+                      href={
+                        item.report_type === "schichtenverzeichnis"
+                          ? `/projects/${projectId}/reports/schichtenverzeichnis/${item.id}/edit`
+                          : `/projects/${projectId}/reports/${item.id}/edit`
+                      }
+                      className="btn btn-secondary btn-xs"
+                      title="Bearbeiten"
+                    >
+                      Bearbeiten
+                    </Link>
+                  )}
+                  {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-xs"
+                      onClick={() => deleteReport(item.id)}
+                    >
+                      Löschen
+                    </button>
+                  )}
+                        </div>
                       </div>
                     </li>
                   ) : (
@@ -531,14 +545,14 @@ export default function ProjectDetailPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                          className="btn btn-secondary btn-xs"
                           onClick={() => openFile(item.name)}
                         >
                           Öffnen
                         </button>
                         <button
                           type="button"
-                          className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                          className="btn btn-danger btn-xs"
                           onClick={() => deleteFile(item.name)}
                         >
                           Löschen
