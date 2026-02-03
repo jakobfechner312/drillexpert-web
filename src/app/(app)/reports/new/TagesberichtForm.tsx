@@ -1093,9 +1093,10 @@ if (mode === "edit") {
       return { ...p, umsetzenRows: rows };
     });
   }
-  const safeTransport = Array.isArray(report.transportRows) && report.transportRows.length
+  const MAX_TRANSPORT_ROWS = 2;
+  const safeTransport = (Array.isArray(report.transportRows) && report.transportRows.length
     ? report.transportRows
-    : [emptyTransportRow()];
+    : [emptyTransportRow()]).slice(0, MAX_TRANSPORT_ROWS);
 
   function setTransportRow(i: number, patch: Partial<TransportRow>) {
     setReport((p) => {
@@ -1104,8 +1105,6 @@ if (mode === "edit") {
       return { ...p, transportRows: rows };
     });
   }
-
-  const MAX_TRANSPORT_ROWS = 2;
 
   function addTransportRow() {
     setReport((p) => {
@@ -1119,6 +1118,7 @@ if (mode === "edit") {
   function removeLastTransportRow() {
     setReport((p) => {
       const rows = Array.isArray(p.transportRows) ? [...p.transportRows] : [emptyTransportRow()];
+      if (rows.length > MAX_TRANSPORT_ROWS) rows.length = MAX_TRANSPORT_ROWS;
       if (rows.length <= 1) return { ...p, transportRows: rows };
       rows.pop();
       return { ...p, transportRows: rows };
