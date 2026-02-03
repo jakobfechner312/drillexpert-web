@@ -359,10 +359,10 @@ export async function POST(req: Request) {
 
     // Start-Y muss die ERSTE Datenzeile treffen (nicht die Überschrift)
     const umsetzenRowH = 18;
-    const umsetzenStartY = 284 - umsetzenRowH;     // eine Zeile tiefer starten
+    const umsetzenStartY = 284;     // eine Zeile höher starten
 
-    // ✅ Wichtig: Begründung/Wartezeit gehören optisch in die "zweite Zeile" der Zelle
-    const REASON_LINE_OFFSET = 8;   // <- feinjustieren (6–10 typisch)
+    // ✅ Begründung/Wartezeit auf gleicher Höhe wie die erste Zeile
+    const REASON_LINE_OFFSET = 0;
 
     const UCOL = {
       von: 60,
@@ -382,9 +382,9 @@ export async function POST(req: Request) {
       draw(t(r.entfernungM, 6), UCOL.entfernungM, y + 7, 8);
       draw(t(r.zeit, 10), UCOL.zeit, y + 7, 8);
 
-      // zweite Zeile (Begründung/Wartezeit) -> nur für die ersten 4 Zeilen
+      // Begründung/Wartezeit auf gleicher Zeile
       if (i < 4) {
-        const y2 = y - REASON_LINE_OFFSET;
+        const y2 = y + 6 - REASON_LINE_OFFSET;
         draw(t(r.begruendung, 30), UCOL.begruendung, y2, 8);
         draw(t(r.wartezeit, 30), UCOL.wartezeit, y2, 8);
       }
