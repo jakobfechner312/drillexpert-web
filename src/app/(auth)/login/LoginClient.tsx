@@ -9,7 +9,7 @@ export default function LoginClient() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  const redirectTo = sp.get("redirectTo") ?? "/reports/new";
+  const redirectTo = sp.get("redirectTo") ?? "/dashboard";
 
   const supabase = useMemo(() => createClient(), []);
 
