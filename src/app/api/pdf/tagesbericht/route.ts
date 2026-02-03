@@ -359,7 +359,7 @@ export async function POST(req: Request) {
 
     // Start-Y muss die ERSTE Datenzeile treffen (nicht die Überschrift)
     const umsetzenRowH = 18;
-    const umsetzenStartY = 284;     // eine Zeile höher starten
+    const umsetzenStartY = 284 - umsetzenRowH;     // in Zeile 2 starten
 
     // ✅ Begründung/Wartezeit auf gleicher Höhe wie die erste Zeile
     const REASON_LINE_OFFSET = 0;
