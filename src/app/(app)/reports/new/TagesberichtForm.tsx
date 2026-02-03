@@ -2063,9 +2063,6 @@ if (mode === "edit") {
         </button>
       </div>
 
-      <pre className="rounded-2xl bg-gray-50 p-4 text-xs overflow-auto">
-        {JSON.stringify(report, null, 2)}
-      </pre>
     </div>
   );
 }
