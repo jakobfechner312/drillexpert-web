@@ -358,8 +358,8 @@ export async function POST(req: Request) {
     const umsetzen = Array.isArray(data.umsetzenRows) ? data.umsetzenRows : [];
 
     // Start-Y muss die ERSTE Datenzeile treffen (nicht die Überschrift)
-    const umsetzenStartY = 284;     // ggf. minimal anpassen
     const umsetzenRowH = 18;
+    const umsetzenStartY = 284 - umsetzenRowH;     // eine Zeile tiefer starten
 
     // ✅ Wichtig: Begründung/Wartezeit gehören optisch in die "zweite Zeile" der Zelle
     const REASON_LINE_OFFSET = 8;   // <- feinjustieren (6–10 typisch)
@@ -373,7 +373,7 @@ export async function POST(req: Request) {
       wartezeit: 475,
     };
 
-    umsetzen.slice(0, 5).forEach((r: any, i: number) => {
+    umsetzen.slice(0, 3).forEach((r: any, i: number) => {
       const y = umsetzenStartY - i * umsetzenRowH;
 
       // erste Zeile (von/auf/entfernung/zeit)

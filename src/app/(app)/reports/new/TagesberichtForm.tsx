@@ -961,7 +961,7 @@ if (mode === "edit") {
           .fill("")
           .map((_, j) => (j % (i + 2) === 0 ? "1" : "")),
       })),
-      umsetzenRows: Array.from({ length: 5 }, (_, i) => ({
+      umsetzenRows: Array.from({ length: 3 }, (_, i) => ({
         ...emptyUmsetzenRow(),
         von: `P${i + 1}`,
         auf: `P${i + 2}`,
@@ -1028,7 +1028,7 @@ if (mode === "edit") {
 
   /** ---------- Tabelle ---------- */
   const MAX_TABLE_ROWS = 5;
-  const MAX_UMSETZEN_ROWS = 5;
+  const MAX_UMSETZEN_ROWS = 3;
   const MAX_PEGEL_ROWS = 3;
 
   const safeTableRows = useMemo<TableRow[]>(
