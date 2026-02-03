@@ -252,6 +252,7 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
   return r as Tagesbericht;
 }
 export default function TagesberichtForm({ projectId, reportId, mode = "create", stepper = false }: TagesberichtFormProps) {
+  const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
   const draftId = searchParams.get("draftId");
 
@@ -410,6 +411,8 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
       pegelAusbauRows: Array.isArray(base.pegelAusbauRows) && base.pegelAusbauRows.length ? base.pegelAusbauRows : [emptyPegelAusbauRow()],
     };
   });
+  const [customCycleDraft, setCustomCycleDraft] = useState<Record<number, string>>({});
+  const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
   const useStepper = stepper;
   const steps = useMemo(
     () => [
@@ -425,12 +428,52 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
     []
   );
   const [stepIndex, setStepIndex] = useState(0);
+
+  const MAX_CUSTOM_WORK_CYCLES = 5;
+
+  const saveCustomWorkCycles = useCallback(
+    async (list: string[]) => {
+      const { data } = await supabase.auth.getUser();
+      const user = data.user;
+      if (!user) return;
+      await supabase.from("profiles").upsert(
+        {
+          id: user.id,
+          email: user.email ?? null,
+          custom_work_cycles: list,
+        },
+        { onConflict: "id" }
+      );
+    },
+    [supabase]
+  );
    // ✅ hält immer den aktuellsten Report
   const reportRef = useRef(report);
 
   useEffect(() => {
     reportRef.current = report;
   }, [report]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      const user = data.user;
+      if (!user) return;
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("custom_work_cycles")
+        .eq("id", user.id)
+        .single();
+      if (!mounted) return;
+      if (!error && Array.isArray(profile?.custom_work_cycles)) {
+        setCustomWorkCycles(profile.custom_work_cycles);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
 
   // ======================
 // 🧩 LOAD REPORT (EDIT MODE)
@@ -916,7 +959,7 @@ if (mode === "edit") {
       workStartBefore: 6.5,
       workStartAfter: 7.0,
       workStartDistanceM: 250,
-      workCycles: ["Bohren", "Verrohren", "Verfüllen"],
+      workCycles: ["Transport", "Umsetzen", "Kernbohren", "Schachten"],
       otherWork: "Material angeliefert, Baustelle eingerichtet, Sondierung.",
       remarks: "Keine besonderen Vorkommnisse.",
       tableRows: Array.from({ length: 5 }, (_, i) => ({
@@ -957,7 +1000,7 @@ if (mode === "edit") {
         ausloeseT: i === 0,
         ausloeseN: i === 1,
         arbeitsakteNr: `AA-100${i + 1}`,
-        stunden: Array(16)
+        stunden: Array(4)
           .fill("")
           .map((_, j) => (j % (i + 2) === 0 ? "1" : "")),
       })),
@@ -1604,31 +1647,181 @@ if (mode === "edit") {
       ) : null}
 
       {/* ======================= ARBEITER (TABELLENLAYOUT) ======================= */}
-      {showStep(4) ? <GroupCard title="Arbeitsakte / Stunden" badge="Personal">
-        <div className="flex gap-2">
+      {showStep(4) ? <GroupCard title="Arbeitstakte / Stunden" badge="Personal">
+        <div className="flex flex-wrap gap-2">
           <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addWorker}>+ Arbeiter</button>
           <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastWorker}>– Arbeiter</button>
           <span className="text-sm text-slate-500 self-center">Arbeiter: {safeWorkers.length}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Arbeitstakte</span>
+            <button
+              type="button"
+              className="rounded-lg border border-sky-200 bg-white px-2 py-1 text-xs text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+              onClick={() =>
+                setReport((p) => {
+                  const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
+                  if (list.length >= 19) return p;
+                  list.push("");
+                  return { ...p, workCycles: list };
+                })
+              }
+              disabled={(Array.isArray(report.workCycles) ? report.workCycles : []).length >= 19}
+            >
+              + Takt
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-sky-200 bg-white px-2 py-1 text-xs text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+              onClick={() =>
+                setReport((p) => {
+                  const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
+                  if (list.length <= 1) return { ...p, workCycles: list };
+                  list.pop();
+                  return { ...p, workCycles: list };
+                })
+              }
+              disabled={(Array.isArray(report.workCycles) ? report.workCycles : []).length <= 1}
+            >
+              – Takt
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 overflow-x-auto rounded-xl border">
           <div className="min-w-[840px] w-full">
-            <div className="grid w-full grid-cols-[220px_80px_80px_80px_50px_50px_repeat(16,minmax(32px,1fr))] border-b text-[12px] font-medium text-slate-600">
+            <div
+              className="grid w-full border-b text-[12px] font-medium text-slate-600"
+              style={{
+                gridTemplateColumns: `220px 80px 80px 80px 50px 50px repeat(${Math.max(
+                  1,
+                  (Array.isArray(report.workCycles) ? report.workCycles : []).length
+                )}, minmax(140px,1fr))`,
+              }}
+            >
+              <div className="border-b border-r px-2 py-1" />
+              <div className="border-b border-r px-2 py-1" />
+              <div className="border-b border-r px-2 py-1" />
+              <div className="border-b border-r px-2 py-1" />
+              <div className="border-b border-r px-2 py-1 text-center" style={{ gridColumn: "span 2" }}>
+                Auslöse
+              </div>
+              {(Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((_, i) => (
+                <div key={i} className="border-b border-r px-2 py-1 text-center text-[11px] font-semibold text-slate-500">
+                  {i + 1}
+                </div>
+              ))}
+            </div>
+            <div
+              className="grid w-full border-b text-[12px] font-medium text-slate-600"
+              style={{
+                gridTemplateColumns: `220px 80px 80px 80px 50px 50px repeat(${Math.max(
+                  1,
+                  (Array.isArray(report.workCycles) ? report.workCycles : []).length
+                )}, minmax(120px,1fr))`,
+              }}
+            >
               <div className="border-b border-r px-2 py-2">Name</div>
               <div className="border-b border-r px-2 py-2">Reine Std.</div>
               <div className="border-b border-r px-2 py-2">Wochenend</div>
               <div className="border-b border-r px-2 py-2">Ausfall</div>
               <div className="border-b border-r px-2 py-2 text-center">T</div>
               <div className="border-b border-r px-2 py-2 text-center">N</div>
-              {Array.from({ length: 16 }).map((_, i) => (
-                <div key={i} className="border-b border-r px-1 py-2 text-center">{i + 1}</div>
+              {(Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((val, i) => (
+                <div key={i} className="border-b border-r px-2 py-1">
+                  <select
+                    className="w-full rounded border px-1 py-1 text-[11px]"
+                    value={val ?? ""}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setReport((p) => {
+                        const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
+                        list[i] = next;
+                        return { ...p, workCycles: list };
+                      });
+                      if (next !== "__custom__") {
+                        setCustomCycleDraft((p) => ({ ...p, [i]: "" }));
+                      }
+                    }}
+                  >
+                    <option value="">Bitte wählen…</option>
+                    <option value="Transport">1 Transport</option>
+                    <option value="Einrichten und Aufstellen">2 Einrichten und Aufstellen</option>
+                    <option value="Umsetzen">3 Umsetzen</option>
+                    <option value="Rammbohren/EK-bohren">4 Rammbohren/EK-bohren</option>
+                    <option value="Kernbohren">5 Kernbohren</option>
+                    <option value="Vollbohren">6 Vollbohren</option>
+                    <option value="Hindernisse durchbohren">7 Hindernisse durchbohren</option>
+                    <option value="Schachten">8 Schachten</option>
+                    <option value="Proben/Bohrung aufnehmen">9 Proben/Bohrung aufnehmen</option>
+                    <option value="Bo. aufnehmen m. GA">10 Bo. aufnehmen m. GA</option>
+                    <option value="Pumpversuche">11 Pumpversuche</option>
+                    <option value="Bohrloch Versuche">12 Bohrloch Versuche</option>
+                    <option value="Bohrloch Verfüllung">13 Bohrloch Verfüllung</option>
+                    <option value="Pegel:einbau mit Verfüllung">14 Pegel:einbau mit Verfüllung</option>
+                    <option value="Fahrten">15 Fahrten</option>
+                    <option value="Bohrstelle räumen, Flurschäden beseitigen">16 Bohrstelle räumen, Flurschäden beseitigen</option>
+                    <option value="Baustelle räumen">17 Baustelle räumen</option>
+                    <option value="Werkstatt/Laden">18 Werkstatt/Laden</option>
+                    <option value="Geräte-Pflege/Reparatur">19 Geräte-Pflege/Reparatur</option>
+                    {customWorkCycles.map((c, idx) => (
+                      <option key={`custom-${c}`} value={c}>{20 + idx} {c}</option>
+                    ))}
+                    <option value="__custom__">Eigener Takt…</option>
+                  </select>
+                  {val === "__custom__" ? (
+                    <div className="mt-1 flex items-center gap-1">
+                      <input
+                        className="w-full rounded border px-2 py-1 text-[11px]"
+                        placeholder="Eigener Takt"
+                        value={customCycleDraft[i] ?? ""}
+                        onChange={(e) =>
+                          setCustomCycleDraft((p) => ({ ...p, [i]: e.target.value }))
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="rounded border border-sky-200 bg-white px-2 py-1 text-[11px] text-sky-700 hover:bg-sky-50"
+                        onClick={() => {
+                          const text = (customCycleDraft[i] ?? "").trim();
+                          if (!text) return;
+                          setReport((p) => {
+                            const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
+                            list[i] = text;
+                            const nextRemarks = p.remarks ? `${p.remarks}\n${text}` : text;
+                            return { ...p, workCycles: list, remarks: nextRemarks };
+                          });
+                          setCustomWorkCycles((prev) => {
+                            const exists = prev.some((v) => v.toLowerCase() === text.toLowerCase());
+                            if (exists) return prev;
+                            if (prev.length >= MAX_CUSTOM_WORK_CYCLES) {
+                              alert(`Maximal ${MAX_CUSTOM_WORK_CYCLES} eigene Arbeitstakte erlaubt.`);
+                              return prev;
+                            }
+                            const next = [...prev, text];
+                            void saveCustomWorkCycles(next);
+                            return next;
+                          });
+                          setCustomCycleDraft((p) => ({ ...p, [i]: "" }));
+                        }}
+                      >
+                        Übernehmen
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               ))}
             </div>
 
             {safeWorkers.map((w, idx) => (
               <div
                 key={idx}
-                className="grid w-full grid-cols-[220px_80px_80px_80px_50px_50px_repeat(16,minmax(32px,1fr))] text-[12px]"
+                className="grid w-full text-[12px]"
+                style={{
+                  gridTemplateColumns: `220px 80px 80px 80px 50px 50px repeat(${Math.max(
+                    1,
+                    (Array.isArray(report.workCycles) ? report.workCycles : []).length
+                  )}, minmax(120px,1fr))`,
+                }}
               >
                 <div className="border-b border-r px-2 py-1">
                   <input className="w-full rounded border px-2 py-1 text-[12px]" value={w.name ?? ""} onChange={(e) => setWorker(idx, { name: e.target.value })} />
@@ -1648,16 +1841,18 @@ if (mode === "edit") {
                 <div className="border-b border-r flex items-center justify-center">
                   <input type="checkbox" checked={!!w.ausloeseN} onChange={(e) => setWorker(idx, { ausloeseN: e.target.checked })} />
                 </div>
-                {(Array.isArray(w.stunden) ? w.stunden : Array(16).fill("")).slice(0, 16).map((val, j) => (
-                  <div key={j} className="border-b border-r px-1 py-1">
+                {(Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((_, j) => (
+                  <div key={j} className="border-b border-r px-2 py-1">
                     <input
                       className="w-full rounded border px-1 py-1 text-center text-[12px]"
-                      value={val ?? ""}
+                      value={(Array.isArray(w.stunden) ? w.stunden[j] : "") ?? ""}
                       onChange={(e) => {
-                        const st = Array.isArray(w.stunden) ? [...w.stunden] : Array(16).fill("");
+                        const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
+                        while (st.length < (Array.isArray(report.workCycles) ? report.workCycles.length : 1)) st.push("");
                         st[j] = e.target.value;
                         setWorker(idx, { stunden: st });
                       }}
+                      placeholder="Std."
                     />
                   </div>
                 ))}

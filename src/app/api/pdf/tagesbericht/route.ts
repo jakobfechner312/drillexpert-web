@@ -225,6 +225,68 @@ export async function POST(req: Request) {
       stundenStep: 18,
     };
 
+    // Kopfzeile: Arbeitstakte Nr. (aus Auswahl) über den Stundenkästchen
+    const stundenHeaderY = workersStartY + 12;
+    const workCycleOptions = [
+      "Transport",
+      "Einrichten und Aufstellen",
+      "Umsetzen",
+      "Rammbohren/EK-bohren",
+      "Kernbohren",
+      "Vollbohren",
+      "Hindernisse durchbohren",
+      "Schachten",
+      "Proben/Bohrung aufnehmen",
+      "Bo. aufnehmen m. GA",
+      "Pumpversuche",
+      "Bohrloch Versuche",
+      "Bohrloch Verfüllung",
+      "Pegel:einbau mit Verfüllung",
+      "Fahrten",
+      "Bohrstelle räumen, Flurschäden beseitigen",
+      "Baustelle räumen",
+      "Werkstatt/Laden",
+      "Geräte-Pflege/Reparatur",
+    ];
+    const workCycles = Array.isArray(data.workCycles) ? data.workCycles : [];
+    for (let j = 0; j < STUNDEN_BOXES; j++) {
+      const label = workCycles[j];
+      const idx = label ? workCycleOptions.indexOf(label) : -1;
+      const display = idx >= 0 ? String(idx + 1) : label ? "20" : "";
+      draw(display, WCOL.stundenStartX + j * WCOL.stundenStep, stundenHeaderY, 8);
+    }
+
+    // Markierung der gewählten Arbeitstakte in der Liste rechts
+    const selectedCycles = new Set<number>();
+    workCycles.forEach((label: string) => {
+      const idx = workCycleOptions.indexOf(label);
+      if (idx >= 0) selectedCycles.add(idx + 1);
+    });
+
+    const LIST = {
+      leftX: 595,
+      rightX: 705,
+      startY: 292,
+      rowH: 8.5,
+      boxW: 100,
+      boxH: 10,
+    };
+
+    selectedCycles.forEach((nr) => {
+      const col = nr <= 10 ? 0 : 1;
+      const row = nr <= 10 ? nr - 1 : nr - 11;
+      const x = col === 0 ? LIST.leftX : LIST.rightX;
+      const y = LIST.startY - row * LIST.rowH;
+      page.drawRectangle({
+        x,
+        y,
+        width: LIST.boxW,
+        height: LIST.boxH,
+        color: rgb(0.2, 0.6, 1),
+        opacity: 0.25,
+      });
+    });
+
     workers.slice(0, 3).forEach((w: any, i: number) => {
       const y = workersStartY - i * workerRowH;
 
@@ -239,7 +301,7 @@ export async function POST(req: Request) {
       const st = Array.isArray(w.stunden) ? w.stunden : [];
       for (let j = 0; j < STUNDEN_BOXES; j++) {
         const val = st[j] ?? "";
-        draw(String(val ?? ""), WCOL.stundenStartX + j * WCOL.stundenStep, y, 7);
+        draw(String(val ?? ""), WCOL.stundenStartX + j * WCOL.stundenStep, y, 8);
       }
     });
 
