@@ -138,7 +138,6 @@ export type Tagesbericht = {
   client: string;
 
   // falls du das später brauchst (Nummerierung)
-  dailyReportNo: string;
 
   // ===== Tabelle =====
   tableSectionsEnabled: TableSectionsEnabled;

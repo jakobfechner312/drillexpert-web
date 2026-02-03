@@ -12,7 +12,6 @@ export function createDefaultTagesbericht(): Tagesbericht {
     name: "",
     project: "",
     client: "",
-    dailyReportNo: "",
 
     // Kopf / oben rechts
     vehicles: "",

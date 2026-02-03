@@ -889,7 +889,6 @@ if (mode === "edit") {
       project: "Baustelle Freiburg Nord",
       client: "Stadt Freiburg",
       name: "Team A",
-      dailyReportNo: "TB-001",
       vehicles: "LKW 7.5t, Bohrgerät X2, Sprinter",
       aNr: "A-2026-001",
       device: "Bohrgerät BG-12",
@@ -1356,19 +1355,7 @@ if (mode === "edit") {
       {/* ======================= KOPF (PDF-LAYOUT) ======================= */}
       {showHeaderBlock ? (
         <GroupCard title="Tagesbericht" badge="Kopfbereich">
-          {(!useStepper || showStep(0)) ? (
-            <div className="flex flex-wrap items-center justify-end gap-3 mb-4">
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                Nr.
-                <input
-                  className="w-40 rounded-xl border px-3 py-2 text-sm bg-white"
-                  value={report.dailyReportNo ?? ""}
-                  onChange={(e) => update("dailyReportNo", e.target.value)}
-                  placeholder="TB-001"
-                />
-              </label>
-            </div>
-          ) : null}
+          {(!useStepper || showStep(0)) ? null : null}
           <div className={headerGridClass}>
             {showStep(0) ? (
               <SubGroup title="Stammdaten">
