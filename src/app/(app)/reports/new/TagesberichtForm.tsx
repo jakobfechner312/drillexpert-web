@@ -125,6 +125,7 @@ type TagesberichtFormProps = {
   projectId?: string;
   reportId?: string;
   mode?: "create" | "edit";
+  stepper?: boolean;
 };
 
 const GroupCard = ({
@@ -250,7 +251,7 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
 
   return r as Tagesbericht;
 }
-export default function TagesberichtForm({ projectId, reportId, mode = "create" }: TagesberichtFormProps) {
+export default function TagesberichtForm({ projectId, reportId, mode = "create", stepper = false }: TagesberichtFormProps) {
   const searchParams = useSearchParams();
   const draftId = searchParams.get("draftId");
 
@@ -409,6 +410,21 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create" 
       pegelAusbauRows: Array.isArray(base.pegelAusbauRows) && base.pegelAusbauRows.length ? base.pegelAusbauRows : [emptyPegelAusbauRow()],
     };
   });
+  const useStepper = stepper;
+  const steps = useMemo(
+    () => [
+      { key: "stammdaten", title: "Stammdaten" },
+      { key: "fahrzeuge", title: "Fahrzeuge / Transport / Umsetzen" },
+      { key: "wetter", title: "Wetter + Ruhewasser" },
+      { key: "zeiten", title: "Arbeitszeit & Pausen" },
+      { key: "arbeitsakte", title: "Arbeitsakte / Stunden" },
+      { key: "tabelle", title: "Tabelle Bohrungen" },
+      { key: "pegel", title: "Pegelausbau" },
+      { key: "abschluss", title: "Bemerkungen & Unterschriften" },
+    ],
+    []
+  );
+  const [stepIndex, setStepIndex] = useState(0);
    // ✅ hält immer den aktuellsten Report
   const reportRef = useRef(report);
 
@@ -1193,8 +1209,60 @@ if (mode === "edit") {
     ["klarpump", "Klarpump."],
   ];
 
+  const showStep = (index: number) => !useStepper || stepIndex === index;
+  const showHeaderBlock = !useStepper || stepIndex <= 3;
+  const headerGridClass = useStepper
+    ? "grid gap-5 md:grid-cols-1"
+    : "grid gap-5 md:grid-cols-2 xl:grid-cols-[1.35fr_1.35fr_1.2fr]";
+
   return (
     <div className="mt-6 space-y-6 max-w-[2000px] mx-auto w-full px-4 sm:px-6 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
+      {useStepper ? (
+        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Schritt {stepIndex + 1} von {steps.length}
+              </div>
+              <div className="text-lg font-semibold text-slate-900">{steps[stepIndex]?.title}</div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
+                disabled={stepIndex === 0}
+              >
+                Zurück
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setStepIndex((i) => Math.min(steps.length - 1, i + 1))}
+                disabled={stepIndex >= steps.length - 1}
+              >
+                Weiter
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {steps.map((s, i) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setStepIndex(i)}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                  i === stepIndex
+                    ? "bg-sky-50 text-sky-800 border-sky-200"
+                    : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {projectModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
@@ -1286,250 +1354,267 @@ if (mode === "edit") {
         </div>
       )}
       {/* ======================= KOPF (PDF-LAYOUT) ======================= */}
-      <GroupCard title="Tagesbericht" badge="Kopfbereich">
-        <div className="flex flex-wrap items-center justify-end gap-3 mb-4">
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            Nr.
-            <input
-              className="w-40 rounded-xl border px-3 py-2 text-sm bg-white"
-              value={report.dailyReportNo ?? ""}
-              onChange={(e) => update("dailyReportNo", e.target.value)}
-              placeholder="TB-001"
-            />
-          </label>
-        </div>
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-[1.35fr_1.35fr_1.2fr]">
-          {/* LINKS: Datum / Projekt / Auftraggeber */}
-          <SubGroup title="Stammdaten">
-            <div className="grid gap-3">
-              <label className="space-y-1">
-                <span className="text-sm text-slate-600">Datum</span>
+      {showHeaderBlock ? (
+        <GroupCard title="Tagesbericht" badge="Kopfbereich">
+          {(!useStepper || showStep(0)) ? (
+            <div className="flex flex-wrap items-center justify-end gap-3 mb-4">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                Nr.
                 <input
-                  type="date"
-                  className="w-full rounded-xl border p-3"
-                  value={report.date ?? ""}
-                  onChange={(e) => update("date", e.target.value)}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-sm text-slate-600">Projekt</span>
-                <input
-                  className="w-full rounded-xl border p-3"
-                  value={report.project ?? ""}
-                  onChange={(e) => update("project", e.target.value)}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-sm text-slate-600">Auftraggeber</span>
-                <input
-                  className="w-full rounded-xl border p-3"
-                  value={report.client ?? ""}
-                  onChange={(e) => update("client", e.target.value)}
+                  className="w-40 rounded-xl border px-3 py-2 text-sm bg-white"
+                  value={report.dailyReportNo ?? ""}
+                  onChange={(e) => update("dailyReportNo", e.target.value)}
+                  placeholder="TB-001"
                 />
               </label>
             </div>
-          </SubGroup>
-
-          {/* MITTE: Fahrzeuge / A.Nr. / Gerät + Zeiten */}
-          <SubGroup title="Fahrzeuge & Zeiten">
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="space-y-1 md:col-span-3">
-                <span className="text-sm text-slate-600">Fahrzeuge</span>
-                <input className="w-full rounded-xl border p-3" value={report.vehicles ?? ""} onChange={(e) => update("vehicles", e.target.value)} />
-              </label>
-              <label className="space-y-1">
-                <span className="text-sm text-slate-600">A.Nr.</span>
-                <input className="w-full rounded-xl border p-3" value={report.aNr ?? ""} onChange={(e) => update("aNr", e.target.value)} />
-              </label>
-              <label className="space-y-1 md:col-span-2">
-                <span className="text-sm text-slate-600">Gerät</span>
-                <input className="w-full rounded-xl border p-3" value={report.device ?? ""} onChange={(e) => update("device", e.target.value)} />
-              </label>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-slate-200/70 p-3 bg-slate-50/60">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium">Arbeitszeit & Pausen</h4>
-                <div className="flex gap-2">
-                  <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={addWorkAndBreakRow}>+ Zeile</button>
-                  <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={removeLastWorkAndBreakRow}>– Zeile</button>
-                </div>
-              </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-slate-200/70 bg-white p-3">
-                  <div className="text-sm font-medium text-slate-700">Arbeitszeit</div>
-                  <div className="mt-2 space-y-3">
-                    {safeWorkTimes.slice(0, 2).map((r, i) => (
-                      <div key={i} className="grid grid-cols-2 gap-3">
-                        <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.from ?? ""} onChange={(e) => setWorkTimeRow(i, { from: e.target.value })} />
-                        <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.to ?? ""} onChange={(e) => setWorkTimeRow(i, { to: e.target.value })} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-slate-200/70 bg-white p-3">
-                  <div className="text-sm font-medium text-slate-700">Pausen</div>
-                  <div className="mt-2 space-y-3">
-                    {safeBreaks.slice(0, 2).map((r, i) => (
-                      <div key={i} className="grid grid-cols-2 gap-3">
-                        <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.from ?? ""} onChange={(e) => setBreakRow(i, { from: e.target.value })} />
-                        <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.to ?? ""} onChange={(e) => setBreakRow(i, { to: e.target.value })} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </SubGroup>
-
-          {/* RECHTS: Wetter / Transport / Ruhewasser */}
-          <SubGroup title="Wetter / Transport / Entfernung">
-            <div className="rounded-xl border border-slate-200/70 p-3 bg-slate-50/60">
-              <h3 className="font-medium">Wetter</h3>
-              <div className="mt-3 flex flex-wrap gap-3">
-                {(["trocken", "regen", "frost"] as const).map((c) => (
-                  <label key={c} className="flex items-center gap-2 text-sm">
+          ) : null}
+          <div className={headerGridClass}>
+            {showStep(0) ? (
+              <SubGroup title="Stammdaten">
+                <div className="grid gap-3">
+                  <label className="space-y-1">
+                    <span className="text-sm text-slate-600">Datum</span>
                     <input
-                      type="checkbox"
-                      checked={(report.weather?.conditions ?? []).includes(c)}
-                      onChange={(e) => {
-                        const cur = new Set(report.weather?.conditions ?? []);
-                        if (e.target.checked) cur.add(c);
-                        else cur.delete(c);
-                        setReport((p) => ({
-                          ...p,
-                          weather: {
-                            ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
-                            conditions: Array.from(cur),
-                          },
-                        }));
-                      }}
+                      type="date"
+                      className="w-full rounded-xl border p-3"
+                      value={report.date ?? ""}
+                      onChange={(e) => update("date", e.target.value)}
                     />
-                    <span>{c}</span>
                   </label>
-                ))}
-              </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <label className="space-y-1">
-                  <span className="text-sm text-slate-600">Temp. Max (°C)</span>
-                  <input
-                    className="w-full rounded-xl border p-3"
-                    inputMode="numeric"
-                    value={
-                      typeof report.weather?.tempMaxC === "number" && Number.isFinite(report.weather?.tempMaxC)
-                        ? String(report.weather?.tempMaxC)
-                        : ""
-                    }
-                    onChange={(e) =>
-                      setReport((p) => ({
-                        ...p,
-                        weather: {
-                          ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
-                          tempMaxC:
-                            e.target.value === "" || Number.isNaN(Number(e.target.value))
-                              ? null
-                              : Number(e.target.value),
-                        },
-                      }))
-                    }
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-sm text-slate-600">Temp. Min (°C)</span>
-                  <input
-                    className="w-full rounded-xl border p-3"
-                    inputMode="numeric"
-                    value={
-                      typeof report.weather?.tempMinC === "number" && Number.isFinite(report.weather?.tempMinC)
-                        ? String(report.weather?.tempMinC)
-                        : ""
-                    }
-                    onChange={(e) =>
-                      setReport((p) => ({
-                        ...p,
-                        weather: {
-                          ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
-                          tempMinC:
-                            e.target.value === "" || Number.isNaN(Number(e.target.value))
-                              ? null
-                              : Number(e.target.value),
-                        },
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200/70 p-3 bg-white">
-              <div className="flex items-center justify-between">
-                <h3 className="font-medium">Transport</h3>
-                <div className="flex gap-2">
-                  <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={addTransportRow}>+ Zeile</button>
-                  <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={removeLastTransportRow}>– Zeile</button>
+                  <label className="space-y-1">
+                    <span className="text-sm text-slate-600">Projekt</span>
+                    <input
+                      className="w-full rounded-xl border p-3"
+                      value={report.project ?? ""}
+                      onChange={(e) => update("project", e.target.value)}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-sm text-slate-600">Auftraggeber</span>
+                    <input
+                      className="w-full rounded-xl border p-3"
+                      value={report.client ?? ""}
+                      onChange={(e) => update("client", e.target.value)}
+                    />
+                  </label>
                 </div>
-              </div>
-              <div className="mt-3 space-y-3">
-                {safeTransport.map((r, i) => (
-                  <div key={i} className="grid gap-3 md:grid-cols-4">
-                    <input className="rounded-xl border p-3" value={r.from ?? ""} onChange={(e) => setTransportRow(i, { from: e.target.value })} placeholder="von" />
-                    <input className="rounded-xl border p-3" value={r.to ?? ""} onChange={(e) => setTransportRow(i, { to: e.target.value })} placeholder="nach" />
-                    <input className="rounded-xl border p-3" value={r.km ?? ""} onChange={(e) => setTransportRow(i, { km: e.target.value === "" ? null : Number(e.target.value) })} placeholder="km" />
-                    <input className="rounded-xl border p-3" value={r.time ?? ""} onChange={(e) => setTransportRow(i, { time: e.target.value })} placeholder="Zeit" />
-                  </div>
-                ))}
-              </div>
-            </div>
+              </SubGroup>
+            ) : null}
 
-            <div className="rounded-xl border border-slate-200/70 p-3 bg-white">
-              <h3 className="font-medium">Ruhewasser / Entfernung</h3>
-              <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <label className="space-y-1">
-                  <span className="min-h-[32px] text-sm leading-4 text-slate-600">Ruhewasser (m)</span>
-                  <input
-                    className="w-full rounded-xl border p-3"
-                    inputMode="numeric"
-                    value={report.ruhewasserVorArbeitsbeginnM ?? ""}
-                    onChange={(e) =>
-                      update(
-                        "ruhewasserVorArbeitsbeginnM",
-                        e.target.value === "" ? null : Number(e.target.value)
-                      )
-                    }
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="min-h-[32px] text-sm leading-4 text-slate-600">Entfernung (km)</span>
-                  <input
-                    className="w-full rounded-xl border p-3"
-                    inputMode="numeric"
-                    value={report.entfernungWohnwagenBaustelleKm ?? ""}
-                    onChange={(e) =>
-                      update(
-                        "entfernungWohnwagenBaustelleKm",
-                        e.target.value === "" ? null : Number(e.target.value)
-                      )
-                    }
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="min-h-[32px] text-sm leading-4 text-slate-600">Zeit</span>
-                  <input
-                    className="w-full rounded-xl border p-3"
-                    value={report.entfernungWohnwagenBaustelleZeit ?? ""}
-                    onChange={(e) =>
-                      update("entfernungWohnwagenBaustelleZeit", e.target.value)
-                    }
-                  />
-                </label>
-              </div>
-            </div>
-          </SubGroup>
-        </div>
-      </GroupCard>
+            {(showStep(1) || showStep(3)) ? (
+              <SubGroup title="Fahrzeuge & Zeiten">
+                {showStep(1) ? (
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <label className="space-y-1 md:col-span-3">
+                      <span className="text-sm text-slate-600">Fahrzeuge</span>
+                      <input className="w-full rounded-xl border p-3" value={report.vehicles ?? ""} onChange={(e) => update("vehicles", e.target.value)} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-sm text-slate-600">A.Nr.</span>
+                      <input className="w-full rounded-xl border p-3" value={report.aNr ?? ""} onChange={(e) => update("aNr", e.target.value)} />
+                    </label>
+                    <label className="space-y-1 md:col-span-2">
+                      <span className="text-sm text-slate-600">Gerät</span>
+                      <input className="w-full rounded-xl border p-3" value={report.device ?? ""} onChange={(e) => update("device", e.target.value)} />
+                    </label>
+                  </div>
+                ) : null}
+
+                {showStep(3) ? (
+                  <div className="mt-4 rounded-xl border border-slate-200/70 p-3 bg-slate-50/60">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium">Arbeitszeit & Pausen</h4>
+                      <div className="flex gap-2">
+                        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={addWorkAndBreakRow}>+ Zeile</button>
+                        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={removeLastWorkAndBreakRow}>– Zeile</button>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-xl border border-slate-200/70 bg-white p-3">
+                        <div className="text-sm font-medium text-slate-700">Arbeitszeit</div>
+                        <div className="mt-2 space-y-3">
+                          {safeWorkTimes.slice(0, 2).map((r, i) => (
+                            <div key={i} className="grid grid-cols-2 gap-3">
+                              <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.from ?? ""} onChange={(e) => setWorkTimeRow(i, { from: e.target.value })} />
+                              <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.to ?? ""} onChange={(e) => setWorkTimeRow(i, { to: e.target.value })} />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200/70 bg-white p-3">
+                        <div className="text-sm font-medium text-slate-700">Pausen</div>
+                        <div className="mt-2 space-y-3">
+                          {safeBreaks.slice(0, 2).map((r, i) => (
+                            <div key={i} className="grid grid-cols-2 gap-3">
+                              <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.from ?? ""} onChange={(e) => setBreakRow(i, { from: e.target.value })} />
+                              <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.to ?? ""} onChange={(e) => setBreakRow(i, { to: e.target.value })} />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </SubGroup>
+            ) : null}
+
+            {(showStep(1) || showStep(2)) ? (
+              <SubGroup title="Wetter / Transport / Entfernung">
+                {showStep(2) ? (
+                  <div className="rounded-xl border border-slate-200/70 p-3 bg-slate-50/60">
+                    <h3 className="font-medium">Wetter</h3>
+                    <div className="mt-3 flex flex-wrap gap-3">
+                      {(["trocken", "regen", "frost"] as const).map((c) => (
+                        <label key={c} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={(report.weather?.conditions ?? []).includes(c)}
+                            onChange={(e) => {
+                              const cur = new Set(report.weather?.conditions ?? []);
+                              if (e.target.checked) cur.add(c);
+                              else cur.delete(c);
+                              setReport((p) => ({
+                                ...p,
+                                weather: {
+                                  ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
+                                  conditions: Array.from(cur),
+                                },
+                              }));
+                            }}
+                          />
+                          <span>{c}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Temp. Max (°C)</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          inputMode="numeric"
+                          value={
+                            typeof report.weather?.tempMaxC === "number" && Number.isFinite(report.weather?.tempMaxC)
+                              ? String(report.weather?.tempMaxC)
+                              : ""
+                          }
+                          onChange={(e) =>
+                            setReport((p) => ({
+                              ...p,
+                              weather: {
+                                ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
+                                tempMaxC:
+                                  e.target.value === "" || Number.isNaN(Number(e.target.value))
+                                    ? null
+                                    : Number(e.target.value),
+                              },
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Temp. Min (°C)</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          inputMode="numeric"
+                          value={
+                            typeof report.weather?.tempMinC === "number" && Number.isFinite(report.weather?.tempMinC)
+                              ? String(report.weather?.tempMinC)
+                              : ""
+                          }
+                          onChange={(e) =>
+                            setReport((p) => ({
+                              ...p,
+                              weather: {
+                                ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
+                                tempMinC:
+                                  e.target.value === "" || Number.isNaN(Number(e.target.value))
+                                    ? null
+                                    : Number(e.target.value),
+                              },
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
+
+                {showStep(1) ? (
+                  <div className="rounded-xl border border-slate-200/70 p-3 bg-white">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium">Transport</h3>
+                      <div className="flex gap-2">
+                        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={addTransportRow}>+ Zeile</button>
+                        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={removeLastTransportRow}>– Zeile</button>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-3">
+                      {safeTransport.map((r, i) => (
+                        <div key={i} className="grid gap-3 md:grid-cols-4">
+                          <input className="rounded-xl border p-3" value={r.from ?? ""} onChange={(e) => setTransportRow(i, { from: e.target.value })} placeholder="von" />
+                          <input className="rounded-xl border p-3" value={r.to ?? ""} onChange={(e) => setTransportRow(i, { to: e.target.value })} placeholder="nach" />
+                          <input className="rounded-xl border p-3" value={r.km ?? ""} onChange={(e) => setTransportRow(i, { km: e.target.value === "" ? null : Number(e.target.value) })} placeholder="km" />
+                          <input className="rounded-xl border p-3" value={r.time ?? ""} onChange={(e) => setTransportRow(i, { time: e.target.value })} placeholder="Zeit" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {showStep(2) ? (
+                  <div className="rounded-xl border border-slate-200/70 p-3 bg-white">
+                    <h3 className="font-medium">Ruhewasser / Entfernung</h3>
+                    <div className="mt-3 grid gap-3 md:grid-cols-3">
+                      <label className="space-y-1">
+                        <span className="min-h-[32px] text-sm leading-4 text-slate-600">Ruhewasser (m)</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          inputMode="numeric"
+                          value={report.ruhewasserVorArbeitsbeginnM ?? ""}
+                          onChange={(e) =>
+                            update(
+                              "ruhewasserVorArbeitsbeginnM",
+                              e.target.value === "" ? null : Number(e.target.value)
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="min-h-[32px] text-sm leading-4 text-slate-600">Entfernung (km)</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          inputMode="numeric"
+                          value={report.entfernungWohnwagenBaustelleKm ?? ""}
+                          onChange={(e) =>
+                            update(
+                              "entfernungWohnwagenBaustelleKm",
+                              e.target.value === "" ? null : Number(e.target.value)
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="min-h-[32px] text-sm leading-4 text-slate-600">Zeit</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          value={report.entfernungWohnwagenBaustelleZeit ?? ""}
+                          onChange={(e) =>
+                            update("entfernungWohnwagenBaustelleZeit", e.target.value)
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
+              </SubGroup>
+            ) : null}
+          </div>
+        </GroupCard>
+      ) : null}
 
       {/* ======================= ARBEITER (TABELLENLAYOUT) ======================= */}
-      <GroupCard title="Arbeitsakte / Stunden" badge="Personal">
+      {showStep(4) ? <GroupCard title="Arbeitsakte / Stunden" badge="Personal">
         <div className="flex gap-2">
           <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addWorker}>+ Arbeiter</button>
           <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastWorker}>– Arbeiter</button>
@@ -1590,10 +1675,10 @@ if (mode === "edit") {
             ))}
           </div>
         </div>
-      </GroupCard>
+      </GroupCard> : null}
 
       {/* ======================= TABELLE ======================= */}
-      <GroupCard title="Tabelle (Bohrung / Proben / Verfüllung)" badge="Kernbereich">
+      {showStep(5) ? <GroupCard title="Tabelle (Bohrung / Proben / Verfüllung)" badge="Kernbereich">
 
         <div className="mt-3 flex gap-3">
           <button
@@ -1691,10 +1776,10 @@ if (mode === "edit") {
             </div>
           ))}
         </div>
-      </GroupCard>
+      </GroupCard> : null}
 
       {/* ======================= UMSETZEN ======================= */}
-      <GroupCard title="Umsetzen" badge="Logistik">
+      {showStep(1) ? <GroupCard title="Umsetzen" badge="Logistik">
 
         <div className="mt-3 flex gap-3">
           <button
@@ -1725,10 +1810,10 @@ if (mode === "edit") {
             </div>
           ))}
         </div>
-      </GroupCard>
+      </GroupCard> : null}
 
       {/* ======================= PEGELAUSBAU ======================= */}
-      <GroupCard title="Pegelausbau" badge="Ausbau">
+      {showStep(6) ? <GroupCard title="Pegelausbau" badge="Ausbau">
 
         <div className="mt-3 flex gap-3">
           <button
@@ -1813,9 +1898,9 @@ if (mode === "edit") {
             </div>
           </div>
         ))}
-      </GroupCard>
+      </GroupCard> : null}
       {/* ======================= SONSTIGE / BEMERKUNGEN / UNTERSCHRIFTEN ======================= */}
-      <GroupCard title="Sonstige / Bemerkungen / Unterschriften" badge="Abschluss">
+      {showStep(7) ? <GroupCard title="Sonstige / Bemerkungen / Unterschriften" badge="Abschluss">
 
     {/* Texte */}
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -1942,7 +2027,7 @@ if (mode === "edit") {
           </div>
         </div>
       </div>
-    </GroupCard>
+    </GroupCard> : null}
 
       {/* ======================= BUTTONS ======================= */}
       <div className="flex flex-col gap-3 sm:flex-row">
