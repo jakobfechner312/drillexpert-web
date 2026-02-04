@@ -2025,7 +2025,7 @@ if (mode === "edit") {
         <div className="mt-4 space-y-4">
           {safeTableRows.map((row, i) => (
             <div key={i} className="rounded-xl border p-4">
-              <div className="grid gap-3 md:grid-cols-8">
+              <div className="grid gap-3 xl:grid-cols-8">
                 <div className="space-y-1">
                   <div className="text-[11px] text-slate-500">Bohr‑Nr.</div>
                   <input className="rounded-lg border px-3 py-2 text-sm" value={row.boNr ?? ""} onChange={(e) => setRow(i, { boNr: e.target.value })} placeholder="z.B. B1" />
@@ -2068,7 +2068,7 @@ if (mode === "edit") {
 
 
 
-                <details className="md:col-span-2 rounded-lg border px-3 py-2 text-sm">
+                <details className="xl:col-span-2 rounded-lg border px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-medium text-slate-700">Vollbohrung (optional)</summary>
                   <div className="mt-2 grid gap-2">
                     <div className="space-y-1">
@@ -2082,7 +2082,7 @@ if (mode === "edit") {
                   </div>
                 </details>
 
-                <details className="md:col-span-3 rounded-lg border px-3 py-2 text-sm">
+                <details className="xl:col-span-3 rounded-lg border px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-medium text-slate-700">Hindernisse (optional)</summary>
                   <div className="mt-2 grid gap-2">
                     <div className="space-y-1">
@@ -2100,7 +2100,7 @@ if (mode === "edit") {
                   </div>
                 </details>
 
-                <details className="md:col-span-3 rounded-lg border px-3 py-2 text-sm">
+                <details className="xl:col-span-3 rounded-lg border px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-medium text-slate-700">Schachten (optional)</summary>
                   <div className="mt-2 grid gap-2">
                     <div className="space-y-1">
@@ -2159,10 +2159,10 @@ if (mode === "edit") {
           {safeTableRows.map((row, i) => (
             <div key={i} className="rounded-xl border p-4">
               <div className="text-sm font-medium mb-3">Bohrung {row.boNr || `#${i + 1}`}</div>
-              <div className="grid gap-3 md:grid-cols-8">
-                <div className="md:col-span-2 text-sm text-slate-600 self-center">Ton</div>
-                <div className="md:col-span-6 space-y-2">
-                  <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 lg:grid-cols-8">
+                <div className="lg:col-span-2 text-sm text-slate-600 self-center">Ton</div>
+                <div className="lg:col-span-6 space-y-2">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <input
                       className="w-full rounded-lg border px-3 py-2 text-sm"
                       value={(row.verfuellung?.tonVon ?? "").split("\n")[0] ?? ""}
@@ -2187,7 +2187,7 @@ if (mode === "edit") {
                     />
                   </div>
                   {expandedLines[`ton-${i}`] ? (
-                    <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <input
                         className="w-full rounded-lg border px-3 py-2 text-xs"
                         value={(row.verfuellung?.tonVon ?? "").split("\n")[1] ?? ""}
@@ -2231,9 +2231,9 @@ if (mode === "edit") {
                   </button>
                 </div>
 
-                <div className="md:col-span-2 text-sm text-slate-600 self-center">Bohrgut</div>
-                <div className="md:col-span-6 space-y-2">
-                  <div className="grid gap-3 md:grid-cols-2">
+                <div className="lg:col-span-2 text-sm text-slate-600 self-center">Bohrgut</div>
+                <div className="lg:col-span-6 space-y-2">
+                  <div className="grid gap-3 sm:grid-cols-2">
                   <input
                     className="w-full rounded-lg border px-3 py-2 text-sm"
                     value={(row.verfuellung?.bohrgutVon ?? "").split("\n")[0] ?? ""}
@@ -2258,7 +2258,7 @@ if (mode === "edit") {
                   />
                   </div>
                   {expandedLines[`bohrgut-${i}`] ? (
-                    <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <input
                         className="w-full rounded-lg border px-3 py-2 text-xs"
                         value={(row.verfuellung?.bohrgutVon ?? "").split("\n")[1] ?? ""}
@@ -2302,13 +2302,13 @@ if (mode === "edit") {
                   </button>
                 </div>
 
-                <div className="md:col-span-2 text-sm text-slate-600 self-center">Zement-Bent.</div>
-                <input className="rounded-lg border px-3 py-2 text-sm md:col-span-3" value={row.verfuellung?.zementBentVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentVon: e.target.value } })} placeholder="Zement-Bent. von" />
-                <input className="rounded-lg border px-3 py-2 text-sm md:col-span-3" value={row.verfuellung?.zementBentBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentBis: e.target.value } })} placeholder="Zement-Bent. bis" />
+                <div className="lg:col-span-2 text-sm text-slate-600 self-center">Zement-Bent.</div>
+                <input className="rounded-lg border px-3 py-2 text-sm lg:col-span-3" value={row.verfuellung?.zementBentVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentVon: e.target.value } })} placeholder="Zement-Bent. von" />
+                <input className="rounded-lg border px-3 py-2 text-sm lg:col-span-3" value={row.verfuellung?.zementBentBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentBis: e.target.value } })} placeholder="Zement-Bent. bis" />
 
-                <div className="md:col-span-2 text-sm text-slate-600 self-center">Beton</div>
-                <input className="rounded-lg border px-3 py-2 text-sm md:col-span-3" value={row.verfuellung?.betonVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonVon: e.target.value } })} placeholder="Beton von" />
-                <input className="rounded-lg border px-3 py-2 text-sm md:col-span-3" value={row.verfuellung?.betonBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonBis: e.target.value } })} placeholder="Beton bis" />
+                <div className="lg:col-span-2 text-sm text-slate-600 self-center">Beton</div>
+                <input className="rounded-lg border px-3 py-2 text-sm lg:col-span-3" value={row.verfuellung?.betonVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonVon: e.target.value } })} placeholder="Beton von" />
+                <input className="rounded-lg border px-3 py-2 text-sm lg:col-span-3" value={row.verfuellung?.betonBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonBis: e.target.value } })} placeholder="Beton bis" />
               </div>
             </div>
           ))}
@@ -2336,13 +2336,13 @@ if (mode === "edit") {
         <div className="mt-4 space-y-3">
           {safeUmsetzen.map((r, i) => (
             <div key={i} className="rounded-xl border p-4">
-              <div className="grid gap-3 md:grid-cols-12">
-                <input className="rounded-xl border p-3 md:col-span-2" value={r.von ?? ""} onChange={(e) => setUmsetzenRow(i, { von: e.target.value })} placeholder="von" />
-                <input className="rounded-xl border p-3 md:col-span-2" value={r.auf ?? ""} onChange={(e) => setUmsetzenRow(i, { auf: e.target.value })} placeholder="auf" />
-                <input className="rounded-xl border p-3 md:col-span-2" value={r.entfernungM ?? ""} onChange={(e) => setUmsetzenRow(i, { entfernungM: e.target.value })} placeholder="Entfernung (m)" />
-                <input className="rounded-xl border p-3 md:col-span-2" value={r.zeit ?? ""} onChange={(e) => setUmsetzenRow(i, { zeit: e.target.value })} placeholder="Zeit" />
-                <input className="rounded-xl border p-3 md:col-span-2" value={r.begruendung ?? ""} onChange={(e) => setUmsetzenRow(i, { begruendung: e.target.value })} placeholder="Begründung" />
-                <input className="rounded-xl border p-3 md:col-span-2" value={r.wartezeit ?? ""} onChange={(e) => setUmsetzenRow(i, { wartezeit: e.target.value })} placeholder="Wartezeiten / Veranlassung" />
+              <div className="grid gap-3 lg:grid-cols-12">
+                <input className="rounded-xl border p-3 lg:col-span-2" value={r.von ?? ""} onChange={(e) => setUmsetzenRow(i, { von: e.target.value })} placeholder="von" />
+                <input className="rounded-xl border p-3 lg:col-span-2" value={r.auf ?? ""} onChange={(e) => setUmsetzenRow(i, { auf: e.target.value })} placeholder="auf" />
+                <input className="rounded-xl border p-3 lg:col-span-2" value={r.entfernungM ?? ""} onChange={(e) => setUmsetzenRow(i, { entfernungM: e.target.value })} placeholder="Entfernung (m)" />
+                <input className="rounded-xl border p-3 lg:col-span-2" value={r.zeit ?? ""} onChange={(e) => setUmsetzenRow(i, { zeit: e.target.value })} placeholder="Zeit" />
+                <input className="rounded-xl border p-3 lg:col-span-2" value={r.begruendung ?? ""} onChange={(e) => setUmsetzenRow(i, { begruendung: e.target.value })} placeholder="Begründung" />
+                <input className="rounded-xl border p-3 lg:col-span-2" value={r.wartezeit ?? ""} onChange={(e) => setUmsetzenRow(i, { wartezeit: e.target.value })} placeholder="Wartezeiten / Veranlassung" />
               </div>
             </div>
           ))}
@@ -2370,7 +2370,7 @@ if (mode === "edit") {
         {safePegel.map((r, i) => (
           <div key={i} className="mt-4 rounded-xl border p-4 space-y-5">
             {/* Kopf */}
-            <div className="grid md:grid-cols-4 gap-3">
+            <div className="grid lg:grid-cols-4 gap-3">
               {bohrNrOptions.length ? (
                 <select
                   className="rounded-xl border p-3"
@@ -2405,8 +2405,8 @@ if (mode === "edit") {
             <div className="rounded-xl border p-4">
               <div className="font-medium mb-3">ROHRE</div>
 
-              <div className="grid md:grid-cols-6 gap-3">
-                <div className="md:col-span-6 flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+              <div className="grid lg:grid-cols-6 gap-3">
+                <div className="lg:col-span-6 flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
                   <label className="flex items-center gap-2 text-sm font-semibold text-sky-900">
                     <input
                       type="checkbox"
@@ -2450,7 +2450,7 @@ if (mode === "edit") {
             <div className="rounded-xl border p-4">
               <div className="font-medium mb-3">DICHTUNG / VERFÜLLUNG</div>
 
-              <div className="grid md:grid-cols-8 gap-3">
+              <div className="grid lg:grid-cols-8 gap-3">
                 <input className="rounded-xl border p-3" placeholder="Ton von" value={r.tonVon} onChange={(e) => updatePegel(i, { tonVon: e.target.value })} />
                 <input className="rounded-xl border p-3" placeholder="Ton bis" value={r.tonBis} onChange={(e) => updatePegel(i, { tonBis: e.target.value })} />
 
@@ -2465,7 +2465,7 @@ if (mode === "edit") {
 
                 <input className="rounded-xl border p-3" placeholder="Filterkies von" value={r.filterkiesVon ?? ""} onChange={(e) => updatePegel(i, { filterkiesVon: e.target.value })} />
                 <input className="rounded-xl border p-3" placeholder="Filterkies bis" value={r.filterkiesBis ?? ""} onChange={(e) => updatePegel(i, { filterkiesBis: e.target.value })} />
-                <input className="rounded-xl border p-3 md:col-span-2" placeholder="Filterkies Körnung" value={r.filterkiesKoernung ?? ""} onChange={(e) => updatePegel(i, { filterkiesKoernung: e.target.value })} />
+                <input className="rounded-xl border p-3 lg:col-span-2" placeholder="Filterkies Körnung" value={r.filterkiesKoernung ?? ""} onChange={(e) => updatePegel(i, { filterkiesKoernung: e.target.value })} />
               </div>
             </div>
 
@@ -2473,7 +2473,7 @@ if (mode === "edit") {
             <div className="rounded-xl border p-4">
               <div className="font-medium mb-3">VERSCHLÜSSE</div>
 
-              <div className="grid md:grid-cols-4 gap-3">
+              <div className="grid lg:grid-cols-4 gap-3">
                 {pegelBoolFields.map(([k, label]) => (
                   <label key={k} className="flex items-center gap-2 text-sm">
                     <input
