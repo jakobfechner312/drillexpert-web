@@ -583,7 +583,25 @@ export async function POST(req: Request) {
       betonSockel: 715,
       abstHalter: 740,
       klarpump: 760,
+      filterkiesKoernung: 786,
     };
+
+    // Header-Label für neues Feld
+    const drawLabel = (text: string, x: number, y: number, size = 7, lineHeight = 6) => {
+      const lines = wrapLines(text, { maxLines: 2, maxCharsPerLine: 12 });
+      lines.forEach((ln, i) =>
+        page.drawText(ln, {
+          x,
+          y: y - i * lineHeight,
+          size,
+          font,
+          color: rgb(0, 0, 0),
+          rotate: degrees(0),
+        })
+      );
+    };
+
+    drawLabel("Filterkies\nKörnung", PCOL.filterkiesKoernung, pegelStartY + 20);
 
     pegelRows.slice(0, 3).forEach((r: any, i: number) => {
       const y = pegelStartY - i * pegelRowH;
@@ -625,8 +643,9 @@ export async function POST(req: Request) {
       if (r.fernGask) draw("X", PCOL.fernGask, y0 -3, 10);
       if (r.passavant) draw("X", PCOL.passavant, y0 -4, 10);
       if (r.betonSockel) draw("X", PCOL.betonSockel, y0 -4, 10);
-      if (r.abstHalter) draw("X", PCOL.abstHalter, y0 -4, 10);
+      draw(t(r.abstHalter, 4), PCOL.abstHalter, y0, 8);
       if (r.klarpump) draw("X", PCOL.klarpump, y0 -5, 10);
+      draw(t(r.filterkiesKoernung, 10), PCOL.filterkiesKoernung, y0, 8);
     });
 
     // ===== UNTERER BEREICH: Sonstige Arbeiten / Bemerkungen / Unterschriften =====

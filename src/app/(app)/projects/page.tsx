@@ -8,6 +8,8 @@ type Project = {
   id: string;
   name: string;
   created_at: string;
+  project_number?: string | null;
+  client_name?: string | null;
 };
 
 export default function ProjectsPage() {
@@ -16,6 +18,8 @@ export default function ProjectsPage() {
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectNumber, setNewProjectNumber] = useState("");
+  const [newProjectClient, setNewProjectClient] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
 
   useEffect(() => {
@@ -33,7 +37,7 @@ export default function ProjectsPage() {
       // Projekte über Membership holen (sauber, keine Testdaten)
       const { data, error } = await supabase
         .from("project_members")
-        .select("project:projects(id,name,created_at)")
+        .select("project:projects(id,name,created_at,project_number,client_name)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false, referencedTable: "projects" });
 
@@ -56,8 +60,18 @@ export default function ProjectsPage() {
 
   const createProject = async () => {
     const name = newProjectName.trim();
+    const projectNumber = newProjectNumber.trim();
+    const clientName = newProjectClient.trim();
     if (!name) {
       setError("Bitte Projektnamen eingeben.");
+      return;
+    }
+    if (!projectNumber) {
+      setError("Bitte Projektnummer eingeben.");
+      return;
+    }
+    if (!clientName) {
+      setError("Bitte Auftraggeber eingeben.");
       return;
     }
 
@@ -80,6 +94,8 @@ export default function ProjectsPage() {
       .insert({
         id: projectId,
         name,
+        project_number: projectNumber,
+        client_name: clientName,
         owner_id: user.id,
         created_by: user.id,
       });
@@ -102,8 +118,10 @@ export default function ProjectsPage() {
       return;
     }
 
-    setProjects((prev) => [{ id: projectId, name, created_at: createdAt }, ...prev]);
+    setProjects((prev) => [{ id: projectId, name, created_at: createdAt, project_number: projectNumber, client_name: clientName }, ...prev]);
     setNewProjectName("");
+    setNewProjectNumber("");
+    setNewProjectClient("");
     setCreateOpen(false);
     setCreatingProject(false);
   };
@@ -157,7 +175,12 @@ export default function ProjectsPage() {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate text-base font-semibold text-slate-900">{p.name}</div>
-                <div className="mt-1 text-xs text-slate-500">{p.id}</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {p.project_number ? `Nr. ${p.project_number}` : p.id}
+                </div>
+                {p.client_name && (
+                  <div className="mt-1 text-xs text-slate-500">Auftraggeber: {p.client_name}</div>
+                )}
               </div>
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-slate-50 text-slate-700 ring-1 ring-slate-200">
                 <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
@@ -191,12 +214,32 @@ export default function ProjectsPage() {
 
             <div className="mt-4 space-y-3">
               <label className="space-y-1">
+                <span className="text-sm text-gray-600">Projektnummer</span>
+                <input
+                  className="w-full rounded-xl border p-3"
+                  value={newProjectNumber}
+                  onChange={(e) => setNewProjectNumber(e.target.value)}
+                  placeholder="z.B. 202-0"
+                />
+              </label>
+
+              <label className="space-y-1">
                 <span className="text-sm text-gray-600">Projektname</span>
                 <input
                   className="w-full rounded-xl border p-3"
                   value={newProjectName}
                   onChange={(e) => setNewProjectName(e.target.value)}
                   placeholder="z.B. Baustelle Freiburg Nord"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-sm text-gray-600">Auftraggeber</span>
+                <input
+                  className="w-full rounded-xl border p-3"
+                  value={newProjectClient}
+                  onChange={(e) => setNewProjectClient(e.target.value)}
+                  placeholder="Name / Firma"
                 />
               </label>
 

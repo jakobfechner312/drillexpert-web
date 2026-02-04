@@ -116,8 +116,9 @@ function emptyPegelAusbauRow(): PegelAusbauRow {
     fernGask: false,
     passavant: false,
     betonSockel: false,
-    abstHalter: false,
+    abstHalter: "",
     klarpump: false,
+    filterkiesKoernung: "",
   };
 }
 
@@ -414,6 +415,10 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   const [customCycleDraft, setCustomCycleDraft] = useState<Record<number, string>>({});
   const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
   const [expandedLines, setExpandedLines] = useState<Record<string, boolean>>({});
+  const [pegelSumpfEnabled, setPegelSumpfEnabled] = useState<Record<number, boolean>>({});
+  const [clientSigEnabled, setClientSigEnabled] = useState(false);
+  const [pegelMode, setPegelMode] = useState<"ueberflur" | "unterflur" | null>(null);
+  const [pegelPromptOpen, setPegelPromptOpen] = useState(false);
   const useStepper = stepper;
   const steps = useMemo(
     () => [
@@ -480,6 +485,32 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
       mounted = false;
     };
   }, [supabase]);
+
+  useEffect(() => {
+    if (stepIndex === 7 && !pegelMode) {
+      setPegelPromptOpen(true);
+    }
+  }, [stepIndex, pegelMode]);
+
+  useEffect(() => {
+    if (clientSigEnabled) return;
+    const hasClientSig =
+      Boolean(report?.signatures?.clientOrManagerSigPng) ||
+      Boolean(report?.signatures?.clientOrManagerName);
+    if (hasClientSig) setClientSigEnabled(true);
+  }, [clientSigEnabled, report?.signatures?.clientOrManagerSigPng, report?.signatures?.clientOrManagerName]);
+
+  useEffect(() => {
+    if (pegelMode !== "unterflur") return;
+    setReport((p) => ({
+      ...p,
+      pegelAusbauRows: (Array.isArray(p.pegelAusbauRows) ? p.pegelAusbauRows : [emptyPegelAusbauRow()]).map((row) => ({
+        ...row,
+        aufsatzStahlVon: "",
+        aufsatzStahlBis: "",
+      })),
+    }));
+  }, [pegelMode]);
 
   // ======================
 // 🧩 LOAD REPORT (EDIT MODE)
@@ -1277,6 +1308,13 @@ if (mode === "edit") {
         : [emptyPegelAusbauRow()],
     [report.pegelAusbauRows]
   );
+  const bohrNrOptions = useMemo(() => {
+    const rows = Array.isArray(report.tableRows) ? report.tableRows : [];
+    const list = rows
+      .map((r) => String(r.boNr ?? "").trim())
+      .filter((v) => v.length);
+    return Array.from(new Set(list));
+  }, [report.tableRows]);
 
   function updatePegel(i: number, patch: Partial<PegelAusbauRow>) {
     setReport((p) => {
@@ -1311,7 +1349,6 @@ if (mode === "edit") {
     | "fernGask"
     | "passavant"
     | "betonSockel"
-    | "abstHalter"
     | "klarpump";
 
   const pegelBoolFields: Array<[PegelBooleanKey, string]> = [
@@ -1321,7 +1358,6 @@ if (mode === "edit") {
     ["fernGask", "Fern-Gask."],
     ["passavant", "Passavant"],
     ["betonSockel", "Betonsockel"],
-    ["abstHalter", "Abst.-Halter"],
     ["klarpump", "Klarpump."],
   ];
 
@@ -1465,6 +1501,38 @@ if (mode === "edit") {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {pegelPromptOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow">
+            <h3 className="text-lg font-semibold text-sky-900">Pegel‑Ausbau</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Bitte auswählen, ob der Ausbau unter- oder überflur erfolgt.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                className="rounded-xl border border-sky-200 bg-white px-4 py-2 text-sky-700 hover:bg-sky-50"
+                onClick={() => {
+                  setPegelMode("ueberflur");
+                  setPegelPromptOpen(false);
+                }}
+              >
+                Überflur
+              </button>
+              <button
+                type="button"
+                className="rounded-xl border border-sky-200 bg-white px-4 py-2 text-sky-700 hover:bg-sky-50"
+                onClick={() => {
+                  setPegelMode("unterflur");
+                  setPegelPromptOpen(false);
+                }}
+              >
+                Unterflur
+              </button>
             </div>
           </div>
         </div>
@@ -2302,8 +2370,34 @@ if (mode === "edit") {
           <div key={i} className="mt-4 rounded-xl border p-4 space-y-5">
             {/* Kopf */}
             <div className="grid md:grid-cols-4 gap-3">
-              <input className="rounded-xl border p-3" placeholder="Bohr Nr." value={r.bohrNr} onChange={(e) => updatePegel(i, { bohrNr: e.target.value })} />
-              <input className="rounded-xl border p-3" placeholder="Pegel Ø" value={r.pegelDm} onChange={(e) => updatePegel(i, { pegelDm: e.target.value })} />
+              {bohrNrOptions.length ? (
+                <select
+                  className="rounded-xl border p-3"
+                  value={r.bohrNr ?? ""}
+                  onChange={(e) => updatePegel(i, { bohrNr: e.target.value })}
+                >
+                  <option value="">Bohr Nr.</option>
+                  {bohrNrOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input className="rounded-xl border p-3" placeholder="Bohr Nr." value={r.bohrNr} onChange={(e) => updatePegel(i, { bohrNr: e.target.value })} />
+              )}
+              <select
+                className="rounded-xl border p-3"
+                value={r.pegelDm ?? ""}
+                onChange={(e) => updatePegel(i, { pegelDm: e.target.value })}
+              >
+                <option value="">Pegel Ø</option>
+                {['2"', '3"', '4"', '5"', '6"', "DIN300", "DIN400", "DIN500", "DIN600", "DIN700", "DIN800"].map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* ROHRE (wie PDF: Sumpf, Filter, Rohre, Aufsatz PVC, Aufsatz Stahl, Filterkies) */}
@@ -2311,8 +2405,29 @@ if (mode === "edit") {
               <div className="font-medium mb-3">ROHRE</div>
 
               <div className="grid md:grid-cols-6 gap-3">
-                <input className="rounded-xl border p-3" placeholder="Sumpf von" value={r.sumpfVon} onChange={(e) => updatePegel(i, { sumpfVon: e.target.value })} />
-                <input className="rounded-xl border p-3" placeholder="Sumpf bis" value={r.sumpfBis} onChange={(e) => updatePegel(i, { sumpfBis: e.target.value })} />
+                <div className="md:col-span-6 flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-sky-900">
+                    <input
+                      type="checkbox"
+                      checked={pegelSumpfEnabled[i] ?? Boolean(r.sumpfVon || r.sumpfBis)}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        setPegelSumpfEnabled((p) => ({ ...p, [i]: next }));
+                        if (!next) {
+                          updatePegel(i, { sumpfVon: "", sumpfBis: "" });
+                        }
+                      }}
+                    />
+                    Sumpfrohr anzeigen
+                  </label>
+                </div>
+
+                {(pegelSumpfEnabled[i] ?? Boolean(r.sumpfVon || r.sumpfBis)) ? (
+                  <>
+                    <input className="rounded-xl border p-3" placeholder="Sumpf von" value={r.sumpfVon} onChange={(e) => updatePegel(i, { sumpfVon: e.target.value })} />
+                    <input className="rounded-xl border p-3" placeholder="Sumpf bis" value={r.sumpfBis} onChange={(e) => updatePegel(i, { sumpfBis: e.target.value })} />
+                  </>
+                ) : null}
 
                 <input className="rounded-xl border p-3" placeholder="Filter von" value={r.filterVon} onChange={(e) => updatePegel(i, { filterVon: e.target.value })} />
                 <input className="rounded-xl border p-3" placeholder="Filter bis" value={r.filterBis} onChange={(e) => updatePegel(i, { filterBis: e.target.value })} />
@@ -2320,74 +2435,13 @@ if (mode === "edit") {
                 <input className="rounded-xl border p-3" placeholder="Aufsatz PVC von" value={r.aufsatzPvcVon} onChange={(e) => updatePegel(i, { aufsatzPvcVon: e.target.value })} />
                 <input className="rounded-xl border p-3" placeholder="Aufsatz PVC bis" value={r.aufsatzPvcBis} onChange={(e) => updatePegel(i, { aufsatzPvcBis: e.target.value })} />
 
-                <input className="rounded-xl border p-3" placeholder="Aufsatz Stahl von" value={r.aufsatzStahlVon} onChange={(e) => updatePegel(i, { aufsatzStahlVon: e.target.value })} />
-                <input className="rounded-xl border p-3" placeholder="Aufsatz Stahl bis" value={r.aufsatzStahlBis} onChange={(e) => updatePegel(i, { aufsatzStahlBis: e.target.value })} />
+                {pegelMode !== "unterflur" ? (
+                  <>
+                    <input className="rounded-xl border p-3" placeholder="Aufsatz Stahl von" value={r.aufsatzStahlVon} onChange={(e) => updatePegel(i, { aufsatzStahlVon: e.target.value })} />
+                    <input className="rounded-xl border p-3" placeholder="Aufsatz Stahl bis" value={r.aufsatzStahlBis} onChange={(e) => updatePegel(i, { aufsatzStahlBis: e.target.value })} />
+                  </>
+                ) : null}
 
-                <div className="space-y-2">
-                  <div className="grid gap-3 md:grid-cols-2">
-                  <input
-                    className="w-full rounded-xl border p-3"
-                    placeholder="Filterkies von"
-                    value={(r.filterkiesVon ?? "").split("\n")[0] ?? ""}
-                    onChange={(e) => {
-                      const lines = String(r.filterkiesVon ?? "").split("\n");
-                      lines[0] = e.target.value;
-                      updatePegel(i, { filterkiesVon: lines.filter(Boolean).join("\n") });
-                    }}
-                  />
-                  <input
-                    className="w-full rounded-xl border p-3"
-                    placeholder="Filterkies bis"
-                    value={(r.filterkiesBis ?? "").split("\n")[0] ?? ""}
-                    onChange={(e) => {
-                      const lines = String(r.filterkiesBis ?? "").split("\n");
-                      lines[0] = e.target.value;
-                      updatePegel(i, { filterkiesBis: lines.filter(Boolean).join("\n") });
-                    }}
-                  />
-                  </div>
-                  {expandedLines[`filterkies-${i}`] ? (
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <input
-                        className="w-full rounded-xl border p-3 text-xs"
-                        placeholder="Filterkies von (2. Zeile)"
-                        value={(r.filterkiesVon ?? "").split("\n")[1] ?? ""}
-                        onChange={(e) => {
-                          const lines = String(r.filterkiesVon ?? "").split("\n");
-                          lines[1] = e.target.value;
-                          updatePegel(i, { filterkiesVon: lines.filter(Boolean).slice(0, 2).join("\n") });
-                        }}
-                      />
-                    <input
-                      className="w-full rounded-xl border p-3 text-xs"
-                      placeholder="Filterkies bis (2. Zeile)"
-                      value={(r.filterkiesBis ?? "").split("\n")[1] ?? ""}
-                      onChange={(e) => {
-                        const lines = String(r.filterkiesBis ?? "").split("\n");
-                        lines[1] = e.target.value;
-                        updatePegel(i, { filterkiesBis: lines.filter(Boolean).slice(0, 2).join("\n") });
-                      }}
-                    />
-                    </div>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="text-xs text-sky-700 hover:underline"
-                    onClick={() =>
-                      setExpandedLines((p) => {
-                        const next = !p[`filterkies-${i}`];
-                        if (!next) {
-                          const v = String(r.filterkiesVon ?? "").split("\n")[0] ?? "";
-                          const b = String(r.filterkiesBis ?? "").split("\n")[0] ?? "";
-                          updatePegel(i, { filterkiesVon: v, filterkiesBis: b });
-                        }
-                        return { ...p, [`filterkies-${i}`]: next };
-                      })
-                    }
-                  >
-                    {expandedLines[`filterkies-${i}`] ? "– Zeile" : "+ Zeile"}
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -2407,6 +2461,10 @@ if (mode === "edit") {
 
                 <input className="rounded-xl border p-3" placeholder="Bohrgut von" value={r.bohrgutVon} onChange={(e) => updatePegel(i, { bohrgutVon: e.target.value })} />
                 <input className="rounded-xl border p-3" placeholder="Bohrgut bis" value={r.bohrgutBis} onChange={(e) => updatePegel(i, { bohrgutBis: e.target.value })} />
+
+                <input className="rounded-xl border p-3" placeholder="Filterkies von" value={r.filterkiesVon ?? ""} onChange={(e) => updatePegel(i, { filterkiesVon: e.target.value })} />
+                <input className="rounded-xl border p-3" placeholder="Filterkies bis" value={r.filterkiesBis ?? ""} onChange={(e) => updatePegel(i, { filterkiesBis: e.target.value })} />
+                <input className="rounded-xl border p-3 md:col-span-2" placeholder="Filterkies Körnung" value={r.filterkiesKoernung ?? ""} onChange={(e) => updatePegel(i, { filterkiesKoernung: e.target.value })} />
               </div>
             </div>
 
@@ -2425,6 +2483,13 @@ if (mode === "edit") {
                     {label}
                   </label>
                 ))}
+                <input
+                  className="w-full max-w-[140px] rounded-xl border p-2 text-sm"
+                  inputMode="numeric"
+                  placeholder="Abst.-Halter"
+                  value={r.abstHalter ?? ""}
+                  onChange={(e) => updatePegel(i, { abstHalter: e.target.value.replace(/[^\d]/g, "") })}
+                />
               </div>
             </div>
           </div>
@@ -2460,52 +2525,76 @@ if (mode === "edit") {
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         {/* Auftraggeber */}
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-          <h3 className="font-medium">
-            Unterschrift Auftraggeber / Bauleitung
-          </h3>
-
-          <input
-            className="mt-3 w-full rounded-xl border p-3"
-            value={report.signatures?.clientOrManagerName ?? ""}
-            onChange={(e) =>
-              setReport((p) => ({
-                ...p,
-                signatures: {
-                  ...(p.signatures ?? {}),
-                  clientOrManagerName: e.target.value,
-                },
-              }))
-            }
-            placeholder="Name"
-          />
-
-          <div className="mt-3 rounded-xl border bg-white">
-            <SignatureCanvas
-              ref={sigClientRef}
-              penColor="black"
-              canvasProps={{
-                width: 500,
-                height: 150,
-                className: "w-full h-[150px]",
-              }}
-            />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-medium">Unterschrift Auftraggeber / Bauleitung</h3>
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={clientSigEnabled}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setClientSigEnabled(next);
+                  if (!next) {
+                    clearClientSig();
+                    setReport((p) => ({
+                      ...p,
+                      signatures: {
+                        ...(p.signatures ?? {}),
+                        clientOrManagerName: "",
+                        clientOrManagerSigPng: "",
+                      },
+                    }));
+                  }
+                }}
+              />
+              Unterschrift aktivieren
+            </label>
           </div>
 
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
-              onClick={clearClientSig}
-            >
-              Löschen
-            </button>
-            <button
-              type="button"
-              className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
-              onClick={saveClientSignature}
-            >
-              Übernehmen
-            </button>
+          <div className={`mt-3 space-y-3 ${clientSigEnabled ? "" : "opacity-50 pointer-events-none"}`}>
+            <input
+              className="w-full rounded-xl border p-3"
+              value={report.signatures?.clientOrManagerName ?? ""}
+              onChange={(e) =>
+                setReport((p) => ({
+                  ...p,
+                  signatures: {
+                    ...(p.signatures ?? {}),
+                    clientOrManagerName: e.target.value,
+                  },
+                }))
+              }
+              placeholder="Name"
+            />
+
+            <div className="rounded-xl border bg-white">
+              <SignatureCanvas
+                ref={sigClientRef}
+                penColor="black"
+                canvasProps={{
+                  width: 500,
+                  height: 150,
+                  className: "w-full h-[150px]",
+                }}
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
+                onClick={clearClientSig}
+              >
+                Löschen
+              </button>
+              <button
+                type="button"
+                className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
+                onClick={saveClientSignature}
+              >
+                Übernehmen
+              </button>
+            </div>
           </div>
         </div>
 

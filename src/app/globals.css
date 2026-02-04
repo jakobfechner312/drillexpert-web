@@ -72,6 +72,42 @@
     @apply rounded-lg px-3 py-1.5 text-xs;
   }
 
+  .page-shell {
+    @apply mx-auto w-full max-w-6xl px-4 py-6;
+  }
+
+  .stack-row {
+    @apply flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between;
+  }
+
+  .action-bar {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .card {
+    @apply rounded-2xl border border-slate-200/70 bg-white shadow-sm overflow-hidden;
+  }
+
+  .card-header {
+    @apply flex flex-wrap items-center justify-between gap-3 bg-sky-50/60 px-5 py-3 border-b border-slate-200/70;
+  }
+
+  .card-body {
+    @apply p-5;
+  }
+
+  .info-grid {
+    @apply grid gap-4;
+  }
+
+  .info-grid-2 {
+    @apply grid gap-4 md:grid-cols-2;
+  }
+
+  .info-grid-3 {
+    @apply grid gap-4 md:grid-cols-2 xl:grid-cols-3;
+  }
+
   .spin-slow {
     animation: spin 8s linear infinite;
   }

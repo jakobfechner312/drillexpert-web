@@ -16,10 +16,24 @@ export default function AppShell({
   subtitle?: string;
   children: ReactNode;
 }) {
+  const pathname = usePathname();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
   return (
     <div className="min-h-screen bg-base-bg text-base-ink">
-      <AppTopbar title={title} subtitle={subtitle} />
-      <AppLayout>{children}</AppLayout>
+      <AppTopbar
+        title={title}
+        subtitle={subtitle}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+      />
+      <AppLayout sidebarOpen={sidebarOpen} onCloseSidebar={() => setSidebarOpen(false)}>
+        {children}
+      </AppLayout>
     </div>
   );
 }
@@ -27,9 +41,13 @@ export default function AppShell({
 function AppTopbar({
   title,
   subtitle,
+  sidebarOpen,
+  onToggleSidebar,
 }: {
   title?: string;
   subtitle?: string;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
 }) {
   const { triggerSaveDraft, triggerSaveReport } = useDraftActions();
   const pathname = usePathname();
@@ -70,6 +88,17 @@ function AppTopbar({
     <header className="sticky top-0 z-50 border-b border-base-border bg-white/80 backdrop-blur">
       <div className="mx-auto flex max-w-[2200px] flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            className="btn btn-secondary lg:hidden"
+            onClick={onToggleSidebar}
+            aria-label={sidebarOpen ? "Navigation schließen" : "Navigation öffnen"}
+            aria-expanded={sidebarOpen}
+          >
+            <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+          </button>
           <div className="relative h-10 w-40">
             <Image
               src="/drillexpert-logo.png"
@@ -142,29 +171,45 @@ function AppTopbar({
   );
 }
 
-function AppLayout({ children }: { children: ReactNode }) {
+function AppLayout({
+  children,
+  sidebarOpen,
+  onCloseSidebar,
+}: {
+  children: ReactNode;
+  sidebarOpen: boolean;
+  onCloseSidebar: () => void;
+}) {
   return (
-    <div className="mx-auto grid max-w-[2200px] gap-6 px-6 py-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+    <div className="mx-auto grid max-w-[2200px] gap-6 px-4 sm:px-6 py-6 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="hidden lg:block">
-        <nav className="rounded-2xl border border-base-border bg-white p-3 shadow-soft">
-          <div className="mb-2 text-xs font-semibold text-base-muted">
-            Navigation
-          </div>
-
-          <SidebarLink href="/dashboard" label="Dashboard" />
-          <SidebarLink href="/projects" label="Meine Projekte" />
-          <SidebarReports />
-          <SidebarLink href="/drafts" label="Meine Entwürfe" />
-          <SidebarLink href="/settings" label="Einstellungen" />
-
-          <div className="mt-4 rounded-xl bg-drill-50 p-3">
-            <div className="text-sm font-semibold">Quick Tips</div>
-            <div className="mt-1 text-xs text-base-muted">
-              Speichere zwischendurch als Entwurf. Unterschriften erst am Ende.
-            </div>
-          </div>
-        </nav>
+        <SidebarNav />
       </aside>
+
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <div
+            className="absolute inset-0 bg-slate-900/30"
+            onClick={onCloseSidebar}
+          />
+          <div className="absolute left-0 top-0 h-full w-[280px] bg-white p-4 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="text-sm font-semibold text-slate-700">Navigation</div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={onCloseSidebar}
+                aria-label="Navigation schließen"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6l-12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
+            <SidebarNav />
+          </div>
+        </div>
+      )}
 
       <main className="min-w-0">
         <div className="rounded-2xl border border-base-border bg-white p-5 sm:p-6 shadow-soft">
@@ -213,5 +258,28 @@ function SidebarReports() {
         <SidebarLink href="/reports/schichtenverzeichnis/new" label="Schichtenverzeichnis" />
       </div>
     </div>
+  );
+}
+
+function SidebarNav() {
+  return (
+    <nav className="rounded-2xl border border-base-border bg-white p-3 shadow-soft">
+      <div className="mb-2 text-xs font-semibold text-base-muted">
+        Navigation
+      </div>
+
+      <SidebarLink href="/dashboard" label="Dashboard" />
+      <SidebarLink href="/projects" label="Meine Projekte" />
+      <SidebarReports />
+      <SidebarLink href="/drafts" label="Meine Entwürfe" />
+      <SidebarLink href="/settings" label="Einstellungen" />
+
+      <div className="mt-4 rounded-xl bg-drill-50 p-3">
+        <div className="text-sm font-semibold">Quick Tips</div>
+        <div className="mt-1 text-xs text-base-muted">
+          Speichere zwischendurch als Entwurf. Unterschriften erst am Ende.
+        </div>
+      </div>
+    </nav>
   );
 }
