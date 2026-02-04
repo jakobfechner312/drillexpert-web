@@ -92,6 +92,57 @@ export async function POST(req: Request) {
       });
     };
 
+    const wrapLines = (text: string, options?: { maxLines?: number; maxCharsPerLine?: number }) => {
+      const maxLines = options?.maxLines ?? 6;
+      const maxCharsPerLine = options?.maxCharsPerLine ?? 60;
+      const raw = (text ?? "").toString().replace(/\r/g, "");
+      if (!raw.trim()) return [] as string[];
+
+      const lines: string[] = [];
+      const paragraphs = raw.split("\n");
+      for (const para of paragraphs) {
+        if (lines.length >= maxLines) break;
+        const trimmed = para.trim();
+        if (!trimmed) {
+          lines.push("");
+          continue;
+        }
+        const words = trimmed.split(/\s+/);
+        let cur = "";
+        for (const w of words) {
+          const next = cur ? `${cur} ${w}` : w;
+          if (next.length > maxCharsPerLine) {
+            if (cur) lines.push(cur);
+            cur = w;
+          } else {
+            cur = next;
+          }
+          if (lines.length >= maxLines) break;
+        }
+        if (lines.length < maxLines && cur) lines.push(cur);
+      }
+      return lines.slice(0, maxLines);
+    };
+
+    const drawMultiline = (text: string, x: number, y: number, options?: { size?: number; lineHeight?: number; maxLines?: number; maxCharsPerLine?: number }) => {
+      const size = options?.size ?? 9;
+      const lineHeight = options?.lineHeight ?? 12;
+      const lines = wrapLines(text, options);
+      lines.forEach((ln, i) => draw(ln, x, y - i * lineHeight, size));
+    };
+
+    const drawMultilineAuto = (text: string, x: number, y: number, opts?: { maxLines?: number; maxCharsPerLine?: number; size?: number; lineHeight?: number; smallSize?: number; smallLineHeight?: number }) => {
+      const hasSecondLine = (text ?? "").toString().includes("\n");
+      const size = hasSecondLine ? (opts?.smallSize ?? 6) : (opts?.size ?? 8);
+      const lineHeight = hasSecondLine ? (opts?.smallLineHeight ?? 6) : (opts?.lineHeight ?? 8);
+      drawMultiline(text, x, y, {
+        size,
+        lineHeight,
+        maxLines: opts?.maxLines ?? 2,
+        maxCharsPerLine: opts?.maxCharsPerLine ?? 6,
+      });
+    };
+
     // Helfer für sichere Strings
     const t = (v: any, max = 12) => (v == null ? "" : String(v)).slice(0, max);
 
@@ -258,9 +309,14 @@ export async function POST(req: Request) {
 
     // Markierung der gewählten Arbeitstakte in der Liste rechts
     const selectedCycles = new Set<number>();
+    const customSelected: string[] = [];
     workCycles.forEach((label: string) => {
       const idx = workCycleOptions.indexOf(label);
-      if (idx >= 0) selectedCycles.add(idx + 1);
+      if (idx >= 0) {
+        selectedCycles.add(idx + 1);
+      } else if (label) {
+        customSelected.push(label);
+      }
     });
 
     const LIST = {
@@ -273,6 +329,23 @@ export async function POST(req: Request) {
     };
 
     selectedCycles.forEach((nr) => {
+      const col = nr <= 10 ? 0 : 1;
+      const row = nr <= 10 ? nr - 1 : nr - 11;
+      const x = col === 0 ? LIST.leftX : LIST.rightX;
+      const y = LIST.startY - row * LIST.rowH;
+      page.drawRectangle({
+        x,
+        y,
+        width: LIST.boxW,
+        height: LIST.boxH,
+        color: rgb(0.2, 0.6, 1),
+        opacity: 0.25,
+      });
+    });
+
+    // Markiere auch eigene Takte (20+)
+    customSelected.forEach((label, idx) => {
+      const nr = 20 + idx;
       const col = nr <= 10 ? 0 : 1;
       const row = nr <= 10 ? nr - 1 : nr - 11;
       const x = col === 0 ? LIST.leftX : LIST.rightX;
@@ -317,7 +390,7 @@ export async function POST(req: Request) {
       gebohrtBis: 72,
       verrohrtVon: 95,
       verrohrtBis: 115,
-      rb: 148,
+      rb: 140,
       ek: 165,
       dk: 182,
       s: 205,
@@ -378,11 +451,23 @@ export async function POST(req: Request) {
       draw(t(row.verrohrtVon, 6), COL.verrohrtVon, y, 8);
       draw(t(row.verrohrtBis, 6), COL.verrohrtBis, y, 8);
 
-      const vflags = Array.isArray(row.verrohrtFlags) ? row.verrohrtFlags : [];
-      draw(vflags.includes("RB") ? "X" : "", COL.rb, y, 8);
-      draw(vflags.includes("EK") ? "X" : "", COL.ek, y, 8);
-      draw(vflags.includes("DK") ? "X" : "", COL.dk, y, 8);
-      draw(vflags.includes("S") ? "X" : "", COL.s, y, 8);
+      const toNum = (v: any) => {
+        if (v == null) return null;
+        const n = Number(String(v).replace(",", "."));
+        return Number.isFinite(n) ? n : null;
+      };
+      const gebohrtVon = toNum(row.gebohrtVon);
+      const gebohrtBis = toNum(row.gebohrtBis);
+      const diff = gebohrtVon != null && gebohrtBis != null && gebohrtBis >= gebohrtVon ? gebohrtBis - gebohrtVon : null;
+      const diffStr = diff == null ? "" : (Math.round(diff * 10) / 10).toString();
+
+      const verrohrtDurchm = String(row.verrohrtBis ?? "");
+      const rbSet = new Set(["178", "220", "273", "324", "368", "419", "509"]);
+      if (verrohrtDurchm === "146") {
+        draw(diffStr, COL.s, y, 8);
+      } else if (rbSet.has(verrohrtDurchm)) {
+        draw(diffStr, COL.rb, y, 8);
+      }
 
       draw(t(row.vollbohrVon, 6), COL.vollbohrVon, y, 8);
       draw(t(row.vollbohrBis, 6), COL.vollbohrBis, y, 8);
@@ -406,10 +491,10 @@ export async function POST(req: Request) {
       draw(t(row.versucheSpt ?? row.spt, 4), COL.spt, y, 8);
 
       const vf = row?.verfuellung ?? row ?? {};
-      draw(t(vf.tonVon, 6), COL.tonVon, y, 8);
-      draw(t(vf.tonBis, 6), COL.tonBis, y, 8);
-      draw(t(vf.bohrgutVon, 6), COL.bohrgutVon, y, 8);
-      draw(t(vf.bohrgutBis, 6), COL.bohrgutBis, y, 8);
+      drawMultilineAuto(String(vf.tonVon ?? ""), COL.tonVon, y + 3);
+      drawMultilineAuto(String(vf.tonBis ?? ""), COL.tonBis, y + 3);
+      drawMultilineAuto(String(vf.bohrgutVon ?? ""), COL.bohrgutVon, y + 3);
+      drawMultilineAuto(String(vf.bohrgutBis ?? ""), COL.bohrgutBis, y + 3);
       draw(t(vf.zementBentVon, 6), COL.zementBentVon, y, 8);
       draw(t(vf.zementBentBis, 6), COL.zementBentBis, y, 8);
       draw(t(vf.betonVon, 6), COL.betonVon, y, 8);
@@ -517,8 +602,8 @@ export async function POST(req: Request) {
       draw(t(r.aufsatzStahlVon, 6), PCOL.aufsatzStahlVon, y, 8);
       draw(t(r.aufsatzStahlBis, 6), PCOL.aufsatzStahlBis, y, 8);
 
-      draw(t(r.filterkiesVon, 6), PCOL.filterkiesVon, y, 8);
-      draw(t(r.filterkiesBis, 6), PCOL.filterkiesBis, y, 8);
+      drawMultilineAuto(String(r.filterkiesVon ?? ""), PCOL.filterkiesVon, y + 3);
+      drawMultilineAuto(String(r.filterkiesBis ?? ""), PCOL.filterkiesBis, y + 3);
 
       draw(t(r.tonVon, 6), PCOL.tonVon, y, 8);
       draw(t(r.tonBis, 6), PCOL.tonBis, y, 8);
@@ -545,36 +630,6 @@ export async function POST(req: Request) {
     });
 
     // ===== UNTERER BEREICH: Sonstige Arbeiten / Bemerkungen / Unterschriften =====
-
-    // Multiline helper (einfach + robust)
-    const drawMultiline = (text: string, x: number, y: number, options?: { size?: number; lineHeight?: number; maxLines?: number; maxCharsPerLine?: number }) => {
-      const size = options?.size ?? 9;
-      const lineHeight = options?.lineHeight ?? 12;
-      const maxLines = options?.maxLines ?? 6;
-      const maxCharsPerLine = options?.maxCharsPerLine ?? 60;
-
-      const raw = (text ?? "").toString().replace(/\r/g, "");
-      if (!raw.trim()) return;
-
-      // primitive wrapping: harte Zeichenanzahl pro Zeile
-      const words = raw.split(/\s+/);
-      const lines: string[] = [];
-      let cur = "";
-
-      for (const w of words) {
-        const next = cur ? `${cur} ${w}` : w;
-        if (next.length > maxCharsPerLine) {
-          if (cur) lines.push(cur);
-          cur = w;
-        } else {
-          cur = next;
-        }
-        if (lines.length >= maxLines) break;
-      }
-      if (lines.length < maxLines && cur) lines.push(cur);
-
-      lines.slice(0, maxLines).forEach((ln, i) => draw(ln, x, y - i * lineHeight, size));
-    };
 
     // ✅ Koordinaten: bitte danach von dir feinjustieren
     // (outH ist oben, je kleiner y desto weiter unten)
@@ -604,13 +659,42 @@ export async function POST(req: Request) {
       maxCharsPerLine: 52,
     });
 
-    // Bemerkungen / Anordnungen / Besuche (data.remarks)
-    drawMultiline(String(data.remarks ?? ""), BOTTOM.remarksX, BOTTOM.remarksY, {
-      size: 9,
-      lineHeight: 15,
+    // Bemerkungen / Anordnungen / Besuche (+ eigene Arbeitstakte)
+    const baseRemarks = String(data.remarks ?? "");
+    const customCycleLines: string[] = [];
+    const customCycleSeen = new Set<string>();
+    (Array.isArray(data.workCycles) ? data.workCycles : []).forEach((label: string) => {
+      if (!label || workCycleOptions.includes(label)) return;
+      if (customCycleSeen.has(label)) return;
+      customCycleSeen.add(label);
+      customCycleLines.push(label);
+    });
+    const customWithNumbers = customCycleLines.map((label, idx) => `${20 + idx} - ${label}`);
+    const remarksCombined =
+      baseRemarks.trim() && customWithNumbers.length
+        ? `${baseRemarks}\n\n${customWithNumbers.join("\n")}`
+        : baseRemarks.trim()
+          ? baseRemarks
+          : customWithNumbers.join("\n");
+
+    const remarkLines = wrapLines(remarksCombined, {
       maxLines: BOTTOM.remarksMaxLines,
       maxCharsPerLine: 50,
     });
+    remarkLines.forEach((ln, i) => {
+      if (/^\s*20\s*-\s*/.test(ln)) {
+        const width = font.widthOfTextAtSize(ln, 9) + 4;
+        page.drawRectangle({
+          x: BOTTOM.remarksX - 2,
+          y: BOTTOM.remarksY - i * 15 - 3,
+          width,
+          height: 11,
+          color: rgb(0.2, 0.6, 1),
+          opacity: 0.2,
+        });
+      }
+    });
+    remarkLines.forEach((ln, i) => draw(ln, BOTTOM.remarksX, BOTTOM.remarksY - i * 15, 9));
 
     // Unterschriften: keine Namen drucken
 

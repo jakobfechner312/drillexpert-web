@@ -413,6 +413,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   });
   const [customCycleDraft, setCustomCycleDraft] = useState<Record<number, string>>({});
   const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
+  const [expandedLines, setExpandedLines] = useState<Record<string, boolean>>({});
   const useStepper = stepper;
   const steps = useMemo(
     () => [
@@ -422,6 +423,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
       { key: "zeiten", title: "Arbeitszeit & Pausen" },
       { key: "arbeitsakte", title: "Arbeitsakte / Stunden" },
       { key: "tabelle", title: "Tabelle Bohrungen" },
+      { key: "verfuellung", title: "Verfüllung" },
       { key: "pegel", title: "Pegelausbau" },
       { key: "abschluss", title: "Bemerkungen & Unterschriften" },
     ],
@@ -436,7 +438,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
       const { data } = await supabase.auth.getUser();
       const user = data.user;
       if (!user) return;
-      await supabase.from("profiles").upsert(
+      const { error } = await supabase.from("profiles").upsert(
         {
           id: user.id,
           email: user.email ?? null,
@@ -444,6 +446,10 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
         },
         { onConflict: "id" }
       );
+      if (error) {
+        console.error("[custom_work_cycles] save failed", error);
+        alert("Eigene Arbeitstakte konnten nicht gespeichert werden: " + error.message);
+      }
     },
     [supabase]
   );
@@ -1181,6 +1187,71 @@ if (mode === "edit") {
     });
   }
 
+  const parseTimeToMinutes = (value?: string | null) => {
+    if (!value) return null;
+    const [h, m] = value.split(":").map((v) => Number(v));
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    return h * 60 + m;
+  };
+
+  const formatHours = (minutes: number) => {
+    const hours = Math.max(0, minutes / 60);
+    const rounded = Math.round(hours * 2) / 2;
+    return rounded % 1 === 0 ? String(Math.trunc(rounded)) : String(rounded);
+  };
+
+  const calcWorkMinutesForWorker = (workerIndex: number) => {
+    const rows = Array.isArray(report.workTimeRows) ? report.workTimeRows : [];
+    const validRows = rows.filter((r) => parseTimeToMinutes(r?.from) != null && parseTimeToMinutes(r?.to) != null);
+    if (validRows.length === 0) return null;
+    const pickIndex = validRows.length === 1 ? 0 : Math.min(workerIndex, 1);
+    const row = validRows[pickIndex];
+    const from = parseTimeToMinutes(row?.from);
+    const to = parseTimeToMinutes(row?.to);
+    if (from == null || to == null || to <= from) return null;
+    return to - from;
+  };
+
+  const calcBreakMinutes = () => {
+    const rows = Array.isArray(report.breakRows) ? report.breakRows : [];
+    let total = 0;
+    rows.forEach((r) => {
+      const from = parseTimeToMinutes(r?.from);
+      const to = parseTimeToMinutes(r?.to);
+      if (from != null && to != null && to > from) total += to - from;
+    });
+    return total;
+  };
+
+  useEffect(() => {
+    const breakMinutes = calcBreakMinutes();
+    const workers = Array.isArray(report.workers) ? report.workers : [];
+    const rows = Array.isArray(report.workTimeRows) ? report.workTimeRows : [];
+    const validRows = rows.filter((r) => parseTimeToMinutes(r?.from) != null && parseTimeToMinutes(r?.to) != null);
+    const requiredWorkers = validRows.length >= 2 ? 2 : workers.length || 1;
+
+    let changed = false;
+    const nextWorkers = [...workers];
+    while (nextWorkers.length < requiredWorkers) {
+      nextWorkers.push(emptyWorker());
+      changed = true;
+    }
+
+    for (let idx = 0; idx < nextWorkers.length; idx++) {
+      const w = nextWorkers[idx];
+      const workMin = calcWorkMinutesForWorker(idx);
+      if (workMin == null) continue;
+      const reine = formatHours(Math.max(0, workMin - breakMinutes));
+      if (w.reineArbeitsStd !== reine) {
+        nextWorkers[idx] = { ...w, reineArbeitsStd: reine };
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      setReport((p) => ({ ...p, workers: nextWorkers }));
+    }
+  }, [report.workTimeRows, report.breakRows, report.workers]);
   function addWorker() {
     setReport((p) => {
       const rows = Array.isArray(p.workers) && p.workers.length ? [...p.workers] : [emptyWorker()];
@@ -1784,11 +1855,13 @@ if (mode === "edit") {
                         onClick={() => {
                           const text = (customCycleDraft[i] ?? "").trim();
                           if (!text) return;
+                          const existingIndex = customWorkCycles.findIndex(
+                            (v) => v.toLowerCase() === text.toLowerCase()
+                          );
                           setReport((p) => {
                             const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
                             list[i] = text;
-                            const nextRemarks = p.remarks ? `${p.remarks}\n${text}` : text;
-                            return { ...p, workCycles: list, remarks: nextRemarks };
+                            return { ...p, workCycles: list };
                           });
                           setCustomWorkCycles((prev) => {
                             const exists = prev.some((v) => v.toLowerCase() === text.toLowerCase());
@@ -1827,7 +1900,7 @@ if (mode === "edit") {
                   <input className="w-full rounded border px-2 py-1 text-[12px]" value={w.name ?? ""} onChange={(e) => setWorker(idx, { name: e.target.value })} />
                 </div>
                 <div className="border-b border-r px-2 py-1">
-                  <input className="w-full rounded border px-2 py-1 text-center text-[12px]" value={w.reineArbeitsStd ?? ""} onChange={(e) => setWorker(idx, { reineArbeitsStd: e.target.value })} />
+                  <input className="w-full rounded border px-2 py-1 text-center text-[12px] bg-slate-50" value={w.reineArbeitsStd ?? ""} readOnly />
                 </div>
                 <div className="border-b border-r px-2 py-1">
                   <input className="w-full rounded border px-2 py-1 text-center text-[12px]" value={w.wochenendfahrt ?? ""} onChange={(e) => setWorker(idx, { wochenendfahrt: e.target.value })} />
@@ -1884,79 +1957,289 @@ if (mode === "edit") {
           {safeTableRows.map((row, i) => (
             <div key={i} className="rounded-xl border p-4">
               <div className="grid gap-3 md:grid-cols-8">
-                <input className="rounded-xl border p-3" value={row.boNr ?? ""} onChange={(e) => setRow(i, { boNr: e.target.value })} placeholder="Bo. Nr." />
-                <input className="rounded-xl border p-3" value={row.gebohrtVon ?? ""} onChange={(e) => setRow(i, { gebohrtVon: e.target.value })} placeholder="gebohrt von" />
-                <input className="rounded-xl border p-3" value={row.gebohrtBis ?? ""} onChange={(e) => setRow(i, { gebohrtBis: e.target.value })} placeholder="gebohrt bis" />
-                <input className="rounded-xl border p-3" value={row.verrohrtVon ?? ""} onChange={(e) => setRow(i, { verrohrtVon: e.target.value })} placeholder="verrohrt von" />
-                <input className="rounded-xl border p-3" value={row.verrohrtBis ?? ""} onChange={(e) => setRow(i, { verrohrtBis: e.target.value })} placeholder="verrohrt bis" />
-
-                <div className="rounded-xl border p-3 flex flex-col gap-2">
-                  {(["RB", "EK", "DK", "S"] as const).map((k: VerrohrtFlag) => (
-                    <label key={k} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={(row.verrohrtFlags ?? []).includes(k)}
-                        onChange={(e) => {
-                          const flags = new Set(row.verrohrtFlags ?? []);
-                          e.target.checked ? flags.add(k) : flags.delete(k);
-                          setRow(i, { verrohrtFlags: Array.from(flags) });
-                        }}
-                      />
-                      <span>{k}</span>
-                    </label>
-                  ))}
+                <div className="space-y-1">
+                  <div className="text-[11px] text-slate-500">Bohr‑Nr.</div>
+                  <input className="rounded-lg border px-3 py-2 text-sm" value={row.boNr ?? ""} onChange={(e) => setRow(i, { boNr: e.target.value })} placeholder="z.B. B1" />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-[11px] text-slate-500">Gebohrt von</div>
+                  <input className="rounded-lg border px-3 py-2 text-sm" value={row.gebohrtVon ?? ""} onChange={(e) => setRow(i, { gebohrtVon: e.target.value })} placeholder="0.0" />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-[11px] text-slate-500">Gebohrt bis</div>
+                  <input className="rounded-lg border px-3 py-2 text-sm" value={row.gebohrtBis ?? ""} onChange={(e) => setRow(i, { gebohrtBis: e.target.value })} placeholder="6.5" />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-[11px] text-slate-500">Verrohrt von</div>
+                  <input className="rounded-lg border px-3 py-2 text-sm" value={row.verrohrtVon ?? ""} onChange={(e) => setRow(i, { verrohrtVon: e.target.value })} placeholder="0.0" />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-[11px] text-slate-500">Verrohrt Durchm.</div>
+                  <select
+                    className="rounded-lg border px-3 py-2 text-sm"
+                    value={row.verrohrtBis ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const rbSet = new Set(["178", "220", "273", "324", "368", "419", "509"]);
+                      const flags: VerrohrtFlag[] = val === "146" ? ["S"] : rbSet.has(val) ? ["RB"] : [];
+                      setRow(i, { verrohrtBis: val, verrohrtFlags: flags });
+                    }}
+                  >
+                    <option value="">Bitte wählen…</option>
+                    <option value="146">146</option>
+                    <option value="178">178</option>
+                    <option value="220">220</option>
+                    <option value="273">273</option>
+                    <option value="324">324</option>
+                    <option value="368">368</option>
+                    <option value="419">419</option>
+                    <option value="509">509</option>
+                  </select>
                 </div>
 
-                <input className="rounded-xl border p-3" value={row.vollbohrVon ?? ""} onChange={(e) => setRow(i, { vollbohrVon: e.target.value })} placeholder="Vollbohrung bis" />
-                <input className="rounded-xl border p-3" value={row.vollbohrBis ?? ""} onChange={(e) => setRow(i, { vollbohrBis: e.target.value })} placeholder="Vollbohr. Durchmesser" />
 
-                <input className="rounded-xl border p-3" value={row.hindernisVon ?? ""} onChange={(e) => setRow(i, { hindernisVon: e.target.value })} placeholder="Hindernisse von" />
-                <input className="rounded-xl border p-3" value={row.hindernisBis ?? ""} onChange={(e) => setRow(i, { hindernisBis: e.target.value })} placeholder="Hindernisse bis" />
-                <input className="rounded-xl border p-3" value={row.hindernisZeit ?? ""} onChange={(e) => setRow(i, { hindernisZeit: e.target.value })} placeholder="Hindernisse Zeit" />
 
-                <input className="rounded-xl border p-3" value={row.schachtenVon ?? ""} onChange={(e) => setRow(i, { schachtenVon: e.target.value })} placeholder="Schachten von" />
-                <input className="rounded-xl border p-3" value={row.schachtenBis ?? ""} onChange={(e) => setRow(i, { schachtenBis: e.target.value })} placeholder="Schachten bis" />
-                <input className="rounded-xl border p-3" value={row.schachtenZeit ?? ""} onChange={(e) => setRow(i, { schachtenZeit: e.target.value })} placeholder="Schachten Zeit" />
+                <details className="md:col-span-2 rounded-lg border px-3 py-2 text-sm">
+                  <summary className="cursor-pointer font-medium text-slate-700">Vollbohrung (optional)</summary>
+                  <div className="mt-2 grid gap-2">
+                    <div className="space-y-1">
+                      <div className="text-[11px] text-slate-500">Vollbohrung bis</div>
+                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.vollbohrVon ?? ""} onChange={(e) => setRow(i, { vollbohrVon: e.target.value })} placeholder="8.7" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[11px] text-slate-500">Vollbohr‑Durchm.</div>
+                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.vollbohrBis ?? ""} onChange={(e) => setRow(i, { vollbohrBis: e.target.value })} placeholder="Ø 10" />
+                    </div>
+                  </div>
+                </details>
 
-                <div className="rounded-xl border p-3 flex flex-col gap-2">
-                  {(["GP", "KP", "SP", "WP", "BKB", "KK-LV"] as const).map((k: ProbenFlag) => (
-                    <label key={k} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={(row.probenFlags ?? []).includes(k)}
-                        onChange={(e) => {
-                          const flags = new Set(row.probenFlags ?? []);
-                          e.target.checked ? flags.add(k) : flags.delete(k);
-                          setRow(i, { probenFlags: Array.from(flags) });
-                        }}
-                      />
-                      <span>{k}</span>
-                    </label>
-                  ))}
+                <details className="md:col-span-3 rounded-lg border px-3 py-2 text-sm">
+                  <summary className="cursor-pointer font-medium text-slate-700">Hindernisse (optional)</summary>
+                  <div className="mt-2 grid gap-2">
+                    <div className="space-y-1">
+                      <div className="text-[11px] text-slate-500">Hindernis von</div>
+                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.hindernisVon ?? ""} onChange={(e) => setRow(i, { hindernisVon: e.target.value })} placeholder="2.4" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[11px] text-slate-500">Hindernis bis</div>
+                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.hindernisBis ?? ""} onChange={(e) => setRow(i, { hindernisBis: e.target.value })} placeholder="2.9" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[11px] text-slate-500">Hindernis‑Zeit</div>
+                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.hindernisZeit ?? ""} onChange={(e) => setRow(i, { hindernisZeit: e.target.value })} placeholder="00:05" />
+                    </div>
+                  </div>
+                </details>
+
+                <details className="md:col-span-3 rounded-lg border px-3 py-2 text-sm">
+                  <summary className="cursor-pointer font-medium text-slate-700">Schachten (optional)</summary>
+                  <div className="mt-2 grid gap-2">
+                    <div className="space-y-1">
+                      <div className="text-[11px] text-slate-500">Schacht von</div>
+                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.schachtenVon ?? ""} onChange={(e) => setRow(i, { schachtenVon: e.target.value })} placeholder="0.5" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[11px] text-slate-500">Schacht bis</div>
+                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.schachtenBis ?? ""} onChange={(e) => setRow(i, { schachtenBis: e.target.value })} placeholder="1.0" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[11px] text-slate-500">Schacht‑Zeit</div>
+                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.schachtenZeit ?? ""} onChange={(e) => setRow(i, { schachtenZeit: e.target.value })} placeholder="00:15" />
+                    </div>
+                  </div>
+                </details>
+
+                <div className="rounded-lg border p-2">
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    {(["GP", "KP", "SP", "WP", "BKB", "KK-LV"] as const).map((k: ProbenFlag) => (
+                      <label key={k} className="flex items-center gap-2">
+                        <span className="w-10 text-slate-600">{k}</span>
+                        <input
+                          className="w-full rounded border px-2 py-1 text-sm"
+                          value={(row.probenFlags ?? []).includes(k) ? k : ""}
+                          placeholder=" "
+                          onChange={(e) => {
+                            const flags = new Set(row.probenFlags ?? []);
+                            const has = flags.has(k);
+                            if (e.target.value.trim() !== "") {
+                              flags.add(k);
+                            } else if (has) {
+                              flags.delete(k);
+                            }
+                            setRow(i, { probenFlags: Array.from(flags) });
+                          }}
+                        />
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
-                <input className="rounded-xl border p-3" value={row.spt ?? ""} onChange={(e) => setRow(i, { spt: e.target.value })} placeholder="SPT" />
+                <div className="space-y-1">
+                  <div className="text-[11px] text-slate-500">SPT</div>
+                  <input className="rounded-lg border px-3 py-2 text-sm" value={row.spt ?? ""} onChange={(e) => setRow(i, { spt: e.target.value })} placeholder="12/30" />
+                </div>
               </div>
 
-              <div className="md:col-span-6 rounded-xl border p-3 mt-3">
-                <div className="text-sm font-medium mb-3">Verfüllung</div>
-                <div className="grid gap-3 md:grid-cols-8">
-                  <div className="md:col-span-2 text-sm text-slate-600 self-center">Ton</div>
-                  <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.tonVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), tonVon: e.target.value } })} placeholder="Ton von" />
-                  <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.tonBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), tonBis: e.target.value } })} placeholder="Ton bis" />
+            </div>
+          ))}
+        </div>
+      </GroupCard> : null}
 
-                  <div className="md:col-span-2 text-sm text-slate-600 self-center">Bohrgut</div>
-                  <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.bohrgutVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), bohrgutVon: e.target.value } })} placeholder="Bohrgut von" />
-                  <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.bohrgutBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), bohrgutBis: e.target.value } })} placeholder="Bohrgut bis" />
-
-                  <div className="md:col-span-2 text-sm text-slate-600 self-center">Zement-Bent.</div>
-                  <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.zementBentVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentVon: e.target.value } })} placeholder="Zement-Bent. von" />
-                  <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.zementBentBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentBis: e.target.value } })} placeholder="Zement-Bent. bis" />
-
-                  <div className="md:col-span-2 text-sm text-slate-600 self-center">Beton</div>
-                  <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.betonVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonVon: e.target.value } })} placeholder="Beton von" />
-                  <input className="rounded-xl border p-3 md:col-span-3" value={row.verfuellung?.betonBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonBis: e.target.value } })} placeholder="Beton bis" />
+      {showStep(6) ? <GroupCard title="Verfüllung" badge="Kernbereich">
+        <div className="mt-3 space-y-4">
+          {safeTableRows.map((row, i) => (
+            <div key={i} className="rounded-xl border p-4">
+              <div className="text-sm font-medium mb-3">Bohrung {row.boNr || `#${i + 1}`}</div>
+              <div className="grid gap-3 md:grid-cols-8">
+                <div className="md:col-span-2 text-sm text-slate-600 self-center">Ton</div>
+                <div className="md:col-span-6 space-y-2">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <input
+                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                      value={(row.verfuellung?.tonVon ?? "").split("\n")[0] ?? ""}
+                      onChange={(e) => {
+                        const lines = String(row.verfuellung?.tonVon ?? "").split("\n");
+                        lines[0] = e.target.value;
+                        const next = lines.filter(Boolean).join("\n");
+                        setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), tonVon: next } });
+                      }}
+                      placeholder="Ton von"
+                    />
+                    <input
+                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                      value={(row.verfuellung?.tonBis ?? "").split("\n")[0] ?? ""}
+                      onChange={(e) => {
+                        const lines = String(row.verfuellung?.tonBis ?? "").split("\n");
+                        lines[0] = e.target.value;
+                        const next = lines.filter(Boolean).join("\n");
+                        setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), tonBis: next } });
+                      }}
+                      placeholder="Ton bis"
+                    />
+                  </div>
+                  {expandedLines[`ton-${i}`] ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <input
+                        className="w-full rounded-lg border px-3 py-2 text-xs"
+                        value={(row.verfuellung?.tonVon ?? "").split("\n")[1] ?? ""}
+                        onChange={(e) => {
+                          const lines = String(row.verfuellung?.tonVon ?? "").split("\n");
+                          lines[1] = e.target.value;
+                          const next = lines.filter(Boolean).slice(0, 2).join("\n");
+                          setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), tonVon: next } });
+                        }}
+                        placeholder="Ton von (2. Zeile)"
+                      />
+                      <input
+                        className="w-full rounded-lg border px-3 py-2 text-xs"
+                        value={(row.verfuellung?.tonBis ?? "").split("\n")[1] ?? ""}
+                        onChange={(e) => {
+                          const lines = String(row.verfuellung?.tonBis ?? "").split("\n");
+                          lines[1] = e.target.value;
+                          const next = lines.filter(Boolean).slice(0, 2).join("\n");
+                          setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), tonBis: next } });
+                        }}
+                        placeholder="Ton bis (2. Zeile)"
+                      />
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="text-xs text-sky-700 hover:underline"
+                    onClick={() =>
+                      setExpandedLines((p) => {
+                        const next = !p[`ton-${i}`];
+                        if (!next) {
+                          const v = String(row.verfuellung?.tonVon ?? "").split("\n")[0] ?? "";
+                          const b = String(row.verfuellung?.tonBis ?? "").split("\n")[0] ?? "";
+                          setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), tonVon: v, tonBis: b } });
+                        }
+                        return { ...p, [`ton-${i}`]: next };
+                      })
+                    }
+                  >
+                    {expandedLines[`ton-${i}`] ? "– Zeile" : "+ Zeile"}
+                  </button>
                 </div>
+
+                <div className="md:col-span-2 text-sm text-slate-600 self-center">Bohrgut</div>
+                <div className="md:col-span-6 space-y-2">
+                  <div className="grid gap-3 md:grid-cols-2">
+                  <input
+                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                    value={(row.verfuellung?.bohrgutVon ?? "").split("\n")[0] ?? ""}
+                    onChange={(e) => {
+                      const lines = String(row.verfuellung?.bohrgutVon ?? "").split("\n");
+                      lines[0] = e.target.value;
+                      const next = lines.filter(Boolean).join("\n");
+                      setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), bohrgutVon: next } });
+                    }}
+                    placeholder="Bohrgut von"
+                  />
+                  <input
+                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                    value={(row.verfuellung?.bohrgutBis ?? "").split("\n")[0] ?? ""}
+                    onChange={(e) => {
+                      const lines = String(row.verfuellung?.bohrgutBis ?? "").split("\n");
+                      lines[0] = e.target.value;
+                      const next = lines.filter(Boolean).join("\n");
+                      setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), bohrgutBis: next } });
+                    }}
+                    placeholder="Bohrgut bis"
+                  />
+                  </div>
+                  {expandedLines[`bohrgut-${i}`] ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <input
+                        className="w-full rounded-lg border px-3 py-2 text-xs"
+                        value={(row.verfuellung?.bohrgutVon ?? "").split("\n")[1] ?? ""}
+                        onChange={(e) => {
+                          const lines = String(row.verfuellung?.bohrgutVon ?? "").split("\n");
+                          lines[1] = e.target.value;
+                          const next = lines.filter(Boolean).slice(0, 2).join("\n");
+                          setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), bohrgutVon: next } });
+                        }}
+                        placeholder="Bohrgut von (2. Zeile)"
+                      />
+                    <input
+                      className="w-full rounded-lg border px-3 py-2 text-xs"
+                      value={(row.verfuellung?.bohrgutBis ?? "").split("\n")[1] ?? ""}
+                      onChange={(e) => {
+                        const lines = String(row.verfuellung?.bohrgutBis ?? "").split("\n");
+                        lines[1] = e.target.value;
+                        const next = lines.filter(Boolean).slice(0, 2).join("\n");
+                        setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), bohrgutBis: next } });
+                      }}
+                      placeholder="Bohrgut bis (2. Zeile)"
+                    />
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="text-xs text-sky-700 hover:underline"
+                    onClick={() =>
+                      setExpandedLines((p) => {
+                        const next = !p[`bohrgut-${i}`];
+                        if (!next) {
+                          const v = String(row.verfuellung?.bohrgutVon ?? "").split("\n")[0] ?? "";
+                          const b = String(row.verfuellung?.bohrgutBis ?? "").split("\n")[0] ?? "";
+                          setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), bohrgutVon: v, bohrgutBis: b } });
+                        }
+                        return { ...p, [`bohrgut-${i}`]: next };
+                      })
+                    }
+                  >
+                    {expandedLines[`bohrgut-${i}`] ? "– Zeile" : "+ Zeile"}
+                  </button>
+                </div>
+
+                <div className="md:col-span-2 text-sm text-slate-600 self-center">Zement-Bent.</div>
+                <input className="rounded-lg border px-3 py-2 text-sm md:col-span-3" value={row.verfuellung?.zementBentVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentVon: e.target.value } })} placeholder="Zement-Bent. von" />
+                <input className="rounded-lg border px-3 py-2 text-sm md:col-span-3" value={row.verfuellung?.zementBentBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentBis: e.target.value } })} placeholder="Zement-Bent. bis" />
+
+                <div className="md:col-span-2 text-sm text-slate-600 self-center">Beton</div>
+                <input className="rounded-lg border px-3 py-2 text-sm md:col-span-3" value={row.verfuellung?.betonVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonVon: e.target.value } })} placeholder="Beton von" />
+                <input className="rounded-lg border px-3 py-2 text-sm md:col-span-3" value={row.verfuellung?.betonBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonBis: e.target.value } })} placeholder="Beton bis" />
               </div>
             </div>
           ))}
@@ -1998,7 +2281,7 @@ if (mode === "edit") {
       </GroupCard> : null}
 
       {/* ======================= PEGELAUSBAU ======================= */}
-      {showStep(6) ? <GroupCard title="Pegelausbau" badge="Ausbau">
+      {showStep(7) ? <GroupCard title="Pegelausbau" badge="Ausbau">
 
         <div className="mt-3 flex gap-3">
           <button
@@ -2040,8 +2323,71 @@ if (mode === "edit") {
                 <input className="rounded-xl border p-3" placeholder="Aufsatz Stahl von" value={r.aufsatzStahlVon} onChange={(e) => updatePegel(i, { aufsatzStahlVon: e.target.value })} />
                 <input className="rounded-xl border p-3" placeholder="Aufsatz Stahl bis" value={r.aufsatzStahlBis} onChange={(e) => updatePegel(i, { aufsatzStahlBis: e.target.value })} />
 
-                <input className="rounded-xl border p-3" placeholder="Filterkies von" value={r.filterkiesVon} onChange={(e) => updatePegel(i, { filterkiesVon: e.target.value })} />
-                <input className="rounded-xl border p-3" placeholder="Filterkies bis" value={r.filterkiesBis} onChange={(e) => updatePegel(i, { filterkiesBis: e.target.value })} />
+                <div className="space-y-2">
+                  <div className="grid gap-3 md:grid-cols-2">
+                  <input
+                    className="w-full rounded-xl border p-3"
+                    placeholder="Filterkies von"
+                    value={(r.filterkiesVon ?? "").split("\n")[0] ?? ""}
+                    onChange={(e) => {
+                      const lines = String(r.filterkiesVon ?? "").split("\n");
+                      lines[0] = e.target.value;
+                      updatePegel(i, { filterkiesVon: lines.filter(Boolean).join("\n") });
+                    }}
+                  />
+                  <input
+                    className="w-full rounded-xl border p-3"
+                    placeholder="Filterkies bis"
+                    value={(r.filterkiesBis ?? "").split("\n")[0] ?? ""}
+                    onChange={(e) => {
+                      const lines = String(r.filterkiesBis ?? "").split("\n");
+                      lines[0] = e.target.value;
+                      updatePegel(i, { filterkiesBis: lines.filter(Boolean).join("\n") });
+                    }}
+                  />
+                  </div>
+                  {expandedLines[`filterkies-${i}`] ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <input
+                        className="w-full rounded-xl border p-3 text-xs"
+                        placeholder="Filterkies von (2. Zeile)"
+                        value={(r.filterkiesVon ?? "").split("\n")[1] ?? ""}
+                        onChange={(e) => {
+                          const lines = String(r.filterkiesVon ?? "").split("\n");
+                          lines[1] = e.target.value;
+                          updatePegel(i, { filterkiesVon: lines.filter(Boolean).slice(0, 2).join("\n") });
+                        }}
+                      />
+                    <input
+                      className="w-full rounded-xl border p-3 text-xs"
+                      placeholder="Filterkies bis (2. Zeile)"
+                      value={(r.filterkiesBis ?? "").split("\n")[1] ?? ""}
+                      onChange={(e) => {
+                        const lines = String(r.filterkiesBis ?? "").split("\n");
+                        lines[1] = e.target.value;
+                        updatePegel(i, { filterkiesBis: lines.filter(Boolean).slice(0, 2).join("\n") });
+                      }}
+                    />
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="text-xs text-sky-700 hover:underline"
+                    onClick={() =>
+                      setExpandedLines((p) => {
+                        const next = !p[`filterkies-${i}`];
+                        if (!next) {
+                          const v = String(r.filterkiesVon ?? "").split("\n")[0] ?? "";
+                          const b = String(r.filterkiesBis ?? "").split("\n")[0] ?? "";
+                          updatePegel(i, { filterkiesVon: v, filterkiesBis: b });
+                        }
+                        return { ...p, [`filterkies-${i}`]: next };
+                      })
+                    }
+                  >
+                    {expandedLines[`filterkies-${i}`] ? "– Zeile" : "+ Zeile"}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2085,7 +2431,7 @@ if (mode === "edit") {
         ))}
       </GroupCard> : null}
       {/* ======================= SONSTIGE / BEMERKUNGEN / UNTERSCHRIFTEN ======================= */}
-      {showStep(7) ? <GroupCard title="Sonstige / Bemerkungen / Unterschriften" badge="Abschluss">
+      {showStep(8) ? <GroupCard title="Sonstige / Bemerkungen / Unterschriften" badge="Abschluss">
 
     {/* Texte */}
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
