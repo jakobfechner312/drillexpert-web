@@ -320,7 +320,7 @@ export default function ProjectDetailPage() {
       return;
     }
 
-    setProject(data as Project);
+    setProject(data as unknown as Project);
     setSettingsOpen(false);
     setSavingSettings(false);
   };
