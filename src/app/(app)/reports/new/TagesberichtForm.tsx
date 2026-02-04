@@ -2025,7 +2025,7 @@ if (mode === "edit") {
         <div className="mt-4 space-y-4">
           {safeTableRows.map((row, i) => (
             <div key={i} className="rounded-xl border p-4">
-              <div className="grid gap-3 xl:grid-cols-8">
+              <div className="grid gap-3 2xl:grid-cols-8">
                 <div className="space-y-1">
                   <div className="text-[11px] text-slate-500">Bohr‑Nr.</div>
                   <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.boNr ?? ""} onChange={(e) => setRow(i, { boNr: e.target.value })} placeholder="z.B. B1" />
@@ -2068,7 +2068,7 @@ if (mode === "edit") {
 
 
 
-                <details className="xl:col-span-2 rounded-lg border px-3 py-2 text-sm">
+                <details className="2xl:col-span-2 rounded-lg border px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-medium text-slate-700">Vollbohrung (optional)</summary>
                   <div className="mt-2 grid gap-2">
                     <div className="space-y-1">
@@ -2082,7 +2082,7 @@ if (mode === "edit") {
                   </div>
                 </details>
 
-                <details className="xl:col-span-3 rounded-lg border px-3 py-2 text-sm">
+                <details className="2xl:col-span-3 rounded-lg border px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-medium text-slate-700">Hindernisse (optional)</summary>
                   <div className="mt-2 grid gap-2">
                     <div className="space-y-1">
@@ -2100,7 +2100,7 @@ if (mode === "edit") {
                   </div>
                 </details>
 
-                <details className="xl:col-span-3 rounded-lg border px-3 py-2 text-sm">
+                <details className="2xl:col-span-3 rounded-lg border px-3 py-2 text-sm">
                   <summary className="cursor-pointer font-medium text-slate-700">Schachten (optional)</summary>
                   <div className="mt-2 grid gap-2">
                     <div className="space-y-1">
