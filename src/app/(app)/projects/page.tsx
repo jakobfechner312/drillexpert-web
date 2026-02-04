@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Folder } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 type Project = {
@@ -183,9 +184,7 @@ export default function ProjectsPage() {
                 )}
               </div>
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-slate-50 text-slate-700 ring-1 ring-slate-200">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                  <path d="M4 7a2 2 0 0 1 2-2h5l2 2h5a2 2 0 0 1 2 2v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7z" fill="none" stroke="currentColor" strokeWidth="1.6"/>
-                </svg>
+                <Folder className="h-4 w-4" aria-hidden="true" />
               </span>
             </div>
             <div className="mt-4 flex items-center justify-between text-xs text-slate-500">

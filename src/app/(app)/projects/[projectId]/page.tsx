@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Briefcase, Calendar, ClipboardList, FileText, Hash, List, Settings, Upload, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -548,16 +549,12 @@ export default function ProjectDetailPage() {
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-600">
               <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                  <path d="M5 7h14M5 12h14M5 17h10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                </svg>
+                <Hash className="h-4 w-4" aria-hidden="true" />
                 {project?.project_number ? `Nr. ${project.project_number}` : projectId}
               </span>
               {project?.client_name && (
                 <span className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800 ring-1 ring-sky-200">
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                    <path d="M4 19h16M6 10h12l-1 9H7l-1-9zM9 10V6h6v4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
+                  <Briefcase className="h-4 w-4" aria-hidden="true" />
                   {project.client_name}
                 </span>
               )}
@@ -572,10 +569,7 @@ export default function ProjectDetailPage() {
               title="Projekt‑Details bearbeiten"
             >
               <span className="inline-flex items-center gap-2">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                  <path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7z" fill="none" stroke="currentColor" strokeWidth="1.6"/>
-                  <path d="M19.4 15.5c.1-.3.2-.6.3-.9l1.8-1-1.8-3.2-2.1.5a7.7 7.7 0 0 0-.7-.6l-.3-2.2h-3.7l-.3 2.2a7.7 7.7 0 0 0-.7.6l-2.1-.5-1.8 3.2 1.8 1c0 .3.1.6.3.9s-.1.6-.3.9l-1.8 1 1.8 3.2 2.1-.5c.2.2.4.4.7.6l.3 2.2h3.7l.3-2.2c.3-.2.5-.4.7-.6l2.1.5 1.8-3.2-1.8-1c-.1-.3-.2-.6-.3-.9z" fill="none" stroke="currentColor" strokeWidth="1.4"/>
-                </svg>
+                <Settings className="h-4 w-4" aria-hidden="true" />
                 Einstellungen
               </span>
             </button>
@@ -601,9 +595,7 @@ export default function ProjectDetailPage() {
           subtitle="Erweiterte Angaben aus dem Formular"
           action={
             <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-              <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                <path d="M7 3h10v4H7zM5 9h14v12H5z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-              </svg>
+              <ClipboardList className="h-4 w-4" aria-hidden="true" />
               Status: {project.status ?? "—"}
             </span>
           }
@@ -611,9 +603,7 @@ export default function ProjectDetailPage() {
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-xl border border-slate-200/70 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <svg viewBox="0 0 24 24" className="h-4 w-4 text-sky-700" aria-hidden="true">
-                  <path d="M4 19h16M6 10h12l-1 9H7l-1-9zM9 10V6h6v4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+                <Briefcase className="h-4 w-4 text-sky-700" aria-hidden="true" />
                 Auftraggeber
               </div>
               <div className="mt-2 text-sm text-slate-700">{project.client_name ?? "—"}</div>
@@ -628,9 +618,7 @@ export default function ProjectDetailPage() {
 
             <div className="rounded-xl border border-slate-200/70 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <svg viewBox="0 0 24 24" className="h-4 w-4 text-sky-700" aria-hidden="true">
-                  <path d="M8 11a4 4 0 1 1 8 0 4 4 0 0 1-8 0zM3 20a6 6 0 0 1 18 0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                </svg>
+                <Users className="h-4 w-4 text-sky-700" aria-hidden="true" />
                 Gutachter / Beteiligte
               </div>
               <div className="mt-2 text-sm text-slate-700">{project.stakeholder_name ?? "—"}</div>
@@ -646,9 +634,7 @@ export default function ProjectDetailPage() {
           <div className="mt-4 grid gap-4 md:grid-cols-3">
             <div className="rounded-xl border border-slate-200/70 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <svg viewBox="0 0 24 24" className="h-4 w-4 text-sky-700" aria-hidden="true">
-                  <path d="M4 7h16M4 12h16M4 17h10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                </svg>
+                <List className="h-4 w-4 text-sky-700" aria-hidden="true" />
                 Programm
               </div>
               <div className="mt-2 text-xs text-slate-500">
@@ -663,9 +649,7 @@ export default function ProjectDetailPage() {
             </div>
             <div className="rounded-xl border border-slate-200/70 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <svg viewBox="0 0 24 24" className="h-4 w-4 text-sky-700" aria-hidden="true">
-                  <path d="M7 3h10v4H7zM5 9h14v12H5zM8 13h8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                </svg>
+                <Calendar className="h-4 w-4 text-sky-700" aria-hidden="true" />
                 Zeitraum
               </div>
               <div className="mt-2 text-xs text-slate-500">
@@ -675,9 +659,7 @@ export default function ProjectDetailPage() {
             </div>
             <div className="rounded-xl border border-slate-200/70 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <svg viewBox="0 0 24 24" className="h-4 w-4 text-sky-700" aria-hidden="true">
-                  <path d="M6 5h12v14H6zM8 9h8M8 13h6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                </svg>
+                <FileText className="h-4 w-4 text-sky-700" aria-hidden="true" />
                 Notizen
               </div>
               <div className="mt-2 text-xs text-slate-500">{project.notes || "—"}</div>
@@ -693,10 +675,7 @@ export default function ProjectDetailPage() {
         >
           <div className="flex flex-wrap items-center gap-3">
             <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-800 ring-1 ring-sky-200">
-              <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                <path d="M8 11a4 4 0 1 1 8 0 4 4 0 0 1-8 0z" fill="none" stroke="currentColor" strokeWidth="1.6"/>
-                <path d="M3 20a6 6 0 0 1 18 0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-              </svg>
+              <Users className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="flex-1 min-w-[240px]">
               <div className="text-sm font-semibold text-slate-800">Mitglied hinzufügen</div>
@@ -766,9 +745,7 @@ export default function ProjectDetailPage() {
             }}
           >
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-600 ring-1 ring-slate-200">
-              <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                <path d="M12 4v10M8 8l4-4 4 4M5 18h14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-              </svg>
+              <Upload className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="mt-3 font-medium text-slate-800">Dateien hier ablegen</div>
             <div className="mt-1 text-xs text-slate-500">
@@ -807,10 +784,7 @@ export default function ProjectDetailPage() {
                       <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
                         <div className="min-w-0 flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700 ring-1 ring-sky-200">
-                            <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                              <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" strokeWidth="1.6"/>
-                              <path d="M14 3v6h6" fill="none" stroke="currentColor" strokeWidth="1.6"/>
-                            </svg>
+                            <FileText className="h-5 w-5" aria-hidden="true" />
                           </span>
                           <div className="min-w-0">
                             <div className="truncate font-medium text-slate-800">{item.title}</div>
