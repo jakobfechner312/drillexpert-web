@@ -2028,24 +2028,24 @@ if (mode === "edit") {
               <div className="grid gap-3 xl:grid-cols-8">
                 <div className="space-y-1">
                   <div className="text-[11px] text-slate-500">Bohr‑Nr.</div>
-                  <input className="rounded-lg border px-3 py-2 text-sm" value={row.boNr ?? ""} onChange={(e) => setRow(i, { boNr: e.target.value })} placeholder="z.B. B1" />
+                  <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.boNr ?? ""} onChange={(e) => setRow(i, { boNr: e.target.value })} placeholder="z.B. B1" />
                 </div>
                 <div className="space-y-1">
                   <div className="text-[11px] text-slate-500">Gebohrt von</div>
-                  <input className="rounded-lg border px-3 py-2 text-sm" value={row.gebohrtVon ?? ""} onChange={(e) => setRow(i, { gebohrtVon: e.target.value })} placeholder="0.0" />
+                  <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.gebohrtVon ?? ""} onChange={(e) => setRow(i, { gebohrtVon: e.target.value })} placeholder="0.0" />
                 </div>
                 <div className="space-y-1">
                   <div className="text-[11px] text-slate-500">Gebohrt bis</div>
-                  <input className="rounded-lg border px-3 py-2 text-sm" value={row.gebohrtBis ?? ""} onChange={(e) => setRow(i, { gebohrtBis: e.target.value })} placeholder="6.5" />
+                  <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.gebohrtBis ?? ""} onChange={(e) => setRow(i, { gebohrtBis: e.target.value })} placeholder="6.5" />
                 </div>
                 <div className="space-y-1">
                   <div className="text-[11px] text-slate-500">Verrohrt von</div>
-                  <input className="rounded-lg border px-3 py-2 text-sm" value={row.verrohrtVon ?? ""} onChange={(e) => setRow(i, { verrohrtVon: e.target.value })} placeholder="0.0" />
+                  <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.verrohrtVon ?? ""} onChange={(e) => setRow(i, { verrohrtVon: e.target.value })} placeholder="0.0" />
                 </div>
                 <div className="space-y-1">
                   <div className="text-[11px] text-slate-500">Verrohrt Durchm.</div>
                   <select
-                    className="rounded-lg border px-3 py-2 text-sm"
+                    className="w-full rounded-lg border px-3 py-2 text-sm"
                     value={row.verrohrtBis ?? ""}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -2073,11 +2073,11 @@ if (mode === "edit") {
                   <div className="mt-2 grid gap-2">
                     <div className="space-y-1">
                       <div className="text-[11px] text-slate-500">Vollbohrung bis</div>
-                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.vollbohrVon ?? ""} onChange={(e) => setRow(i, { vollbohrVon: e.target.value })} placeholder="8.7" />
+                      <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.vollbohrVon ?? ""} onChange={(e) => setRow(i, { vollbohrVon: e.target.value })} placeholder="8.7" />
                     </div>
                     <div className="space-y-1">
                       <div className="text-[11px] text-slate-500">Vollbohr‑Durchm.</div>
-                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.vollbohrBis ?? ""} onChange={(e) => setRow(i, { vollbohrBis: e.target.value })} placeholder="Ø 10" />
+                      <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.vollbohrBis ?? ""} onChange={(e) => setRow(i, { vollbohrBis: e.target.value })} placeholder="Ø 10" />
                     </div>
                   </div>
                 </details>
@@ -2087,15 +2087,15 @@ if (mode === "edit") {
                   <div className="mt-2 grid gap-2">
                     <div className="space-y-1">
                       <div className="text-[11px] text-slate-500">Hindernis von</div>
-                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.hindernisVon ?? ""} onChange={(e) => setRow(i, { hindernisVon: e.target.value })} placeholder="2.4" />
+                      <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.hindernisVon ?? ""} onChange={(e) => setRow(i, { hindernisVon: e.target.value })} placeholder="2.4" />
                     </div>
                     <div className="space-y-1">
                       <div className="text-[11px] text-slate-500">Hindernis bis</div>
-                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.hindernisBis ?? ""} onChange={(e) => setRow(i, { hindernisBis: e.target.value })} placeholder="2.9" />
+                      <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.hindernisBis ?? ""} onChange={(e) => setRow(i, { hindernisBis: e.target.value })} placeholder="2.9" />
                     </div>
                     <div className="space-y-1">
                       <div className="text-[11px] text-slate-500">Hindernis‑Zeit</div>
-                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.hindernisZeit ?? ""} onChange={(e) => setRow(i, { hindernisZeit: e.target.value })} placeholder="00:05" />
+                      <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.hindernisZeit ?? ""} onChange={(e) => setRow(i, { hindernisZeit: e.target.value })} placeholder="00:05" />
                     </div>
                   </div>
                 </details>
@@ -2105,15 +2105,15 @@ if (mode === "edit") {
                   <div className="mt-2 grid gap-2">
                     <div className="space-y-1">
                       <div className="text-[11px] text-slate-500">Schacht von</div>
-                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.schachtenVon ?? ""} onChange={(e) => setRow(i, { schachtenVon: e.target.value })} placeholder="0.5" />
+                      <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.schachtenVon ?? ""} onChange={(e) => setRow(i, { schachtenVon: e.target.value })} placeholder="0.5" />
                     </div>
                     <div className="space-y-1">
                       <div className="text-[11px] text-slate-500">Schacht bis</div>
-                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.schachtenBis ?? ""} onChange={(e) => setRow(i, { schachtenBis: e.target.value })} placeholder="1.0" />
+                      <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.schachtenBis ?? ""} onChange={(e) => setRow(i, { schachtenBis: e.target.value })} placeholder="1.0" />
                     </div>
                     <div className="space-y-1">
                       <div className="text-[11px] text-slate-500">Schacht‑Zeit</div>
-                      <input className="rounded-lg border px-3 py-2 text-sm" value={row.schachtenZeit ?? ""} onChange={(e) => setRow(i, { schachtenZeit: e.target.value })} placeholder="00:15" />
+                      <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.schachtenZeit ?? ""} onChange={(e) => setRow(i, { schachtenZeit: e.target.value })} placeholder="00:15" />
                     </div>
                   </div>
                 </details>
@@ -2145,7 +2145,7 @@ if (mode === "edit") {
 
                 <div className="space-y-1">
                   <div className="text-[11px] text-slate-500">SPT</div>
-                  <input className="rounded-lg border px-3 py-2 text-sm" value={row.spt ?? ""} onChange={(e) => setRow(i, { spt: e.target.value })} placeholder="12/30" />
+                  <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.spt ?? ""} onChange={(e) => setRow(i, { spt: e.target.value })} placeholder="12/30" />
                 </div>
               </div>
 
