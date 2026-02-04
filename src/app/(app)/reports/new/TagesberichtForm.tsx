@@ -1080,8 +1080,9 @@ if (mode === "edit") {
         fernGask: i % 3 === 1,
         passavant: i % 2 === 0,
         betonSockel: true,
-        abstHalter: i % 2 === 0,
+        abstHalter: i % 2 === 0 ? "1" : "",
         klarpump: i % 3 === 2,
+        filterkiesKoernung: i % 2 === 0 ? "2/8" : "8/16",
       })),
       signatures: {
         clientOrManagerName: "Bauleiter: T. Becker",
