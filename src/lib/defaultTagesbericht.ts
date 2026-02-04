@@ -132,8 +132,9 @@ export function createDefaultTagesbericht(): Tagesbericht {
         fernGask: false,
         passavant: false,
         betonSockel: false,
-        abstHalter: false,
+        abstHalter: "",
         klarpump: false,
+        filterkiesKoernung: "",
       },
     ],
 
