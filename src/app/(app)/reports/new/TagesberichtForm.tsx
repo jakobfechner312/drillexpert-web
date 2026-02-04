@@ -2118,34 +2118,40 @@ if (mode === "edit") {
                   </div>
                 </details>
 
-                <div className="rounded-lg border p-2">
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    {(["GP", "KP", "SP", "WP", "BKB", "KK-LV"] as const).map((k: ProbenFlag) => (
-                      <label key={k} className="flex items-center gap-2">
-                        <span className="w-10 text-slate-600">{k}</span>
-                        <input
-                          className="w-full rounded border px-2 py-1 text-sm"
-                          value={(row.probenFlags ?? []).includes(k) ? k : ""}
-                          placeholder=" "
-                          onChange={(e) => {
-                            const flags = new Set(row.probenFlags ?? []);
-                            const has = flags.has(k);
-                            if (e.target.value.trim() !== "") {
-                              flags.add(k);
-                            } else if (has) {
-                              flags.delete(k);
-                            }
-                            setRow(i, { probenFlags: Array.from(flags) });
-                          }}
-                        />
-                      </label>
-                    ))}
+                <div className="rounded-lg border p-2 2xl:col-span-2">
+                  <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-1">
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      {(["GP", "KP", "SP", "WP", "BKB", "KK-LV"] as const).map((k: ProbenFlag) => (
+                        <label key={k} className="flex items-center gap-2">
+                          <span className="w-10 text-slate-600">{k}</span>
+                          <input
+                            className="w-full rounded border px-2 py-1 text-sm"
+                            value={(row.probenFlags ?? []).includes(k) ? k : ""}
+                            placeholder=" "
+                            onChange={(e) => {
+                              const flags = new Set(row.probenFlags ?? []);
+                              const has = flags.has(k);
+                              if (e.target.value.trim() !== "") {
+                                flags.add(k);
+                              } else if (has) {
+                                flags.delete(k);
+                              }
+                              setRow(i, { probenFlags: Array.from(flags) });
+                            }}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[11px] text-slate-500">SPT</div>
+                      <input
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                        value={row.spt ?? ""}
+                        onChange={(e) => setRow(i, { spt: e.target.value })}
+                        placeholder="12/30"
+                      />
+                    </div>
                   </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="text-[11px] text-slate-500">SPT</div>
-                  <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.spt ?? ""} onChange={(e) => setRow(i, { spt: e.target.value })} placeholder="12/30" />
                 </div>
               </div>
 
