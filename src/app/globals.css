@@ -108,6 +108,12 @@
     @apply grid gap-4 md:grid-cols-2 xl:grid-cols-3;
   }
 
+  @media (hover: none) and (pointer: coarse) {
+    .nav-subitems {
+      display: block !important;
+    }
+  }
+
   .spin-slow {
     animation: spin 8s linear infinite;
   }
