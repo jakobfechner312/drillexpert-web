@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Briefcase, Calendar, ClipboardList, FileText, Hash, List, Settings, Upload, Users } from "lucide-react";
+import { Briefcase, Calendar, ClipboardList, ExternalLink, FileText, Hash, Link2, List, MapPin, Settings, Upload, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -28,6 +28,8 @@ type Project = {
   start_date?: string | null;
   end_date?: string | null;
   notes?: string | null;
+  mymaps_url?: string | null;
+  mymaps_title?: string | null;
 };
 type ReportRow = {
   id: string;
@@ -80,6 +82,8 @@ export default function ProjectDetailPage() {
     start_date: "",
     end_date: "",
     notes: "",
+    mymaps_url: "",
+    mymaps_title: "",
   });
 
   const [reports, setReports] = useState<ReportRow[]>([]);
@@ -94,6 +98,9 @@ export default function ProjectDetailPage() {
   const [addingMember, setAddingMember] = useState(false);
   const [memberErr, setMemberErr] = useState<string | null>(null);
   const [memberOk, setMemberOk] = useState<string | null>(null);
+  const [mymapsUrlInput, setMymapsUrlInput] = useState("");
+  const [mymapsSaving, setMymapsSaving] = useState(false);
+  const [mymapsError, setMymapsError] = useState<string | null>(null);
 
   const SectionCard = ({
     title,
@@ -156,6 +163,8 @@ export default function ProjectDetailPage() {
         "start_date",
         "end_date",
         "notes",
+        "mymaps_url",
+        "mymaps_title",
       ].join(","))
       .eq("id", projectId)
       .single();
@@ -190,7 +199,10 @@ export default function ProjectDetailPage() {
       start_date: projectRow.start_date ?? "",
       end_date: projectRow.end_date ?? "",
       notes: projectRow.notes ?? "",
+      mymaps_url: projectRow.mymaps_url ?? "",
+      mymaps_title: projectRow.mymaps_title ?? "",
     }));
+    setMymapsUrlInput(projectRow.mymaps_url ?? "");
 
     // 2) Rolle im Projekt laden (owner / member)
     const { data: mem, error: memErr } = await supabase
@@ -284,6 +296,8 @@ export default function ProjectDetailPage() {
       start_date: settingsForm.start_date || null,
       end_date: settingsForm.end_date || null,
       notes: settingsForm.notes?.trim() || null,
+      mymaps_url: settingsForm.mymaps_url?.trim() || null,
+      mymaps_title: settingsForm.mymaps_title?.trim() || null,
     };
 
     const { data, error } = await supabase
@@ -324,6 +338,126 @@ export default function ProjectDetailPage() {
     setProject(data as unknown as Project);
     setSettingsOpen(false);
     setSavingSettings(false);
+  };
+
+  const isProbablyUrl = (value: string) => {
+    try {
+      const u = new URL(value);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  };
+
+  const resolveMymapsTitle = async (url: string) => {
+    const res = await fetch(`/api/mymaps/resolve?url=${encodeURIComponent(url)}`);
+    if (!res.ok) throw new Error("Titel konnte nicht geladen werden.");
+    const data = (await res.json()) as { title?: string | null };
+    return data.title?.trim() || "Google My Maps";
+  };
+
+  const saveMymapsLink = async () => {
+    const url = mymapsUrlInput.trim();
+    if (!url) {
+      setMymapsError("Bitte einen Link einfügen.");
+      return;
+    }
+    if (!isProbablyUrl(url)) {
+      setMymapsError("Ungültiger Link.");
+      return;
+    }
+
+    setMymapsError(null);
+    setMymapsSaving(true);
+    try {
+      const title = await resolveMymapsTitle(url);
+      const { data, error } = await supabase
+        .from("projects")
+        .update({ mymaps_url: url, mymaps_title: title })
+        .eq("id", projectId)
+        .select([
+          "id",
+          "name",
+          "project_number",
+          "client_name",
+          "client_address",
+          "client_contact",
+          "client_phone",
+          "client_mobile",
+          "client_email",
+          "stakeholder_name",
+          "stakeholder_contact",
+          "stakeholder_phone",
+          "stakeholder_mobile",
+          "stakeholder_email",
+          "program_borehole",
+          "program_surface",
+          "program_ramming",
+          "status",
+          "start_date",
+          "end_date",
+          "notes",
+          "mymaps_url",
+          "mymaps_title",
+        ].join(","))
+        .single();
+
+      if (error) {
+        setMymapsError("Speichern fehlgeschlagen: " + error.message);
+        return;
+      }
+
+      setProject(data as unknown as Project);
+    } catch (err) {
+      setMymapsError(err instanceof Error ? err.message : "Link konnte nicht gespeichert werden.");
+    } finally {
+      setMymapsSaving(false);
+    }
+  };
+
+  const removeMymapsLink = async () => {
+    setMymapsError(null);
+    setMymapsSaving(true);
+    const { data, error } = await supabase
+      .from("projects")
+      .update({ mymaps_url: null, mymaps_title: null })
+      .eq("id", projectId)
+      .select([
+        "id",
+        "name",
+        "project_number",
+        "client_name",
+        "client_address",
+        "client_contact",
+        "client_phone",
+        "client_mobile",
+        "client_email",
+        "stakeholder_name",
+        "stakeholder_contact",
+        "stakeholder_phone",
+        "stakeholder_mobile",
+        "stakeholder_email",
+        "program_borehole",
+        "program_surface",
+        "program_ramming",
+        "status",
+        "start_date",
+        "end_date",
+        "notes",
+        "mymaps_url",
+        "mymaps_title",
+      ].join(","))
+      .single();
+
+    if (error) {
+      setMymapsError("Entfernen fehlgeschlagen: " + error.message);
+      setMymapsSaving(false);
+      return;
+    }
+
+    setProject(data as unknown as Project);
+    setMymapsUrlInput("");
+    setMymapsSaving(false);
   };
 
   const canEditOrDelete = (r: ReportRow) => {
@@ -673,34 +807,121 @@ export default function ProjectDetailPage() {
           title="Team"
           subtitle="Mitgliederverwaltung für dieses Projekt"
         >
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-800 ring-1 ring-sky-200">
-              <Users className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-[240px]">
-              <div className="text-sm font-semibold text-slate-800">Mitglied hinzufügen</div>
-              <div className="text-xs text-slate-500">Nur existierende Nutzer können hinzugefügt werden.</div>
-            </div>
-          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-800 ring-1 ring-sky-200">
+                  <Users className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div className="flex-1 min-w-[240px]">
+                  <div className="text-sm font-semibold text-slate-800">Mitglied hinzufügen</div>
+                  <div className="text-xs text-slate-500">Nur existierende Nutzer können hinzugefügt werden.</div>
+                </div>
+              </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <input
-              className="min-w-[240px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-              placeholder="E-Mail des Users"
-              value={memberEmail}
-              onChange={(e) => setMemberEmail(e.target.value)}
-            />
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={addMemberByEmail}
-              disabled={addingMember}
-            >
-              {addingMember ? "Füge hinzu…" : "Hinzufügen"}
-            </button>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <input
+                  className="min-w-[240px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  placeholder="E-Mail des Users"
+                  value={memberEmail}
+                  onChange={(e) => setMemberEmail(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={addMemberByEmail}
+                  disabled={addingMember}
+                >
+                  {addingMember ? "Füge hinzu…" : "Hinzufügen"}
+                </button>
+              </div>
+              {memberErr && <div className="mt-2 text-xs text-red-600">{memberErr}</div>}
+              {memberOk && <div className="mt-2 text-xs text-green-700">{memberOk}</div>}
+            </div>
+
+            <div className="rounded-2xl border border-dashed border-slate-200/70 p-4">
+              <div className="flex items-start gap-3">
+                <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-700 ring-1 ring-slate-200">
+                  <MapPin className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">Google My Maps</div>
+                  <div className="text-xs text-slate-500">Link einfügen oder hier hineinziehen.</div>
+                </div>
+              </div>
+
+              <div
+                className="mt-3 rounded-xl border border-slate-200/70 bg-white p-3 text-xs text-slate-500"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const text = e.dataTransfer.getData("text");
+                  if (text) setMymapsUrlInput(text.trim());
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <Link2 className="h-4 w-4" aria-hidden="true" />
+                  <input
+                    className="w-full border-0 bg-transparent p-0 text-sm text-slate-700 outline-none"
+                    placeholder="https://www.google.com/maps/d/..."
+                    value={mymapsUrlInput}
+                    onChange={(e) => setMymapsUrlInput(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={saveMymapsLink}
+                  disabled={mymapsSaving}
+                >
+                  {mymapsSaving ? "Speichert…" : "Link speichern"}
+                </button>
+                {project?.mymaps_url ? (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={removeMymapsLink}
+                    disabled={mymapsSaving}
+                  >
+                    Entfernen
+                  </button>
+                ) : null}
+                {project?.mymaps_url ? (
+                  <a
+                    className="text-xs text-sky-700 hover:underline"
+                    href={project.mymaps_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Link öffnen
+                  </a>
+                ) : null}
+              </div>
+              {mymapsError && <div className="mt-2 text-xs text-red-600">{mymapsError}</div>}
+
+              {project?.mymaps_url && (
+                <a
+                  href={project.mymaps_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 flex items-center justify-between rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-left shadow-sm transition hover:shadow"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-slate-800">
+                      {project.mymaps_title || "Google My Maps"}
+                    </div>
+                    <div className="mt-1 truncate text-xs text-slate-500">
+                      {project.mymaps_url}
+                    </div>
+                  </div>
+                  <ExternalLink className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                </a>
+              )}
+            </div>
           </div>
-          {memberErr && <div className="mt-2 text-xs text-red-600">{memberErr}</div>}
-          {memberOk && <div className="mt-2 text-xs text-green-700">{memberOk}</div>}
         </SectionCard>
       )}
 
