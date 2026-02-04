@@ -164,30 +164,31 @@ export default function ProjectDetailPage() {
       setLoading(false);
       return;
     }
-    setProject(proj as Project);
+    const projectRow = proj as unknown as Project;
+    setProject(projectRow);
     setSettingsForm((prev) => ({
       ...prev,
-      id: (proj as Project).id,
-      name: (proj as Project).name ?? "",
-      project_number: (proj as Project).project_number ?? "",
-      client_name: (proj as Project).client_name ?? "",
-      client_address: (proj as Project).client_address ?? "",
-      client_contact: (proj as Project).client_contact ?? "",
-      client_phone: (proj as Project).client_phone ?? "",
-      client_mobile: (proj as Project).client_mobile ?? "",
-      client_email: (proj as Project).client_email ?? "",
-      stakeholder_name: (proj as Project).stakeholder_name ?? "",
-      stakeholder_contact: (proj as Project).stakeholder_contact ?? "",
-      stakeholder_phone: (proj as Project).stakeholder_phone ?? "",
-      stakeholder_mobile: (proj as Project).stakeholder_mobile ?? "",
-      stakeholder_email: (proj as Project).stakeholder_email ?? "",
-      program_borehole: Boolean((proj as Project).program_borehole),
-      program_surface: Boolean((proj as Project).program_surface),
-      program_ramming: Boolean((proj as Project).program_ramming),
-      status: (proj as Project).status ?? "geplant",
-      start_date: (proj as Project).start_date ?? "",
-      end_date: (proj as Project).end_date ?? "",
-      notes: (proj as Project).notes ?? "",
+      id: projectRow.id,
+      name: projectRow.name ?? "",
+      project_number: projectRow.project_number ?? "",
+      client_name: projectRow.client_name ?? "",
+      client_address: projectRow.client_address ?? "",
+      client_contact: projectRow.client_contact ?? "",
+      client_phone: projectRow.client_phone ?? "",
+      client_mobile: projectRow.client_mobile ?? "",
+      client_email: projectRow.client_email ?? "",
+      stakeholder_name: projectRow.stakeholder_name ?? "",
+      stakeholder_contact: projectRow.stakeholder_contact ?? "",
+      stakeholder_phone: projectRow.stakeholder_phone ?? "",
+      stakeholder_mobile: projectRow.stakeholder_mobile ?? "",
+      stakeholder_email: projectRow.stakeholder_email ?? "",
+      program_borehole: Boolean(projectRow.program_borehole),
+      program_surface: Boolean(projectRow.program_surface),
+      program_ramming: Boolean(projectRow.program_ramming),
+      status: projectRow.status ?? "geplant",
+      start_date: projectRow.start_date ?? "",
+      end_date: projectRow.end_date ?? "",
+      notes: projectRow.notes ?? "",
     }));
 
     // 2) Rolle im Projekt laden (owner / member)
