@@ -25,6 +25,7 @@ type ProjectRow = {
 export default function DashboardPage() {
   const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
+  const [createReportOpen, setCreateReportOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<ProjectRow[]>([]);
@@ -113,12 +114,13 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/reports/new" className="btn btn-primary">
-              + Tagesbericht
-            </Link>
-            <Link href="/reports/schichtenverzeichnis/new" className="btn btn-secondary">
-              + Schichtenverzeichnis
-            </Link>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setCreateReportOpen(true)}
+            >
+              + Bericht erstellen
+            </button>
             <Link href="/projects" className="btn btn-secondary">
               Meine Projekte
             </Link>
@@ -207,6 +209,47 @@ export default function DashboardPage() {
             </div>
           </div>
         </>
+      )}
+
+      {createReportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold">Bericht erstellen</h3>
+                <p className="text-xs text-slate-500">Wähle den Berichtstyp</p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setCreateReportOpen(false)}
+              >
+                Schließen
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <Link
+                href="/reports/new"
+                className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow"
+              >
+                <div className="text-sm font-semibold text-sky-900">Tagesbericht</div>
+                <div className="mt-1 text-xs text-sky-700">
+                  Tagesleistung, Bohrungen, Personal
+                </div>
+              </Link>
+              <Link
+                href="/reports/schichtenverzeichnis/new"
+                className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow"
+              >
+                <div className="text-sm font-semibold text-amber-900">Schichtenverzeichnis</div>
+                <div className="mt-1 text-xs text-amber-700">
+                  Schichten, Proben, Feststellungen
+                </div>
+              </Link>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
