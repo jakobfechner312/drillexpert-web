@@ -162,14 +162,14 @@ export default function DashboardPage() {
               ) : (
                 <div className="mt-3 space-y-2">
                   {reports.slice(0, 3).map((r) => (
-                    <div key={r.id} className="flex items-center justify-between rounded-xl border px-3 py-2">
+                    <div key={r.id} className="flex items-center justify-between rounded-xl border border-slate-200/70 px-3 py-2">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{r.title}</div>
                         <div className="mt-0.5 text-xs text-slate-500">
                           {new Date(r.created_at).toLocaleDateString()}
                         </div>
                       </div>
-                      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${typeBadge(r.report_type)}`}>
+                      <span className={`rounded-full border border-slate-200/70 px-2 py-0.5 text-[11px] font-semibold ${typeBadge(r.report_type)}`}>
                         {r.report_type === "schichtenverzeichnis" ? "Schichtenverzeichnis" : "Tagesbericht"}
                       </span>
                     </div>
@@ -190,7 +190,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="mt-3 space-y-2">
                   {drafts.slice(0, 3).map((d) => (
-                    <div key={d.id} className="flex items-center justify-between rounded-xl border px-3 py-2">
+                    <div key={d.id} className="flex items-center justify-between rounded-xl border border-slate-200/70 px-3 py-2">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{d.title}</div>
                         <div className="mt-0.5 text-xs text-slate-500">

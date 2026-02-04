@@ -78,7 +78,7 @@ export default function DraftsPage() {
       {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
 
       {!loading && !err && (
-        <div className="mt-6 rounded-2xl border">
+        <div className="mt-6 rounded-2xl border border-slate-200/70 bg-white">
           <div className="border-b p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -103,7 +103,7 @@ export default function DraftsPage() {
           ) : (
             <div className="grid gap-3 p-4 sm:grid-cols-2">
               {filteredDrafts.map((d) => (
-                <div key={d.id} className="rounded-2xl border p-4 shadow-sm">
+                <div key={d.id} className="rounded-2xl border border-slate-200/70 p-4 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold">{d.title}</div>
@@ -111,7 +111,7 @@ export default function DraftsPage() {
                         {new Date(d.created_at).toLocaleString()}
                       </div>
                     </div>
-                    <span className="rounded-full border px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                    <span className="rounded-full border border-slate-200/70 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                       Entwurf
                     </span>
                   </div>

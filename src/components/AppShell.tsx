@@ -212,7 +212,7 @@ function AppLayout({
       )}
 
       <main className="min-w-0">
-        <div className="rounded-2xl border border-base-border bg-white p-5 sm:p-6 shadow-soft">
+        <div className="bg-transparent p-4 sm:rounded-2xl sm:border sm:border-base-border sm:bg-white sm:p-6 sm:shadow-soft">
           {children}
         </div>
       </main>
@@ -253,7 +253,11 @@ function SidebarReports() {
         Meine Berichte
       </Link>
 
-      <div className="ml-2 mt-1 hidden space-y-1 group-hover:block">
+      <div className="ml-2 mt-1 space-y-1 lg:hidden">
+        <SidebarLink href="/reports/new" label="Tagesbericht" />
+        <SidebarLink href="/reports/schichtenverzeichnis/new" label="Schichtenverzeichnis" />
+      </div>
+      <div className="ml-2 mt-1 hidden space-y-1 lg:group-hover:block">
         <SidebarLink href="/reports/new" label="Tagesbericht" />
         <SidebarLink href="/reports/schichtenverzeichnis/new" label="Schichtenverzeichnis" />
       </div>

@@ -104,7 +104,7 @@ export default function MyReportsPage() {
       {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
 
       {!loading && !err && (
-        <div className="mt-6 rounded-2xl border">
+        <div className="mt-6 rounded-2xl border border-slate-200/70 bg-white">
           <div className="border-b p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -163,7 +163,7 @@ export default function MyReportsPage() {
               {filteredReports.map((r) => {
                 const type = typeBadge(r.report_type);
                 return (
-                  <div key={r.id} className="rounded-2xl border p-4 shadow-sm">
+                  <div key={r.id} className="rounded-2xl border border-slate-200/70 p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-semibold">{r.title}</div>
@@ -171,14 +171,14 @@ export default function MyReportsPage() {
                           {new Date(r.created_at).toLocaleDateString()}
                         </div>
                       </div>
-                      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${type.cls}`}>
+                      <span className={`rounded-full border border-slate-200/70 px-2 py-0.5 text-[11px] font-semibold ${type.cls}`}>
                         {type.label}
                       </span>
                     </div>
 
                     <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
                       <span>Status:</span>
-                      <span className="rounded-full border px-2 py-0.5">
+                      <span className="rounded-full border border-slate-200/70 px-2 py-0.5">
                         {r.status ?? "—"}
                       </span>
                     </div>
