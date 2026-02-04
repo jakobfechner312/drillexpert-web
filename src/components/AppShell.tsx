@@ -242,26 +242,35 @@ function SidebarReports() {
   const active = pathname.startsWith("/reports");
 
   return (
-    <div className="group">
-      <Link
-        href="/reports"
-        className={[
-          "block rounded-xl px-3 py-2 text-sm transition",
-          active ? "bg-drill-50 font-medium" : "hover:bg-base-bg",
-        ].join(" ")}
-      >
-        Meine Berichte
-      </Link>
+    <>
+      <div className="lg:hidden">
+        <div className="rounded-xl px-3 py-2 text-sm font-medium text-slate-700">
+          Meine Berichte
+        </div>
+        <div className="ml-2 mt-1 space-y-1">
+          <SidebarLink href="/reports" label="Alle Berichte" />
+          <SidebarLink href="/reports/new" label="Tagesbericht" />
+          <SidebarLink href="/reports/schichtenverzeichnis/new" label="Schichtenverzeichnis" />
+        </div>
+      </div>
 
-      <div className="ml-2 mt-1 space-y-1 lg:hidden">
-        <SidebarLink href="/reports/new" label="Tagesbericht" />
-        <SidebarLink href="/reports/schichtenverzeichnis/new" label="Schichtenverzeichnis" />
+      <div className="group hidden lg:block">
+        <Link
+          href="/reports"
+          className={[
+            "block rounded-xl px-3 py-2 text-sm transition",
+            active ? "bg-drill-50 font-medium" : "hover:bg-base-bg",
+          ].join(" ")}
+        >
+          Meine Berichte
+        </Link>
+
+        <div className="ml-2 mt-1 hidden space-y-1 lg:group-hover:block">
+          <SidebarLink href="/reports/new" label="Tagesbericht" />
+          <SidebarLink href="/reports/schichtenverzeichnis/new" label="Schichtenverzeichnis" />
+        </div>
       </div>
-      <div className="ml-2 mt-1 hidden space-y-1 lg:group-hover:block">
-        <SidebarLink href="/reports/new" label="Tagesbericht" />
-        <SidebarLink href="/reports/schichtenverzeichnis/new" label="Schichtenverzeichnis" />
-      </div>
-    </div>
+    </>
   );
 }
 
