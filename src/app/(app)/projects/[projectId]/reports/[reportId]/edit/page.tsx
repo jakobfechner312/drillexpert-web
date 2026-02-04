@@ -18,6 +18,7 @@ export default function EditReportPage() {
       mode="edit"
       projectId={projectId}
       reportId={reportId}
+      stepper
     />
   );
 }

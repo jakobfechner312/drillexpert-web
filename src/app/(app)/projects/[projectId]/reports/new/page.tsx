@@ -14,7 +14,7 @@ export default function NewProjectTagesberichtPage() {
       <h1 className="text-2xl font-semibold">Tagesbericht – Neu</h1>
       <p className="mt-2 text-gray-600">Projekt: {projectId}</p>
 
-      <TagesberichtForm projectId={projectId} />
+      <TagesberichtForm projectId={projectId} stepper />
     </main>
   );
 }

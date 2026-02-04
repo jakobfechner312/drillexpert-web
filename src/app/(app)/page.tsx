@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export default function Home() {
   return (
     <Suspense fallback={<div className="p-6 text-sm text-slate-600">Lade…</div>}>
-      <TagesberichtForm mode="create" />
+      <TagesberichtForm mode="create" stepper />
     </Suspense>
   );
 }
