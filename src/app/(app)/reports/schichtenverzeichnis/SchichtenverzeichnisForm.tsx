@@ -141,12 +141,14 @@ type SchichtenverzeichnisFormProps = {
   projectId?: string;
   reportId?: string;
   mode?: "create" | "edit";
+  stepper?: boolean;
 };
 
 export default function SchichtenverzeichnisForm({
   projectId,
   reportId,
   mode = "create",
+  stepper = false,
 }: SchichtenverzeichnisFormProps) {
   type SaveScope = "unset" | "project" | "my_reports";
 
@@ -219,6 +221,21 @@ export default function SchichtenverzeichnisForm({
     proben_nr: "0",
     proben_tiefe: "0",
   });
+  const useStepper = stepper;
+  const steps = useMemo(
+    () => [
+      { key: "kopf", title: "Kopf & Projekt" },
+      { key: "bohrung", title: "Bohrung / Verrohrung" },
+      { key: "ansatzpunkt", title: "Ansatzpunkt & Gitter" },
+      { key: "grundwasser", title: "Grundwasserstände" },
+      { key: "pegel", title: "Pegelrohr / Ausbau" },
+      { key: "filter", title: "Filter / Dichtung / Bohrgut" },
+      { key: "schicht", title: "Schichtbeschreibung" },
+      { key: "proben", title: "Proben & Übergabe" },
+    ],
+    []
+  );
+  const [stepIndex, setStepIndex] = useState(0);
 
   const supabase = useMemo(() => createClient(), []);
   const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
@@ -855,8 +872,59 @@ export default function SchichtenverzeichnisForm({
     );
       };
 
+  const showStep = (index: number) => !useStepper || stepIndex === index;
+  const containerClass = useStepper
+    ? "mt-6 space-y-6 max-w-[2000px] mx-auto w-full px-4 sm:px-6 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]"
+    : "space-y-6";
+
   return (
-    <div className="space-y-6">
+    <div className={containerClass}>
+      {useStepper ? (
+        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Schritt {stepIndex + 1} von {steps.length}
+              </div>
+              <div className="text-lg font-semibold text-slate-900">{steps[stepIndex]?.title}</div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
+                disabled={stepIndex === 0}
+              >
+                Zurück
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setStepIndex((i) => Math.min(steps.length - 1, i + 1))}
+                disabled={stepIndex >= steps.length - 1}
+              >
+                Weiter
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {steps.map((s, i) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setStepIndex(i)}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                  i === stepIndex
+                    ? "bg-sky-50 text-sky-800 border-sky-200"
+                    : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                {i + 1}. {s.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {projectModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
@@ -995,69 +1063,76 @@ export default function SchichtenverzeichnisForm({
         </button>
       </header>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-[1.2fr_1fr_0.6fr]">
-          <Field label="Auftrag‑Nr." value={data.auftrag_nr} onChange={(v) => update("auftrag_nr", v)} />
-          <Field label="Bohrmeister" value={data.bohrmeister} onChange={(v) => update("bohrmeister", v)} />
-          <Field label="Blatt" value={data.blatt_nr} onChange={(v) => update("blatt_nr", v)} />
-          <Field label="Projekt" value={data.projekt_name} onChange={(v) => update("projekt_name", v)} className="md:col-span-3" />
-        </div>
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <Card title="Bohrung / Verfahren">
-          <div className="grid gap-4">
-            <div className="grid gap-3 md:grid-cols-[160px_1fr]">
-              <Field label="Bohrung Nr." value={data.bohrung_nr} onChange={(v) => update("bohrung_nr", v)} />
-              <Field label="Durchführungszeit" value={data.durchfuehrungszeit} onChange={(v) => update("durchfuehrungszeit", v)} />
-            </div>
-            <div className="grid gap-3 md:grid-cols-[1fr_120px]">
-              <Field label="Rammkernbohrung bis (m)" value={data.rammbohrung} onChange={(v) => update("rammbohrung", v)} />
-              <Field label="Ø" value={data.verrohr_durch_1} onChange={(v) => update("verrohr_durch_1", v)} />
-            </div>
-            <div className="grid gap-3 md:grid-cols-[1fr_120px]">
-              <Field label="Rotationskernbohrung bis (m)" value={data.rotationskernbohrung} onChange={(v) => update("rotationskernbohrung", v)} />
-              <Field label="Ø" value={data.verrohr_durch_2} onChange={(v) => update("verrohr_durch_2", v)} />
-            </div>
-            <div className="grid gap-3 md:grid-cols-[1fr_120px]">
-              <Field label="EK‑DK‑S (Ø)" value={data.ek_dks} onChange={(v) => update("ek_dks", v)} />
-              <Field label="Ø" value={data.verrohr_durch_3} onChange={(v) => update("verrohr_durch_3", v)} />
-            </div>
+      {showStep(0) ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="grid gap-4 md:grid-cols-[1.2fr_1fr_0.6fr]">
+            <Field label="Auftrag‑Nr." value={data.auftrag_nr} onChange={(v) => update("auftrag_nr", v)} />
+            <Field label="Bohrmeister" value={data.bohrmeister} onChange={(v) => update("bohrmeister", v)} />
+            <Field label="Blatt" value={data.blatt_nr} onChange={(v) => update("blatt_nr", v)} />
+            <Field label="Projekt" value={data.projekt_name} onChange={(v) => update("projekt_name", v)} className="md:col-span-3" />
           </div>
-        </Card>
+        </section>
+      ) : null}
 
-        <Card title="Verrohrung">
-          <div className="grid gap-3">
-            <div className="grid grid-cols-[1fr_90px] gap-3">
-              <Field label="Verrohrt bis (m)" value={data.verrohrt_bis_1} onChange={(v) => update("verrohrt_bis_1", v)} />
-              <Field label="Ø (mm)" value={data.verrohr_durch_1} onChange={(v) => update("verrohr_durch_1", v)} />
+      {showStep(1) ? (
+        <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          <Card title="Bohrung / Verfahren">
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-[160px_1fr]">
+                <Field label="Bohrung Nr." value={data.bohrung_nr} onChange={(v) => update("bohrung_nr", v)} />
+                <Field label="Durchführungszeit" value={data.durchfuehrungszeit} onChange={(v) => update("durchfuehrungszeit", v)} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-[1fr_120px]">
+                <Field label="Rammkernbohrung bis (m)" value={data.rammbohrung} onChange={(v) => update("rammbohrung", v)} />
+                <Field label="Ø" value={data.verrohr_durch_1} onChange={(v) => update("verrohr_durch_1", v)} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-[1fr_120px]">
+                <Field label="Rotationskernbohrung bis (m)" value={data.rotationskernbohrung} onChange={(v) => update("rotationskernbohrung", v)} />
+                <Field label="Ø" value={data.verrohr_durch_2} onChange={(v) => update("verrohr_durch_2", v)} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-[1fr_120px]">
+                <Field label="EK‑DK‑S (Ø)" value={data.ek_dks} onChange={(v) => update("ek_dks", v)} />
+                <Field label="Ø" value={data.verrohr_durch_3} onChange={(v) => update("verrohr_durch_3", v)} />
+              </div>
             </div>
-            <div className="grid grid-cols-[1fr_90px] gap-3">
-              <Field label="Verrohrt bis (m)" value={data.verrohrt_bis_2} onChange={(v) => update("verrohrt_bis_2", v)} />
-              <Field label="Ø (mm)" value={data.verrohr_durch_2} onChange={(v) => update("verrohr_durch_2", v)} />
+          </Card>
+
+          <Card title="Verrohrung">
+            <div className="grid gap-3">
+              <div className="grid grid-cols-[1fr_90px] gap-3">
+                <Field label="Verrohrt bis (m)" value={data.verrohrt_bis_1} onChange={(v) => update("verrohrt_bis_1", v)} />
+                <Field label="Ø (mm)" value={data.verrohr_durch_1} onChange={(v) => update("verrohr_durch_1", v)} />
+              </div>
+              <div className="grid grid-cols-[1fr_90px] gap-3">
+                <Field label="Verrohrt bis (m)" value={data.verrohrt_bis_2} onChange={(v) => update("verrohrt_bis_2", v)} />
+                <Field label="Ø (mm)" value={data.verrohr_durch_2} onChange={(v) => update("verrohr_durch_2", v)} />
+              </div>
+              <div className="grid grid-cols-[1fr_90px] gap-3">
+                <Field label="Verrohrt bis (m)" value={data.verrohrt_bis_3} onChange={(v) => update("verrohrt_bis_3", v)} />
+                <Field label="Ø (mm)" value={data.verrohr_durch_3} onChange={(v) => update("verrohr_durch_3", v)} />
+              </div>
             </div>
-            <div className="grid grid-cols-[1fr_90px] gap-3">
-              <Field label="Verrohrt bis (m)" value={data.verrohrt_bis_3} onChange={(v) => update("verrohrt_bis_3", v)} />
-              <Field label="Ø (mm)" value={data.verrohr_durch_3} onChange={(v) => update("verrohr_durch_3", v)} />
-            </div>
+          </Card>
+        </section>
+      ) : null}
+
+      {showStep(2) ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="grid gap-4 md:grid-cols-[1fr_1fr_1fr]">
+            <Field label="Höhe des Ansatzpunktes (NN)" value={data.hoehe_ansatzpunkt} onChange={(v) => update("hoehe_ansatzpunkt", v)} />
+            <Field label="Bezogen auf" value={data.bezogen_auf} onChange={(v) => update("bezogen_auf", v)} />
+            <Field label="Eingemessen durch" value={data.eingemessen_durch} onChange={(v) => update("eingemessen_durch", v)} />
           </div>
-        </Card>
-      </section>
+          <div className="mt-4 grid gap-4 md:grid-cols-[1fr_0.8fr_0.8fr]">
+            <Field label="Gitterwert (Rechts)" value={data.gitterwert_rechts} onChange={(v) => update("gitterwert_rechts", v)} />
+            <Field label="Gitterwert (Links)" value={data.gitterwert_links} onChange={(v) => update("gitterwert_links", v)} />
+            <Field label="Gitterwert (Hoch)" value={data.gitterwert} onChange={(v) => update("gitterwert", v)} />
+          </div>
+        </section>
+      ) : null}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-[1fr_1fr_1fr]">
-          <Field label="Höhe des Ansatzpunktes (NN)" value={data.hoehe_ansatzpunkt} onChange={(v) => update("hoehe_ansatzpunkt", v)} />
-          <Field label="Bezogen auf" value={data.bezogen_auf} onChange={(v) => update("bezogen_auf", v)} />
-          <Field label="Eingemessen durch" value={data.eingemessen_durch} onChange={(v) => update("eingemessen_durch", v)} />
-        </div>
-        <div className="mt-4 grid gap-4 md:grid-cols-[1fr_0.8fr_0.8fr]">
-          <Field label="Gitterwert (Rechts)" value={data.gitterwert_rechts} onChange={(v) => update("gitterwert_rechts", v)} />
-          <Field label="Gitterwert (Links)" value={data.gitterwert_links} onChange={(v) => update("gitterwert_links", v)} />
-          <Field label="Gitterwert (Hoch)" value={data.gitterwert} onChange={(v) => update("gitterwert", v)} />
-        </div>
-      </section>
-
-      <Card title="Grundwasserstände">
+      {showStep(3) ? (
+        <Card title="Grundwasserstände">
         <div className="flex items-center justify-between gap-3">
           <div className="text-xs text-slate-500">Max. 4 Zeilen</div>
           <div className="flex gap-2">
@@ -1160,51 +1235,57 @@ export default function SchichtenverzeichnisForm({
         <div className="mt-3 grid gap-3 md:grid-cols-[1fr]">
           <Field label="Pegelrohr Ø" value={data.pegel_durchmesser} onChange={(v) => update("pegel_durchmesser", v)} />
         </div>
-      </Card>
+        </Card>
+      ) : null}
 
-      <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card title="Pegelrohr / Ausbau">
+      {showStep(4) ? (
+        <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+          <Card title="Pegelrohr / Ausbau">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="ROK" value={data.rok} onChange={(v) => update("rok", v)} />
+              <Field label="Sumpf (m)" value={data.sumpf} onChange={(v) => update("sumpf", v)} />
+              <Field label="Filterrohr (m)" value={data.filter_rohr} onChange={(v) => update("filter_rohr", v)} />
+              <Field label="SW" value={data.sw} onChange={(v) => update("sw", v)} />
+              <Field label="Vollrohr PVC (m)" value={data.vollrohr_pvc} onChange={(v) => update("vollrohr_pvc", v)} />
+              <Field label="Vollrohr Stahl (m)" value={data.vollrohr_stahl} onChange={(v) => update("vollrohr_stahl", v)} />
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <Field label="Passavant" value={data.passavant} onChange={(v) => update("passavant", v)} />
+              <Field label="Ferngas" value={data.ferngas} onChange={(v) => update("ferngas", v)} />
+              <Field label="Seba" value={data.seba} onChange={(v) => update("seba", v)} />
+            </div>
+          </Card>
+
+          <Card title="Hydr./Beton">
+            <div className="grid gap-4">
+              <Field label="Hydr.Kp." value={data.hydr_kp} onChange={(v) => update("hydr_kp", v)} />
+              <Field label="Betonsockel" value={data.betonsockel} onChange={(v) => update("betonsockel", v)} />
+            </div>
+          </Card>
+        </section>
+      ) : null}
+
+      {showStep(5) ? (
+        <Card title="Filter / Dichtung / Bohrgut">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="ROK" value={data.rok} onChange={(v) => update("rok", v)} />
-            <Field label="Sumpf (m)" value={data.sumpf} onChange={(v) => update("sumpf", v)} />
-            <Field label="Filterrohr (m)" value={data.filter_rohr} onChange={(v) => update("filter_rohr", v)} />
-            <Field label="SW" value={data.sw} onChange={(v) => update("sw", v)} />
-            <Field label="Vollrohr PVC (m)" value={data.vollrohr_pvc} onChange={(v) => update("vollrohr_pvc", v)} />
-            <Field label="Vollrohr Stahl (m)" value={data.vollrohr_stahl} onChange={(v) => update("vollrohr_stahl", v)} />
-          </div>
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <Field label="Passavant" value={data.passavant} onChange={(v) => update("passavant", v)} />
-            <Field label="Ferngas" value={data.ferngas} onChange={(v) => update("ferngas", v)} />
-            <Field label="Seba" value={data.seba} onChange={(v) => update("seba", v)} />
-          </div>
-        </Card>
-
-        <Card title="Hydr./Beton">
-          <div className="grid gap-4">
-            <Field label="Hydr.Kp." value={data.hydr_kp} onChange={(v) => update("hydr_kp", v)} />
-            <Field label="Betonsockel" value={data.betonsockel} onChange={(v) => update("betonsockel", v)} />
+            <Field label="Filterkies von" value={data.filterkies_von} onChange={(v) => update("filterkies_von", v)} />
+            <Field label="Filterkies bis" value={data.filterkies_bis} onChange={(v) => update("filterkies_bis", v)} />
+            <Field label="Tondichtung von" value={data.tondichtung_von} onChange={(v) => update("tondichtung_von", v)} />
+            <Field label="Tondichtung bis" value={data.tondichtung_bis} onChange={(v) => update("tondichtung_bis", v)} />
+            <Field label="Gegenfilter von" value={data.gegenfilter_von} onChange={(v) => update("gegenfilter_von", v)} />
+            <Field label="Gegenfilter bis" value={data.gegenfilter_bis} onChange={(v) => update("gegenfilter_bis", v)} />
+            <Field label="Tondichtung von (unten)" value={data.tondichtung_von_2} onChange={(v) => update("tondichtung_von_2", v)} />
+            <Field label="Tondichtung bis (unten)" value={data.tondichtung_bis_2} onChange={(v) => update("tondichtung_bis_2", v)} />
+            <Field label="Zem.-Bent. von" value={data.zement_bent_von} onChange={(v) => update("zement_bent_von", v)} />
+            <Field label="Zem.-Bent. bis" value={data.zement_bent_bis} onChange={(v) => update("zement_bent_bis", v)} />
+            <Field label="Bohrgut von" value={data.bohrgut_von} onChange={(v) => update("bohrgut_von", v)} />
+            <Field label="Bohrgut bis" value={data.bohrgut_bis} onChange={(v) => update("bohrgut_bis", v)} />
           </div>
         </Card>
-      </section>
+      ) : null}
 
-      <Card title="Filter / Dichtung / Bohrgut">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Filterkies von" value={data.filterkies_von} onChange={(v) => update("filterkies_von", v)} />
-          <Field label="Filterkies bis" value={data.filterkies_bis} onChange={(v) => update("filterkies_bis", v)} />
-          <Field label="Tondichtung von" value={data.tondichtung_von} onChange={(v) => update("tondichtung_von", v)} />
-          <Field label="Tondichtung bis" value={data.tondichtung_bis} onChange={(v) => update("tondichtung_bis", v)} />
-          <Field label="Gegenfilter von" value={data.gegenfilter_von} onChange={(v) => update("gegenfilter_von", v)} />
-          <Field label="Gegenfilter bis" value={data.gegenfilter_bis} onChange={(v) => update("gegenfilter_bis", v)} />
-          <Field label="Tondichtung von (unten)" value={data.tondichtung_von_2} onChange={(v) => update("tondichtung_von_2", v)} />
-          <Field label="Tondichtung bis (unten)" value={data.tondichtung_bis_2} onChange={(v) => update("tondichtung_bis_2", v)} />
-          <Field label="Zem.-Bent. von" value={data.zement_bent_von} onChange={(v) => update("zement_bent_von", v)} />
-          <Field label="Zem.-Bent. bis" value={data.zement_bent_bis} onChange={(v) => update("zement_bent_bis", v)} />
-          <Field label="Bohrgut von" value={data.bohrgut_von} onChange={(v) => update("bohrgut_von", v)} />
-          <Field label="Bohrgut bis" value={data.bohrgut_bis} onChange={(v) => update("bohrgut_bis", v)} />
-        </div>
-      </Card>
-
-      <Card title="Schichtbeschreibung (Auszug)">
+      {showStep(6) ? (
+        <Card title="Schichtbeschreibung (Auszug)">
         <details className="rounded-xl border border-slate-200 bg-white">
           <summary className="cursor-pointer select-none rounded-xl px-3 py-2 text-sm font-semibold uppercase tracking-[0.14em] text-slate-600">
             Legende / Hilfe (Original‑Hinweise)
@@ -1583,24 +1664,27 @@ export default function SchichtenverzeichnisForm({
             </div>
           ))}
         </div>
-      </Card>
+        </Card>
+      ) : null}
 
-      <Card title="Proben / Übergabe">
-        <div className="grid gap-4 md:grid-cols-4">
-          <Field label="GP" value={data.probe_gp} onChange={(v) => update("probe_gp", v)} />
-          <Field label="KP" value={data.probe_kp} onChange={(v) => update("probe_kp", v)} />
-          <Field label="SP" value={data.probe_sp} onChange={(v) => update("probe_sp", v)} />
-          <Field label="WP" value={data.probe_wp} onChange={(v) => update("probe_wp", v)} />
-          <Field label="Ki/m" value={data.probe_ki} onChange={(v) => update("probe_ki", v)} />
-          <Field label="BKB" value={data.probe_bkb} onChange={(v) => update("probe_bkb", v)} />
-          <Field label="SPT" value={data.probe_spt} onChange={(v) => update("probe_spt", v)} />
-          <Field label="Probenart" value={data.proben_art} onChange={(v) => update("proben_art", v)} />
-          <Field label="Proben‑Nr." value={data.proben_nr} onChange={(v) => update("proben_nr", v)} />
-          <Field label="Probentiefe" value={data.proben_tiefe} onChange={(v) => update("proben_tiefe", v)} />
-          <Field label="Übergeben am" value={data.uebergeben_am} onChange={(v) => update("uebergeben_am", v)} />
-          <Field label="Übergeben an" value={data.uebergeben_an} onChange={(v) => update("uebergeben_an", v)} />
-        </div>
-      </Card>
+      {showStep(7) ? (
+        <Card title="Proben / Übergabe">
+          <div className="grid gap-4 md:grid-cols-4">
+            <Field label="GP" value={data.probe_gp} onChange={(v) => update("probe_gp", v)} />
+            <Field label="KP" value={data.probe_kp} onChange={(v) => update("probe_kp", v)} />
+            <Field label="SP" value={data.probe_sp} onChange={(v) => update("probe_sp", v)} />
+            <Field label="WP" value={data.probe_wp} onChange={(v) => update("probe_wp", v)} />
+            <Field label="Ki/m" value={data.probe_ki} onChange={(v) => update("probe_ki", v)} />
+            <Field label="BKB" value={data.probe_bkb} onChange={(v) => update("probe_bkb", v)} />
+            <Field label="SPT" value={data.probe_spt} onChange={(v) => update("probe_spt", v)} />
+            <Field label="Probenart" value={data.proben_art} onChange={(v) => update("proben_art", v)} />
+            <Field label="Proben‑Nr." value={data.proben_nr} onChange={(v) => update("proben_nr", v)} />
+            <Field label="Probentiefe" value={data.proben_tiefe} onChange={(v) => update("proben_tiefe", v)} />
+            <Field label="Übergeben am" value={data.uebergeben_am} onChange={(v) => update("uebergeben_am", v)} />
+            <Field label="Übergeben an" value={data.uebergeben_an} onChange={(v) => update("uebergeben_an", v)} />
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 }

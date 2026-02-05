@@ -2870,7 +2870,7 @@ if (mode === "edit") {
           className="btn btn-primary"
           onClick={openTestPdf}
         >
-          PDF testen
+          Vorschau
         </button>
       </div>
 
