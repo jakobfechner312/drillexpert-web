@@ -300,22 +300,37 @@ export async function POST(req: Request) {
       "Geräte-Pflege/Reparatur",
     ];
     const workCycles = Array.isArray(data.workCycles) ? data.workCycles : [];
+    const customCycleOrder: string[] = [];
+    const customCycleSeen = new Set<string>();
+    workCycles.forEach((label: string) => {
+      if (!label) return;
+      if (workCycleOptions.includes(label)) return;
+      if (customCycleSeen.has(label)) return;
+      customCycleSeen.add(label);
+      customCycleOrder.push(label);
+    });
+    const customCycleIndex = new Map<string, number>(
+      customCycleOrder.map((label, idx) => [label, idx])
+    );
     for (let j = 0; j < STUNDEN_BOXES; j++) {
       const label = workCycles[j];
       const idx = label ? workCycleOptions.indexOf(label) : -1;
-      const display = idx >= 0 ? String(idx + 1) : label ? "20" : "";
+      const customIdx = label ? customCycleIndex.get(label) : undefined;
+      const display =
+        idx >= 0
+          ? String(idx + 1)
+          : typeof customIdx === "number"
+          ? String(20 + customIdx)
+          : "";
       draw(display, WCOL.stundenStartX + j * WCOL.stundenStep, stundenHeaderY, 8);
     }
 
     // Markierung der gewählten Arbeitstakte in der Liste rechts
     const selectedCycles = new Set<number>();
-    const customSelected: string[] = [];
     workCycles.forEach((label: string) => {
       const idx = workCycleOptions.indexOf(label);
       if (idx >= 0) {
         selectedCycles.add(idx + 1);
-      } else if (label) {
-        customSelected.push(label);
       }
     });
 
@@ -343,22 +358,8 @@ export async function POST(req: Request) {
       });
     });
 
-    // Markiere auch eigene Takte (20+)
-    customSelected.forEach((label, idx) => {
-      const nr = 20 + idx;
-      const col = nr <= 10 ? 0 : 1;
-      const row = nr <= 10 ? nr - 1 : nr - 11;
-      const x = col === 0 ? LIST.leftX : LIST.rightX;
-      const y = LIST.startY - row * LIST.rowH;
-      page.drawRectangle({
-        x,
-        y,
-        width: LIST.boxW,
-        height: LIST.boxH,
-        color: rgb(0.2, 0.6, 1),
-        opacity: 0.25,
-      });
-    });
+    // Eigene Takte (20+) haben keine feste Position in der gedruckten Liste,
+    // daher hier keine Markierung setzen.
 
     workers.slice(0, 3).forEach((w: any, i: number) => {
       const y = workersStartY - i * workerRowH;
@@ -680,15 +681,7 @@ export async function POST(req: Request) {
 
     // Bemerkungen / Anordnungen / Besuche (+ eigene Arbeitstakte)
     const baseRemarks = String(data.remarks ?? "");
-    const customCycleLines: string[] = [];
-    const customCycleSeen = new Set<string>();
-    (Array.isArray(data.workCycles) ? data.workCycles : []).forEach((label: string) => {
-      if (!label || workCycleOptions.includes(label)) return;
-      if (customCycleSeen.has(label)) return;
-      customCycleSeen.add(label);
-      customCycleLines.push(label);
-    });
-    const customWithNumbers = customCycleLines.map((label, idx) => `${20 + idx} - ${label}`);
+    const customWithNumbers = customCycleOrder.map((label, idx) => `${20 + idx} - ${label}`);
     const remarksCombined =
       baseRemarks.trim() && customWithNumbers.length
         ? `${baseRemarks}\n\n${customWithNumbers.join("\n")}`
@@ -701,7 +694,7 @@ export async function POST(req: Request) {
       maxCharsPerLine: 50,
     });
     remarkLines.forEach((ln, i) => {
-      if (/^\s*20\s*-\s*/.test(ln)) {
+      if (/^\s*2\d\s*-\s*/.test(ln)) {
         const width = font.widthOfTextAtSize(ln, 9) + 4;
         page.drawRectangle({
           x: BOTTOM.remarksX - 2,

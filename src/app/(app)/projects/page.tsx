@@ -146,12 +146,6 @@ export default function ProjectsPage() {
             >
               + Neues Projekt
             </button>
-            <Link
-              href="/reports/new"
-              className="btn btn-primary"
-            >
-              + Tagesbericht erstellen
-            </Link>
           </div>
         </div>
       </div>

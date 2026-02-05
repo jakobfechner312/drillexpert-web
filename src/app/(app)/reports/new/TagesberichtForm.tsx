@@ -160,6 +160,48 @@ const SubGroup = ({ title, children }: { title: string; children: React.ReactNod
   </div>
 );
 
+const RowActions = ({
+  addLabel,
+  removeLabel,
+  onAdd,
+  onRemove,
+  countLabel,
+  disableAdd,
+  disableRemove,
+  className,
+}: {
+  addLabel: string;
+  removeLabel: string;
+  onAdd: () => void;
+  onRemove: () => void;
+  countLabel?: string;
+  disableAdd?: boolean;
+  disableRemove?: boolean;
+  className?: string;
+}) => (
+  <div className={["flex flex-wrap items-center justify-between gap-3", className].filter(Boolean).join(" ")}>
+    <span className="text-sm text-slate-500">{countLabel ?? ""}</span>
+    <div className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        className="btn btn-secondary btn-xs"
+        onClick={onAdd}
+        disabled={disableAdd}
+      >
+        {addLabel}
+      </button>
+      <button
+        type="button"
+        className="btn btn-secondary btn-xs"
+        onClick={onRemove}
+        disabled={disableRemove}
+      >
+        {removeLabel}
+      </button>
+    </div>
+  </div>
+);
+
 function normalizeTagesbericht(raw: unknown): Tagesbericht {
   const base = createDefaultTagesbericht();
 
@@ -1598,10 +1640,13 @@ if (mode === "edit") {
                   <div className="mt-4 rounded-xl border border-slate-200/70 p-3 bg-slate-50/60">
                     <div className="flex items-center justify-between">
                       <h4 className="font-medium">Arbeitszeit & Pausen</h4>
-                      <div className="flex gap-2">
-                        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={addWorkAndBreakRow}>+ Zeile</button>
-                        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={removeLastWorkAndBreakRow}>– Zeile</button>
-                      </div>
+                      <RowActions
+                        addLabel="+ Zeit"
+                        removeLabel="– Zeit"
+                        onAdd={addWorkAndBreakRow}
+                        onRemove={removeLastWorkAndBreakRow}
+                        className=""
+                      />
                     </div>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <div className="rounded-xl border border-slate-200/70 bg-white p-3">
@@ -1717,10 +1762,14 @@ if (mode === "edit") {
                   <div className="rounded-xl border border-slate-200/70 p-3 bg-white">
                     <div className="flex items-center justify-between">
                       <h3 className="font-medium">Transport</h3>
-                      <div className="flex gap-2">
-                  <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50 disabled:opacity-50" onClick={addTransportRow} disabled={safeTransport.length >= MAX_TRANSPORT_ROWS}>+ Zeile</button>
-                        <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sky-700 hover:bg-sky-50" onClick={removeLastTransportRow}>– Zeile</button>
-                      </div>
+                      <RowActions
+                        addLabel="+ Transport"
+                        removeLabel="– Transport"
+                        onAdd={addTransportRow}
+                        onRemove={removeLastTransportRow}
+                        countLabel={`Transporte: ${safeTransport.length} / ${MAX_TRANSPORT_ROWS}`}
+                        disableAdd={safeTransport.length >= MAX_TRANSPORT_ROWS}
+                      />
                     </div>
                     <div className="mt-3 space-y-3">
                       {safeTransport.map((r, i) => (
@@ -1788,11 +1837,15 @@ if (mode === "edit") {
 
       {/* ======================= ARBEITER (TABELLENLAYOUT) ======================= */}
       {showStep(4) ? <GroupCard title="Arbeitstakte / Stunden" badge="Personal">
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={addWorker}>+ Arbeiter</button>
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastWorker}>– Arbeiter</button>
-          <span className="text-sm text-slate-500 self-center">Arbeiter: {safeWorkers.length}</span>
-          <div className="ml-auto flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <RowActions
+            addLabel="+ Arbeiter"
+            removeLabel="– Arbeiter"
+            onAdd={addWorker}
+            onRemove={removeLastWorker}
+            countLabel={`Arbeiter: ${safeWorkers.length}`}
+          />
+          <div className="flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Arbeitstakte</span>
             <button
               type="button"
@@ -2153,20 +2206,15 @@ if (mode === "edit") {
       {/* ======================= TABELLE ======================= */}
       {showStep(5) ? <GroupCard title="Tabelle (Bohrung / Proben / Verfüllung)" badge="Kernbereich">
 
-        <div className="mt-3 flex gap-3">
-          <button
-            type="button"
-            className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
-            onClick={addRow}
-            disabled={safeTableRows.length >= MAX_TABLE_ROWS}
-          >
-            + Zeile
-          </button>
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastRow}>– Zeile</button>
-          <span className="text-sm text-slate-500 self-center">
-            Zeilen: {safeTableRows.length} / {MAX_TABLE_ROWS}
-          </span>
-        </div>
+          <RowActions
+            addLabel="+ Bohrung"
+            removeLabel="– Bohrung"
+            onAdd={addRow}
+            onRemove={removeLastRow}
+            countLabel={`Bohrungen: ${safeTableRows.length} / ${MAX_TABLE_ROWS}`}
+            disableAdd={safeTableRows.length >= MAX_TABLE_ROWS}
+            className="mt-3"
+          />
 
         <div className="mt-4 space-y-4">
           {safeTableRows.map((row, i) => (
@@ -2366,7 +2414,7 @@ if (mode === "edit") {
                   ) : null}
                   <button
                     type="button"
-                    className="text-xs text-sky-700 hover:underline"
+                    className="btn btn-secondary btn-xs"
                     onClick={() =>
                       setExpandedLines((p) => {
                         const next = !p[`ton-${i}`];
@@ -2437,7 +2485,7 @@ if (mode === "edit") {
                   ) : null}
                   <button
                     type="button"
-                    className="text-xs text-sky-700 hover:underline"
+                    className="btn btn-secondary btn-xs"
                     onClick={() =>
                       setExpandedLines((p) => {
                         const next = !p[`bohrgut-${i}`];
@@ -2470,20 +2518,15 @@ if (mode === "edit") {
       {/* ======================= UMSETZEN ======================= */}
       {showStep(1) ? <GroupCard title="Umsetzen" badge="Logistik">
 
-        <div className="mt-3 flex gap-3">
-          <button
-            type="button"
-            className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
-            onClick={addUmsetzenRow}
-            disabled={safeUmsetzen.length >= MAX_UMSETZEN_ROWS}
-          >
-            + Zeile
-          </button>
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastUmsetzenRow}>– Zeile</button>
-          <span className="text-sm text-slate-500 self-center">
-            Zeilen: {safeUmsetzen.length} / {MAX_UMSETZEN_ROWS}
-          </span>
-        </div>
+        <RowActions
+          addLabel="+ Umsetzen"
+          removeLabel="– Umsetzen"
+          onAdd={addUmsetzenRow}
+          onRemove={removeLastUmsetzenRow}
+          countLabel={`Umsetzen: ${safeUmsetzen.length} / ${MAX_UMSETZEN_ROWS}`}
+          disableAdd={safeUmsetzen.length >= MAX_UMSETZEN_ROWS}
+          className="mt-3"
+        />
 
         <div className="mt-4 space-y-3">
           {safeUmsetzen.map((r, i) => (
@@ -2504,20 +2547,15 @@ if (mode === "edit") {
       {/* ======================= PEGELAUSBAU ======================= */}
       {showStep(7) ? <GroupCard title="Pegelausbau" badge="Ausbau">
 
-        <div className="mt-3 flex gap-3">
-          <button
-            type="button"
-            className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
-            onClick={addPegelRow}
-            disabled={safePegel.length >= MAX_PEGEL_ROWS}
-          >
-            + Zeile
-          </button>
-          <button type="button" className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50" onClick={removeLastPegelRow}>– Zeile</button>
-          <span className="text-sm text-slate-500 self-center">
-            Zeilen: {safePegel.length} / {MAX_PEGEL_ROWS}
-          </span>
-        </div>
+        <RowActions
+          addLabel="+ Pegel"
+          removeLabel="– Pegel"
+          onAdd={addPegelRow}
+          onRemove={removeLastPegelRow}
+          countLabel={`Pegel: ${safePegel.length} / ${MAX_PEGEL_ROWS}`}
+          disableAdd={safePegel.length >= MAX_PEGEL_ROWS}
+          className="mt-3"
+        />
 
         {safePegel.map((r, i) => (
           <div key={i} className="mt-4 rounded-xl border p-4 space-y-5">
