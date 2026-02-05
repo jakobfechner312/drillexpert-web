@@ -644,7 +644,7 @@ export async function POST(req: Request) {
       if (r.fernGask) draw("X", PCOL.fernGask, y0 -3, 10);
       if (r.passavant) draw("X", PCOL.passavant, y0 -4, 10);
       if (r.betonSockel) draw("X", PCOL.betonSockel, y0 -4, 10);
-      draw(t(r.abstHalter, 4), PCOL.abstHalter, y0, 8);
+      draw(t(typeof r.abstHalter === "string" ? r.abstHalter : "", 4), PCOL.abstHalter, y0, 8);
       if (r.klarpump) draw("X", PCOL.klarpump, y0 -5, 10);
       draw(t(r.filterkiesKoernung, 10), PCOL.filterkiesKoernung, y0, 8);
     });
