@@ -413,6 +413,7 @@ export async function POST(req: Request) {
       wp: 475,
       bkb: 500,
       kkLv: 525,
+      indivProbe: 542,
 
       spt: 577,
 
@@ -425,6 +426,13 @@ export async function POST(req: Request) {
       betonVon: 775,
       betonBis: 795,
     };
+
+    // Überschrift für individuelle Probe (neben KK/LV)
+    // draw("Indiv. Probe", COL.indivProbe - 4, tableStartY + 17, 5);
+
+    draw("Indiv.", COL.indivProbe - 4, tableStartY + 17, 6);
+    draw("Probe",  COL.indivProbe - 4, tableStartY + 12, 6);
+
 
     const getProbenFlags = (row: any): string[] => {
       if (Array.isArray(row?.probenFlags)) return row.probenFlags;
@@ -489,6 +497,7 @@ export async function POST(req: Request) {
       draw(pflags.includes("BKB") ? "X" : "", COL.bkb, y, 8);
       draw(pflags.includes("KK-LV") ? "X" : "", COL.kkLv, y, 8);
 
+      draw(t(row.indivProbe, 6), COL.indivProbe, y, 8);
       draw(t(row.versucheSpt ?? row.spt, 4), COL.spt, y, 8);
 
       const vf = row?.verfuellung ?? row ?? {};

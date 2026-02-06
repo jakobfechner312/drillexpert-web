@@ -59,6 +59,7 @@ export function createDefaultTagesbericht(): Tagesbericht {
         schachtenZeit: "",
 
         probenFlags: [],
+        indivProbe: "",
 
         spt: "",
 

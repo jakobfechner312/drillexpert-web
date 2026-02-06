@@ -208,6 +208,10 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
 
   const tableStartY = outH - 245;
   const tableRowH = 22;
+  const indivProbeHeaderY = tableStartY + 12;
+
+  // Header-Ergänzung (neben KK/LV in der Proben-Sektion)
+  draw("Indiv. Probe", 622, indivProbeHeaderY, 7);
 
   for (let i = 0; i < Math.min(5, tableRows.length); i++) {
     const r = tableRows[i] || {};
@@ -242,6 +246,7 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
     if (probenFlags.includes("SP")) draw("X", 595, y, 9);
     if (probenFlags.includes("WP")) draw("X", 610, y, 9);
 
+    draw(String(r.indivProbe ?? ""), 622, y, 9);
     draw(String(r.spt ?? ""), 635, y, 9);
 
     const v = r.verfuellung || {};

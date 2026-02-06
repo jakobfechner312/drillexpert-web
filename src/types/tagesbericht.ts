@@ -52,6 +52,7 @@ export type TableRow = {
   schachtenZeit?: string;
 
   probenFlags?: ProbenFlag[]; // Checkboxen GP/KP/...
+  indivProbe?: string;
   spt: string;
 
   verfuellung?: {

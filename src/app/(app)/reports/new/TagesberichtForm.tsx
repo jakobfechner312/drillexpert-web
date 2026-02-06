@@ -42,6 +42,7 @@ function emptyTableRow(): TableRow {
     schachtenZeit: "",
 
     probenFlags: [],
+    indivProbe: "",
     spt: "",
 
     verfuellung: {
@@ -1058,6 +1059,7 @@ if (mode === "edit") {
         schachtenBis: "1.0",
         schachtenZeit: "00:15",
         probenFlags: i % 2 === 0 ? ["GP", "KP"] : ["SP", "WP"],
+        indivProbe: i % 2 === 0 ? "A1" : "B2",
         spt: "12/30",
         verfuellung: {
           tonVon: "0.0",
@@ -1768,10 +1770,10 @@ if (mode === "edit") {
 
                 {showStep(2) ? (
                   <div className="rounded-xl border border-slate-200/70 p-3 bg-white">
-                    <h3 className="font-medium">Ruhewasser / Entfernung</h3>
+                    <h3 className="font-medium">Ruhewasser vor Arbeitsbeginn / Entfernung Wohnwagen/Baustelle</h3>
                     <div className="mt-3 grid gap-3 md:grid-cols-3">
                       <label className="space-y-1">
-                        <span className="min-h-[32px] text-sm leading-4 text-slate-600">Ruhewasser (m)</span>
+                        <span className="min-h-[32px] text-sm leading-4 text-slate-600">Ruhewasser vor Arbeitsbeginn (m) GOK</span>
                         <input
                           className="w-full rounded-xl border p-3"
                           inputMode="numeric"
@@ -1785,7 +1787,7 @@ if (mode === "edit") {
                         />
                       </label>
                       <label className="space-y-1">
-                        <span className="min-h-[32px] text-sm leading-4 text-slate-600">Entfernung (km)</span>
+                        <span className="min-h-[32px] text-sm leading-4 text-slate-600">Entfernung Wohnwagen/Baustelle (km)</span>
                         <input
                           className="w-full rounded-xl border p-3"
                           inputMode="numeric"
@@ -2215,7 +2217,7 @@ if (mode === "edit") {
                   <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.gebohrtBis ?? ""} onChange={(e) => setRow(i, { gebohrtBis: e.target.value })} placeholder="6.5" />
                 </div>
                 <div className="space-y-1">
-                  <div className="text-[11px] text-slate-500">Verrohrt von</div>
+                  <div className="text-[11px] text-slate-500">Verrohrt bis</div>
                   <input className="w-full rounded-lg border px-3 py-2 text-sm" value={row.verrohrtVon ?? ""} onChange={(e) => setRow(i, { verrohrtVon: e.target.value })} placeholder="0.0" />
                 </div>
                 <div className="space-y-1">
@@ -2318,14 +2320,25 @@ if (mode === "edit") {
                         </label>
                       ))}
                     </div>
-                    <div className="space-y-1">
-                      <div className="text-[11px] text-slate-500">SPT</div>
-                      <input
-                        className="w-full rounded-lg border px-3 py-2 text-sm"
-                        value={row.spt ?? ""}
-                        onChange={(e) => setRow(i, { spt: e.target.value })}
-                        placeholder="12/30"
-                      />
+                    <div className="space-y-2">
+                      <div className="space-y-1">
+                        <div className="text-[11px] text-slate-500">Indiv. Probe</div>
+                        <input
+                          className="w-full rounded-lg border px-3 py-2 text-sm"
+                          value={row.indivProbe ?? ""}
+                          onChange={(e) => setRow(i, { indivProbe: e.target.value })}
+                          placeholder="z.B. A1"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-[11px] text-slate-500">SPT</div>
+                        <input
+                          className="w-full rounded-lg border px-3 py-2 text-sm"
+                          value={row.spt ?? ""}
+                          onChange={(e) => setRow(i, { spt: e.target.value })}
+                          placeholder="12/30"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
