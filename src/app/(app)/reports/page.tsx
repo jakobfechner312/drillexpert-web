@@ -198,7 +198,7 @@ export default function MyReportsPage() {
                       <Link
                         href={
                           r.report_type === "schichtenverzeichnis"
-                            ? `/reports/schichtenverzeichnis/${r.id}/edit`
+                            ? `/reports/schichtenverzeichnis/step/${r.id}/edit`
                             : `/reports/${r.id}/edit`
                         }
                         className="btn btn-secondary btn-xs"
@@ -248,7 +248,7 @@ export default function MyReportsPage() {
                 </div>
               </Link>
               <Link
-                href="/reports/schichtenverzeichnis/new"
+                href="/reports/schichtenverzeichnis/step"
                 className="block rounded-xl border px-3 py-3 hover:bg-gray-50"
                 onClick={() => setCreateOpen(false)}
               >

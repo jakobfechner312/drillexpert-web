@@ -10,6 +10,7 @@ export default function EditProjectSchichtenverzeichnisPage() {
       projectId={params.projectId}
       reportId={params.reportId}
       mode="edit"
+      stepper
     />
   );
 }

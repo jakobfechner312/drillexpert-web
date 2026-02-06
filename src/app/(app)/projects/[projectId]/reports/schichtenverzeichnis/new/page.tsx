@@ -5,5 +5,5 @@ import SchichtenverzeichnisForm from "@/app/(app)/reports/schichtenverzeichnis/S
 
 export default function SchichtenverzeichnisNewInProjectPage() {
   const params = useParams<{ projectId: string }>();
-  return <SchichtenverzeichnisForm projectId={params.projectId} mode="create" />;
+  return <SchichtenverzeichnisForm projectId={params.projectId} mode="create" stepper />;
 }

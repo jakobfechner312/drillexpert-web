@@ -5,5 +5,5 @@ import SchichtenverzeichnisForm from "@/app/(app)/reports/schichtenverzeichnis/S
 
 export default function EditSchichtenverzeichnisPage() {
   const params = useParams<{ reportId: string }>();
-  return <SchichtenverzeichnisForm reportId={params.reportId} mode="edit" />;
+  return <SchichtenverzeichnisForm reportId={params.reportId} mode="edit" stepper />;
 }

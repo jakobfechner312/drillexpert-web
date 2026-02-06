@@ -1421,24 +1421,6 @@ if (mode === "edit") {
               </div>
               <div className="text-lg font-semibold text-slate-900">{steps[stepIndex]?.title}</div>
             </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
-                disabled={stepIndex === 0}
-              >
-                Zurück
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => setStepIndex((i) => Math.min(steps.length - 1, i + 1))}
-                disabled={stepIndex >= steps.length - 1}
-              >
-                Weiter
-              </button>
-            </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {steps.map((s, i) => (
@@ -2841,37 +2823,57 @@ if (mode === "edit") {
     </GroupCard> : null}
 
       {/* ======================= BUTTONS ======================= */}
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={saveDraftToLocalStorage}
-        >
-          Entwurf speichern (lokal)
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={downloadPdfToLocal}
-        >
-          PDF lokal speichern
-        </button>
-
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={fillTestData}
-        >
-          Testdaten füllen
-        </button>
-
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={openTestPdf}
-        >
-          Vorschau
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={saveDraftToLocalStorage}
+          >
+            Entwurf speichern (lokal)
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={downloadPdfToLocal}
+          >
+            PDF lokal speichern
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={fillTestData}
+          >
+            Testdaten füllen
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={openTestPdf}
+          >
+            Vorschau
+          </button>
+        </div>
+        {useStepper ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
+              disabled={stepIndex === 0}
+            >
+              Zurück
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setStepIndex((i) => Math.min(steps.length - 1, i + 1))}
+              disabled={stepIndex >= steps.length - 1}
+            >
+              Weiter
+            </button>
+          </div>
+        ) : null}
       </div>
 
     </div>

@@ -239,7 +239,7 @@ export default function DashboardPage() {
                 </div>
               </Link>
               <Link
-                href="/reports/schichtenverzeichnis/new"
+                href="/reports/schichtenverzeichnis/step"
                 className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow"
               >
                 <div className="text-sm font-semibold text-amber-900">Schichtenverzeichnis</div>

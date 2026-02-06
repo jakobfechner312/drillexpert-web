@@ -714,7 +714,7 @@ export default function ProjectDetailPage() {
               + Tagesbericht
             </Link>
             <Link
-              href={`/projects/${projectId}/reports/schichtenverzeichnis/new`}
+              href={`/projects/${projectId}/reports/schichtenverzeichnis/step`}
               className="btn btn-secondary"
             >
               + Schichtenverzeichnis
@@ -1040,9 +1040,9 @@ export default function ProjectDetailPage() {
                           {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
                             <Link
                               href={
-                                item.report_type === "schichtenverzeichnis"
-                                  ? `/projects/${projectId}/reports/schichtenverzeichnis/${item.id}/edit`
-                                  : `/projects/${projectId}/reports/${item.id}/edit`
+                              item.report_type === "schichtenverzeichnis"
+                                ? `/projects/${projectId}/reports/schichtenverzeichnis/step/${item.id}/edit`
+                                : `/projects/${projectId}/reports/${item.id}/edit`
                               }
                               className="btn btn-secondary btn-xs"
                               title="Bearbeiten"
