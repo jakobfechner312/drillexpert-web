@@ -1,6 +1,7 @@
 export type ReportStatus = "draft" | "submitted";
 
 export type TimeRange = {
+  name?: string;
   from: string; // "HH:MM"
   to: string;   // "HH:MM"
 };

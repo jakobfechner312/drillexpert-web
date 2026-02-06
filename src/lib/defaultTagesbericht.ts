@@ -20,8 +20,8 @@ export function createDefaultTagesbericht(): Tagesbericht {
     device: "",
 
     // Zeiten
-    workTimeRows: [{ from: "", to: "" }],
-    breakRows: [{ from: "", to: "" }],
+    workTimeRows: [{ name: "", from: "", to: "" }],
+    breakRows: [{ name: "", from: "", to: "" }],
 
     // Wetter
     weather: {

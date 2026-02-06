@@ -79,7 +79,7 @@ function emptyTransportRow() {
   return { from: "", to: "", km: null, time: "" };
 }
 
-const emptyTimeRow = () => ({ from: "", to: "" });
+const emptyTimeRow = () => ({ name: "", from: "", to: "" });
 
 function emptyPegelAusbauRow(): PegelAusbauRow {
   return {
@@ -273,6 +273,7 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
   if (Array.isArray(r.workTimeRows)) {
     r.workTimeRows = r.workTimeRows.map((row) => ({
       ...row,
+      name: row?.name ?? "",
       from: toHHMM(row?.from ?? ""),
       to: toHHMM(row?.to ?? ""),
     }));
@@ -281,6 +282,7 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
   if (Array.isArray(r.breakRows)) {
     r.breakRows = r.breakRows.map((row) => ({
       ...row,
+      name: row?.name ?? "",
       from: toHHMM(row?.from ?? ""),
       to: toHHMM(row?.to ?? ""),
     }));
@@ -882,10 +884,20 @@ if (mode === "edit") {
     });
   }
 
+  function setTimeRowName(i: number, name: string) {
+    setReport((p) => {
+      const workRows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
+      const breakRows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
+      workRows[i] = { ...workRows[i], name };
+      breakRows[i] = { ...breakRows[i], name };
+      return { ...p, workTimeRows: workRows, breakRows };
+    });
+  }
+
   function addWorkTimeRow() {
     setReport((p) => {
       const rows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
-      if (rows.length >= 2) return p;
+      if (rows.length >= 3) return p;
       rows.push(emptyTimeRow());
       return { ...p, workTimeRows: rows };
     });
@@ -911,7 +923,7 @@ if (mode === "edit") {
   function addBreakRow() {
     setReport((p) => {
       const rows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
-      if (rows.length >= 2) return p;
+      if (rows.length >= 3) return p;
       rows.push(emptyTimeRow());
       return { ...p, breakRows: rows };
     });
@@ -930,7 +942,7 @@ if (mode === "edit") {
     setReport((p) => {
       const workRows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
       const breakRows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
-      if (workRows.length >= 2 || breakRows.length >= 2) return p;
+      if (workRows.length >= 3 || breakRows.length >= 3) return p;
       workRows.push(emptyTimeRow());
       breakRows.push(emptyTimeRow());
       return { ...p, workTimeRows: workRows, breakRows };
@@ -1017,12 +1029,12 @@ if (mode === "edit") {
       device: "Bohrgerät BG-12",
       trailer: "Anhänger 2t",
       workTimeRows: [
-        { from: "07:00", to: "12:00" },
-        { from: "12:30", to: "16:30" },
+        { name: "Max Mustermann", from: "07:00", to: "12:00" },
+        { name: "Erika Beispiel", from: "12:30", to: "16:30" },
       ],
       breakRows: [
-        { from: "09:30", to: "09:45" },
-        { from: "12:00", to: "12:30" },
+        { name: "Max Mustermann", from: "09:30", to: "09:45" },
+        { name: "Erika Beispiel", from: "12:00", to: "12:30" },
       ],
       weather: {
         conditions: ["trocken", "regen"],
@@ -1280,35 +1292,35 @@ if (mode === "edit") {
     const rows = Array.isArray(report.workTimeRows) ? report.workTimeRows : [];
     const validRows = rows.filter((r) => parseTimeToMinutes(r?.from) != null && parseTimeToMinutes(r?.to) != null);
     if (validRows.length === 0) return null;
-    const pickIndex = validRows.length === 1 ? 0 : Math.min(workerIndex, 1);
-    const row = validRows[pickIndex];
+    const row = validRows[Math.min(workerIndex, validRows.length - 1)];
     const from = parseTimeToMinutes(row?.from);
     const to = parseTimeToMinutes(row?.to);
     if (from == null || to == null || to <= from) return null;
     return to - from;
   };
 
-  const calcBreakMinutes = () => {
+  const calcBreakMinutesForWorker = (workerIndex: number) => {
     const rows = Array.isArray(report.breakRows) ? report.breakRows : [];
-    let total = 0;
-    rows.forEach((r) => {
-      const from = parseTimeToMinutes(r?.from);
-      const to = parseTimeToMinutes(r?.to);
-      if (from != null && to != null && to > from) total += to - from;
-    });
-    return total;
+    const validRows = rows.filter((r) => parseTimeToMinutes(r?.from) != null && parseTimeToMinutes(r?.to) != null);
+    if (validRows.length === 0) return 0;
+    const row = validRows[Math.min(workerIndex, validRows.length - 1)];
+    const from = parseTimeToMinutes(row?.from);
+    const to = parseTimeToMinutes(row?.to);
+    if (from == null || to == null || to <= from) return 0;
+    return to - from;
   };
 
   useEffect(() => {
-    const breakMinutes = calcBreakMinutes();
     const workers = Array.isArray(report.workers) ? report.workers : [];
-    const rows = Array.isArray(report.workTimeRows) ? report.workTimeRows : [];
-    const validRows = rows.filter((r) => parseTimeToMinutes(r?.from) != null && parseTimeToMinutes(r?.to) != null);
+    const workRows = Array.isArray(report.workTimeRows) ? report.workTimeRows : [];
+    const validRows = workRows.filter((r) => parseTimeToMinutes(r?.from) != null && parseTimeToMinutes(r?.to) != null);
     const requiredWorkers = validRows.length >= 2 ? 2 : workers.length || 1;
+
+    const nameSlots = workRows.map((r) => String(r?.name ?? ""));
 
     let changed = false;
     const nextWorkers = [...workers];
-    while (nextWorkers.length < requiredWorkers) {
+    while (nextWorkers.length < Math.max(requiredWorkers, nameSlots.length || 1)) {
       nextWorkers.push(emptyWorker());
       changed = true;
     }
@@ -1316,10 +1328,17 @@ if (mode === "edit") {
     for (let idx = 0; idx < nextWorkers.length; idx++) {
       const w = nextWorkers[idx];
       const workMin = calcWorkMinutesForWorker(idx);
-      if (workMin == null) continue;
-      const reine = formatHours(Math.max(0, workMin - breakMinutes));
-      if (w.reineArbeitsStd !== reine) {
-        nextWorkers[idx] = { ...w, reineArbeitsStd: reine };
+      if (workMin != null) {
+        const breakMinutes = calcBreakMinutesForWorker(idx);
+        const reine = formatHours(Math.max(0, workMin - breakMinutes));
+        if (w.reineArbeitsStd !== reine) {
+          nextWorkers[idx] = { ...w, reineArbeitsStd: reine };
+          changed = true;
+        }
+      }
+
+      if (idx < nameSlots.length && w.name !== nameSlots[idx]) {
+        nextWorkers[idx] = { ...nextWorkers[idx], name: nameSlots[idx] };
         changed = true;
       }
     }
@@ -1636,8 +1655,14 @@ if (mode === "edit") {
                       <div className="rounded-xl border border-slate-200/70 bg-white p-3">
                         <div className="text-sm font-medium text-slate-700">Arbeitszeit</div>
                         <div className="mt-2 space-y-3">
-                          {safeWorkTimes.slice(0, 2).map((r, i) => (
-                            <div key={i} className="grid grid-cols-2 gap-3">
+                          {safeWorkTimes.slice(0, 3).map((r, i) => (
+                            <div key={i} className="grid gap-3 md:grid-cols-[1.2fr_1fr_1fr]">
+                              <input
+                                className="w-full min-w-[140px] rounded-lg border px-2.5 py-2 text-sm"
+                                value={r.name ?? ""}
+                                onChange={(e) => setTimeRowName(i, e.target.value)}
+                                placeholder="Name"
+                              />
                               <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.from ?? ""} onChange={(e) => setWorkTimeRow(i, { from: e.target.value })} />
                               <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.to ?? ""} onChange={(e) => setWorkTimeRow(i, { to: e.target.value })} />
                             </div>
@@ -1647,8 +1672,8 @@ if (mode === "edit") {
                       <div className="rounded-xl border border-slate-200/70 bg-white p-3">
                         <div className="text-sm font-medium text-slate-700">Pausen</div>
                         <div className="mt-2 space-y-3">
-                          {safeBreaks.slice(0, 2).map((r, i) => (
-                            <div key={i} className="grid grid-cols-2 gap-3">
+                          {safeBreaks.slice(0, 3).map((r, i) => (
+                            <div key={i} className="grid gap-3 md:grid-cols-2">
                               <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.from ?? ""} onChange={(e) => setBreakRow(i, { from: e.target.value })} />
                               <input type="time" className="w-full min-w-[104px] rounded-lg border px-2.5 py-2 text-sm" value={r.to ?? ""} onChange={(e) => setBreakRow(i, { to: e.target.value })} />
                             </div>
