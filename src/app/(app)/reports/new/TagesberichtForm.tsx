@@ -308,6 +308,8 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
 
   const savingRef = useRef(false);
   const reportSaveKeyRef = useRef<string | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveReadyRef = useRef(false);
 
   type SaveScope = "unset" | "project" | "my_reports";
   const [saveScope, setSaveScope] = useState<SaveScope>(projectId ? "project" : "unset");
@@ -1011,8 +1013,26 @@ if (mode === "edit") {
       setReport(normalizeTagesbericht(parsed));
     } catch (e) {
       console.warn("Local draft load failed", e);
+    } finally {
+      autoSaveReadyRef.current = true;
     }
   }, [mode]);
+
+  useEffect(() => {
+    if (mode === "edit" || draftId) return;
+    if (!autoSaveReadyRef.current) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem("tagesbericht_draft", JSON.stringify(reportRef.current));
+      } catch (e) {
+        console.warn("Local draft autosave failed", e);
+      }
+    }, 400);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [report, mode, draftId]);
 
   function fillTestData() {
     const base = createDefaultTagesbericht();
@@ -1029,12 +1049,14 @@ if (mode === "edit") {
       device: "Bohrgerät BG-12",
       trailer: "Anhänger 2t",
       workTimeRows: [
-        { name: "Max Mustermann", from: "07:00", to: "12:00" },
-        { name: "Erika Beispiel", from: "12:30", to: "16:30" },
+        { name: "Max Mustermann", from: "07:00", to: "12:00" }, // 5h
+        { name: "Erika Beispiel", from: "12:30", to: "16:30" }, // 4h
+        { name: "Tim B.", from: "07:30", to: "15:30" }, // 8h
       ],
       breakRows: [
-        { name: "Max Mustermann", from: "09:30", to: "09:45" },
-        { name: "Erika Beispiel", from: "12:00", to: "12:30" },
+        { name: "Max Mustermann", from: "09:30", to: "09:45" }, // 0.25h
+        { name: "Erika Beispiel", from: "14:00", to: "14:15" }, // 0.25h
+        { name: "Tim B.", from: "11:30", to: "12:00" }, // 0.5h
       ],
       weather: {
         conditions: ["trocken", "regen"],
@@ -1084,19 +1106,41 @@ if (mode === "edit") {
           betonBis: String(7 + i * 1.7),
         },
       })),
-      workers: Array.from({ length: 3 }, (_, i) => ({
-        ...emptyWorker(),
-        name: i === 0 ? "Max Mustermann" : i === 1 ? "Erika Beispiel" : "Tim B.",
-        reineArbeitsStd: i === 2 ? "6.5" : "8",
-        wochenendfahrt: "0",
-        ausfallStd: i === 1 ? "0.5" : "0",
-        ausloeseT: i === 0,
-        ausloeseN: i === 1,
-        arbeitsakteNr: `AA-100${i + 1}`,
-        stunden: Array(4)
-          .fill("")
-          .map((_, j) => (j % (i + 2) === 0 ? "1" : "")),
-      })),
+      workers: [
+        {
+          ...emptyWorker(),
+          name: "Max Mustermann",
+          wochenendfahrt: "0",
+          ausfallStd: "0",
+          ausloeseT: true,
+          ausloeseN: false,
+          arbeitsakteNr: "AA-1001",
+          // 4.75h (5h - 0.25h) -> passt
+          stunden: ["2", "1.5", "1.25", ""],
+        },
+        {
+          ...emptyWorker(),
+          name: "Erika Beispiel",
+          wochenendfahrt: "0",
+          ausfallStd: "0.5",
+          ausloeseT: false,
+          ausloeseN: true,
+          arbeitsakteNr: "AA-1002",
+          // 3.75h (4h - 0.25h) -> passt
+          stunden: ["1", "1.25", "1.5", ""],
+        },
+        {
+          ...emptyWorker(),
+          name: "Tim B.",
+          wochenendfahrt: "0",
+          ausfallStd: "0",
+          ausloeseT: false,
+          ausloeseN: false,
+          arbeitsakteNr: "AA-1003",
+          // 7.25h (8h - 0.5h) -> absichtlich falsch (soll rot werden)
+          stunden: ["2", "2", "2", "1.25"],
+        },
+      ],
       umsetzenRows: Array.from({ length: 3 }, (_, i) => ({
         ...emptyUmsetzenRow(),
         von: `P${i + 1}`,
@@ -1282,10 +1326,66 @@ if (mode === "edit") {
     return h * 60 + m;
   };
 
+  const formatQuarterHours = (hours: number) => {
+    const rounded = Math.round(hours * 100) / 100;
+    if (Math.abs(rounded - Math.round(rounded)) < 1e-6) return String(Math.round(rounded));
+    return String(rounded);
+  };
+
   const formatHours = (minutes: number) => {
     const hours = Math.max(0, minutes / 60);
-    const rounded = Math.round(hours * 2) / 2;
-    return rounded % 1 === 0 ? String(Math.trunc(rounded)) : String(rounded);
+    const rounded = Math.round(hours * 4) / 4;
+    return formatQuarterHours(rounded);
+  };
+
+  const formatHoursFromHours = (hours: number | null) => {
+    if (hours == null) return "";
+    const rounded = Math.round(hours * 4) / 4;
+    return formatQuarterHours(rounded);
+  };
+
+  const calcTaktHoursForWorker = (worker: WorkerRow) => {
+    const st = Array.isArray(worker.stunden) ? worker.stunden : [];
+    let sum = 0;
+    let has = false;
+    st.forEach((val) => {
+      const num = Number(String(val ?? "").replace(",", "."));
+      if (Number.isFinite(num)) {
+        sum += num;
+        has = true;
+      }
+    });
+    return has ? sum : null;
+  };
+
+  const isQuarterInput = (value?: string | null) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return true;
+    const num = Number(raw.replace(",", "."));
+    if (!Number.isFinite(num)) return false;
+    return Math.abs(num * 4 - Math.round(num * 4)) < 1e-6;
+  };
+
+  const hasInvalidStunden = (worker: WorkerRow) => {
+    const st = Array.isArray(worker.stunden) ? worker.stunden : [];
+    return st.some((val) => !isQuarterInput(val));
+  };
+
+  const getTimeHoursStringForWorker = (workerIndex: number) => {
+    const workMin = calcWorkMinutesForWorker(workerIndex);
+    if (workMin == null) return "";
+    return formatHours(Math.max(0, workMin - calcBreakMinutesForWorker(workerIndex)));
+  };
+
+  const getTaktHoursStringForWorker = (worker: WorkerRow) => {
+    const taktHours = calcTaktHoursForWorker(worker);
+    return formatHoursFromHours(taktHours);
+  };
+
+  const isWorkerMismatch = (worker: WorkerRow, workerIndex: number) => {
+    const taktStr = getTaktHoursStringForWorker(worker);
+    const timeStr = getTimeHoursStringForWorker(workerIndex);
+    return Boolean(taktStr) && Boolean(timeStr) && taktStr !== timeStr;
   };
 
   const calcWorkMinutesForWorker = (workerIndex: number) => {
@@ -1327,14 +1427,11 @@ if (mode === "edit") {
 
     for (let idx = 0; idx < nextWorkers.length; idx++) {
       const w = nextWorkers[idx];
-      const workMin = calcWorkMinutesForWorker(idx);
-      if (workMin != null) {
-        const breakMinutes = calcBreakMinutesForWorker(idx);
-        const reine = formatHours(Math.max(0, workMin - breakMinutes));
-        if (w.reineArbeitsStd !== reine) {
-          nextWorkers[idx] = { ...w, reineArbeitsStd: reine };
-          changed = true;
-        }
+      const taktHours = calcTaktHoursForWorker(w);
+      const reine = formatHoursFromHours(taktHours);
+      if (w.reineArbeitsStd !== reine) {
+        nextWorkers[idx] = { ...w, reineArbeitsStd: reine };
+        changed = true;
       }
 
       if (idx < nameSlots.length && w.name !== nameSlots[idx]) {
@@ -1980,7 +2077,13 @@ if (mode === "edit") {
             </div>
           </div>
 
-          {safeWorkers.map((w, idx) => (
+          {safeWorkers.map((w, idx) => {
+            const taktStr = getTaktHoursStringForWorker(w);
+            const timeStr = getTimeHoursStringForWorker(idx);
+            const invalid = hasInvalidStunden(w);
+            const matches = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr === timeStr;
+            const mismatch = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr !== timeStr;
+            return (
             <div key={idx} className="rounded-xl border p-4 space-y-4">
               <div className="text-sm font-semibold text-slate-800">Arbeiter {idx + 1}</div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -1990,7 +2093,7 @@ if (mode === "edit") {
                 </label>
                 <label className="space-y-1">
                   <span className="text-xs text-slate-500">Reine Std.</span>
-                  <input className="w-full rounded border px-2 py-2 text-sm bg-slate-50" value={w.reineArbeitsStd ?? ""} readOnly />
+                  <input className={`w-full rounded border px-2 py-2 text-sm ${invalid ? "bg-rose-50 border-rose-300" : matches ? "bg-emerald-50 border-emerald-300" : mismatch ? "bg-rose-50 border-rose-300" : "bg-slate-50"}`} value={w.reineArbeitsStd ?? ""} readOnly />
                 </label>
                 <label className="space-y-1">
                   <span className="text-xs text-slate-500">Wochenend</span>
@@ -2020,7 +2123,7 @@ if (mode === "edit") {
                     <label key={j} className="space-y-1">
                       <span className="text-xs text-slate-500">Takt {j + 1}{val ? ` – ${val}` : ""}</span>
                       <input
-                        className="w-full rounded border px-2 py-2 text-sm"
+                        className={`w-full rounded border px-2 py-2 text-sm ${isQuarterInput((Array.isArray(w.stunden) ? w.stunden[j] : "") ?? "") ? "" : "border-rose-400 bg-rose-50"}`}
                         value={(Array.isArray(w.stunden) ? w.stunden[j] : "") ?? ""}
                         onChange={(e) => {
                           const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
@@ -2035,7 +2138,7 @@ if (mode === "edit") {
                 </div>
               </div>
             </div>
-          ))}
+          )})}
         </div>
 
         <div className="mt-4 hidden xl:block overflow-x-auto rounded-xl border">
@@ -2162,7 +2265,13 @@ if (mode === "edit") {
               ))}
             </div>
 
-            {safeWorkers.map((w, idx) => (
+            {safeWorkers.map((w, idx) => {
+            const taktStr = getTaktHoursStringForWorker(w);
+            const timeStr = getTimeHoursStringForWorker(idx);
+            const invalid = hasInvalidStunden(w);
+            const matches = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr === timeStr;
+            const mismatch = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr !== timeStr;
+              return (
               <div
                 key={idx}
                 className="grid w-full text-[12px]"
@@ -2177,7 +2286,7 @@ if (mode === "edit") {
                   <input className="w-full rounded border px-2 py-1 text-[12px]" value={w.name ?? ""} onChange={(e) => setWorker(idx, { name: e.target.value })} />
                 </div>
                 <div className="border-b border-r px-2 py-1">
-                  <input className="w-full rounded border px-2 py-1 text-center text-[12px] bg-slate-50" value={w.reineArbeitsStd ?? ""} readOnly />
+                  <input className={`w-full rounded border px-2 py-1 text-center text-[12px] ${invalid ? "bg-rose-50 border-rose-300" : matches ? "bg-emerald-50 border-emerald-300" : mismatch ? "bg-rose-50 border-rose-300" : "bg-slate-50"}`} value={w.reineArbeitsStd ?? ""} readOnly />
                 </div>
                 <div className="border-b border-r px-2 py-1">
                   <input className="w-full rounded border px-2 py-1 text-center text-[12px]" value={w.wochenendfahrt ?? ""} onChange={(e) => setWorker(idx, { wochenendfahrt: e.target.value })} />
@@ -2194,7 +2303,7 @@ if (mode === "edit") {
                 {(Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((_, j) => (
                   <div key={j} className="border-b border-r px-2 py-1">
                     <input
-                      className="w-full rounded border px-1 py-1 text-center text-[12px]"
+                      className={`w-full rounded border px-1 py-1 text-center text-[12px] ${isQuarterInput((Array.isArray(w.stunden) ? w.stunden[j] : "") ?? "") ? "" : "border-rose-400 bg-rose-50"}`}
                       value={(Array.isArray(w.stunden) ? w.stunden[j] : "") ?? ""}
                       onChange={(e) => {
                         const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
@@ -2207,7 +2316,7 @@ if (mode === "edit") {
                   </div>
                 ))}
               </div>
-            ))}
+            )})}
           </div>
         </div>
       </GroupCard> : null}
@@ -2905,7 +3014,19 @@ if (mode === "edit") {
             <button
               type="button"
               className="btn btn-primary"
-              onClick={() => setStepIndex((i) => Math.min(steps.length - 1, i + 1))}
+              onClick={() => {
+                const invalid = safeWorkers.some((w) => hasInvalidStunden(w));
+                if (invalid) {
+                  alert("Nur Viertelstunden erlaubt (z.B. 0.25, 0.5, 0.75).");
+                  return;
+                }
+                const mismatches = safeWorkers.filter((w, idx) => isWorkerMismatch(w, idx));
+                if (mismatches.length > 0) {
+                  alert("Arbeitszeit/Pausen stimmen nicht mit den Takt-Stunden überein.");
+                  return;
+                }
+                setStepIndex((i) => Math.min(steps.length - 1, i + 1));
+              }}
               disabled={stepIndex >= steps.length - 1}
             >
               Weiter
