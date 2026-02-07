@@ -3215,23 +3215,25 @@ if (mode === "edit") {
               type="button"
               className="btn btn-primary"
               onClick={() => {
-                const invalid = safeWorkers.some((w) => hasInvalidStunden(w));
-                if (invalid) {
-                  alert("Nur Viertelstunden erlaubt (z.B. 0.25, 0.5, 0.75).");
-                  return;
-                }
-                if (
-                  report.workCyclesSame &&
-                  (!areTimeRowsUniform(Array.isArray(report.workTimeRows) ? report.workTimeRows : []) ||
-                    !areTimeRowsUniform(Array.isArray(report.breakRows) ? report.breakRows : []))
-                ) {
-                  alert("Alle Arbeitstakte gleich ist nur möglich, wenn Arbeitszeiten und Pausen identisch sind.");
-                  return;
-                }
-                const mismatches = safeWorkers.filter((w, idx) => isWorkerMismatch(w, idx));
-                if (mismatches.length > 0) {
-                  alert("Arbeitszeit/Pausen stimmen nicht mit den Takt-Stunden überein.");
-                  return;
+                if (stepIndex === 4) {
+                  const invalid = safeWorkers.some((w) => hasInvalidStunden(w));
+                  if (invalid) {
+                    alert("Nur Viertelstunden erlaubt (z.B. 0.25, 0.5, 0.75).");
+                    return;
+                  }
+                  if (
+                    report.workCyclesSame &&
+                    (!areTimeRowsUniform(Array.isArray(report.workTimeRows) ? report.workTimeRows : []) ||
+                      !areTimeRowsUniform(Array.isArray(report.breakRows) ? report.breakRows : []))
+                  ) {
+                    alert("Alle Arbeitstakte gleich ist nur möglich, wenn Arbeitszeiten und Pausen identisch sind.");
+                    return;
+                  }
+                  const mismatches = safeWorkers.filter((w, idx) => isWorkerMismatch(w, idx));
+                  if (mismatches.length > 0) {
+                    alert("Arbeitszeit/Pausen stimmen nicht mit den Takt-Stunden überein.");
+                    return;
+                  }
                 }
                 setStepIndex((i) => Math.min(steps.length - 1, i + 1));
               }}
