@@ -127,7 +127,7 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
     case 0: markX(WEEKDAY_BOX.so.x, WEEKDAY_BOX.so.y); break; // So
   }
 
-  // Wetter: nur Kreuze, KEIN Text
+  // Wetter: farblich markieren (kein X)
   const conditions: string[] = Array.isArray(data.weather?.conditions) ? data.weather.conditions : [];
 
   const WX = {
@@ -136,11 +136,19 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
     frost: { x: 670, y: outH - 105 },
   };
 
-  const mark = (x: number, y: number) => draw("X", x, y, 12);
+  const mark = (x: number, y: number, width = 20) =>
+    page.drawRectangle({
+      x: x - 6,
+      y: y - 2,
+      width,
+      height: 10,
+      color: rgb(0.2, 0.6, 1),
+      opacity: 0.25,
+    });
 
-  if (conditions.includes("trocken")) mark(WX.trocken.x, WX.trocken.y);
-  if (conditions.includes("regen")) mark(WX.regen.x, WX.regen.y);
-  if (conditions.includes("frost")) mark(WX.frost.x, WX.frost.y);
+  if (conditions.includes("trocken")) mark(WX.trocken.x, WX.trocken.y, 26);
+  if (conditions.includes("regen")) mark(WX.regen.x, WX.regen.y, 20);
+  if (conditions.includes("frost")) mark(WX.frost.x, WX.frost.y, 20);
 
   draw(data.weather?.tempMaxC != null ? String(data.weather.tempMaxC) : "", 735, outH - 103, 9);
   draw(data.weather?.tempMinC != null ? String(data.weather.tempMinC) : "", 780, outH - 103, 9);
@@ -240,14 +248,16 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
     draw(String(r.schachtenBis ?? ""), 500, y, 9);
     draw(String(r.schachtenZeit ?? ""), 535, y, 9);
 
+    const pvals = (r.probenValues ?? {}) as Record<string, string>;
     const probenFlags = Array.isArray(r.probenFlags) ? r.probenFlags : [];
-    if (probenFlags.includes("GP")) draw("X", 565, y, 9);
-    if (probenFlags.includes("KP")) draw("X", 580, y, 9);
-    if (probenFlags.includes("SP")) draw("X", 595, y, 9);
-    if (probenFlags.includes("WP")) draw("X", 610, y, 9);
-
-    draw(String(r.indivProbe ?? ""), 622, y, 9);
-    draw(String(r.spt ?? ""), 635, y, 9);
+    draw(String(pvals.GP ?? (probenFlags.includes("GP") ? "X" : "")), 565, y, 9);
+    draw(String(pvals.KP ?? (probenFlags.includes("KP") ? "X" : "")), 580, y, 9);
+    draw(String(pvals.SP ?? (probenFlags.includes("SP") ? "X" : "")), 595, y, 9);
+    draw(String(pvals.WP ?? (probenFlags.includes("WP") ? "X" : "")), 610, y, 9);
+    draw(String(pvals.BKB ?? (probenFlags.includes("BKB") ? "X" : "")), 625, y, 9);
+    draw(String(pvals["KK-LV"] ?? (probenFlags.includes("KK-LV") ? "X" : "")), 640, y, 9);
+    draw(String(r.indivProbe ?? ""), 655, y, 9);
+    draw(String(r.spt ?? ""), 670, y, 9);
 
     const v = r.verfuellung || {};
     draw(String(v.tonVon ?? ""), 670, y, 9);

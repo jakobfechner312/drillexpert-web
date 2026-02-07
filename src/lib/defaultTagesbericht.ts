@@ -59,6 +59,7 @@ export function createDefaultTagesbericht(): Tagesbericht {
         schachtenZeit: "",
 
         probenFlags: [],
+        probenValues: {},
         indivProbe: "",
 
         spt: "",
@@ -151,6 +152,7 @@ export function createDefaultTagesbericht(): Tagesbericht {
 
     // MVP-Felder
     workCycles: [],
+    workCyclesSame: false,
     otherWork: "",
     remarks: "",
 

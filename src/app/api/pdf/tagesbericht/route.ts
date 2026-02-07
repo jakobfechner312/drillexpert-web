@@ -207,7 +207,7 @@ export async function POST(req: Request) {
       case 0: markX(WEEKDAY_BOX.so.x, WEEKDAY_BOX.so.y); break; // So
     }
 
-  // Wetter: nur Kreuze, KEIN Text
+  // Wetter: farblich markieren (kein X)
     const conditions: string[] = Array.isArray(data.weather?.conditions) ? data.weather.conditions : [];
 
     const WX = {
@@ -216,11 +216,19 @@ export async function POST(req: Request) {
       frost: { x: 670, y: outH - 105 },
     };
 
-    const mark = (x: number, y: number) => draw("X", x, y, 12);
+    const mark = (x: number, y: number, width = 20) =>
+      page.drawRectangle({
+        x: x - 6,
+        y: y - 2,
+        width,
+        height: 10,
+        color: rgb(0.2, 0.6, 1),
+        opacity: 0.25,
+      });
 
-    if (conditions.includes("trocken")) mark(WX.trocken.x, WX.trocken.y);
-    if (conditions.includes("regen")) mark(WX.regen.x, WX.regen.y);
-    if (conditions.includes("frost")) mark(WX.frost.x, WX.frost.y);
+    if (conditions.includes("trocken")) mark(WX.trocken.x, WX.trocken.y, 26);
+    if (conditions.includes("regen")) mark(WX.regen.x, WX.regen.y, 20);
+    if (conditions.includes("frost")) mark(WX.frost.x, WX.frost.y, 20);
 
     draw(data.weather?.tempMaxC != null ? String(data.weather.tempMaxC) : "", 735, outH - 104, 9);
     draw(data.weather?.tempMinC != null ? String(data.weather.tempMinC) : "", 785, outH - 104, 9);
@@ -298,6 +306,9 @@ export async function POST(req: Request) {
       "Baustelle räumen",
       "Werkstatt/Laden",
       "Geräte-Pflege/Reparatur",
+      "Kampfmittel",
+      "Wasser fahren",
+      "Platten legen",
     ];
     const workCycles = Array.isArray(data.workCycles) ? data.workCycles : [];
     const customCycleOrder: string[] = [];
@@ -320,7 +331,7 @@ export async function POST(req: Request) {
         idx >= 0
           ? String(idx + 1)
           : typeof customIdx === "number"
-          ? String(20 + customIdx)
+          ? String(23 + customIdx)
           : "";
       draw(display, WCOL.stundenStartX + j * WCOL.stundenStep, stundenHeaderY, 8);
     }
@@ -489,13 +500,14 @@ export async function POST(req: Request) {
       draw(t(row.schachtenBis, 6), COL.schachtenBis, y, 8);
       draw(t(row.schachtenZeit, 6), COL.schachtenZeit, y, 8);
 
+      const pvals = (row?.probenValues ?? {}) as Record<string, string>;
       const pflags = getProbenFlags(row);
-      draw(pflags.includes("GP") ? "X" : "", COL.gp, y, 8);
-      draw(pflags.includes("KP") ? "X" : "", COL.kp, y, 8);
-      draw(pflags.includes("SP") ? "X" : "", COL.sp, y, 8);
-      draw(pflags.includes("WP") ? "X" : "", COL.wp, y, 8);
-      draw(pflags.includes("BKB") ? "X" : "", COL.bkb, y, 8);
-      draw(pflags.includes("KK-LV") ? "X" : "", COL.kkLv, y, 8);
+      draw(t(pvals.GP ?? (pflags.includes("GP") ? "X" : ""), 4), COL.gp, y, 8);
+      draw(t(pvals.KP ?? (pflags.includes("KP") ? "X" : ""), 4), COL.kp, y, 8);
+      draw(t(pvals.SP ?? (pflags.includes("SP") ? "X" : ""), 4), COL.sp, y, 8);
+      draw(t(pvals.WP ?? (pflags.includes("WP") ? "X" : ""), 4), COL.wp, y, 8);
+      draw(t(pvals.BKB ?? (pflags.includes("BKB") ? "X" : ""), 4), COL.bkb, y, 8);
+      draw(t(pvals["KK-LV"] ?? (pflags.includes("KK-LV") ? "X" : ""), 4), COL.kkLv, y, 8);
 
       draw(t(row.indivProbe, 6), COL.indivProbe, y, 8);
       draw(t(row.versucheSpt ?? row.spt, 4), COL.spt, y, 8);
@@ -690,7 +702,7 @@ export async function POST(req: Request) {
 
     // Bemerkungen / Anordnungen / Besuche (+ eigene Arbeitstakte)
     const baseRemarks = String(data.remarks ?? "");
-    const customWithNumbers = customCycleOrder.map((label, idx) => `${20 + idx} - ${label}`);
+    const customWithNumbers = customCycleOrder.map((label, idx) => `${23 + idx} - ${label}`);
     const remarksCombined =
       baseRemarks.trim() && customWithNumbers.length
         ? `${baseRemarks}\n\n${customWithNumbers.join("\n")}`

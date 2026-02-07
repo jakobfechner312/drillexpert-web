@@ -53,6 +53,7 @@ export type TableRow = {
   schachtenZeit?: string;
 
   probenFlags?: ProbenFlag[]; // Checkboxen GP/KP/...
+  probenValues?: Partial<Record<ProbenFlag, string>>;
   indivProbe?: string;
   spt: string;
 
@@ -184,6 +185,7 @@ export type Tagesbericht = {
   workStartDistanceM: number | null;
 
   workCycles: string[]; // MVP: einfache Liste
+  workCyclesSame?: boolean;
   otherWork: string;
   remarks: string;
 
