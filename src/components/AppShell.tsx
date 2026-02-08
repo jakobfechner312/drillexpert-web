@@ -66,6 +66,15 @@ function AppTopbar({
       const { data } = await supabase.auth.getUser();
       if (!mounted) return;
       setUserEmail(data.user?.email ?? null);
+      if (data.user?.id) {
+        try {
+          await supabase
+            .from("profiles")
+            .upsert({ id: data.user.id, email: data.user.email ?? null }, { onConflict: "id" });
+        } catch (e) {
+          console.warn("Failed to upsert profile email", e);
+        }
+      }
       setAuthLoading(false);
     })();
 
@@ -80,6 +89,17 @@ function AppTopbar({
           console.warn("Failed to clear local draft on auth change", e);
         }
       } else {
+        if (session.user?.id) {
+          void (async () => {
+            try {
+              await supabase
+                .from("profiles")
+                .upsert({ id: session.user.id, email: session.user.email ?? null }, { onConflict: "id" });
+            } catch (e) {
+              console.warn("Failed to upsert profile email", e);
+            }
+          })();
+        }
         try {
           localStorage.removeItem("tagesbericht_draft_block");
         } catch (e) {

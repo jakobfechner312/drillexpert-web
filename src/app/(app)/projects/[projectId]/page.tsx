@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Briefcase, Calendar, ClipboardList, ExternalLink, FileText, Hash, Link2, List, MapPin, Settings, Upload, Users } from "lucide-react";
+import { Briefcase, Calendar, ClipboardList, Crown, ExternalLink, FileText, Hash, Link2, List, MapPin, Settings, Upload, User, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -30,6 +30,7 @@ type Project = {
   notes?: string | null;
   mymaps_url?: string | null;
   mymaps_title?: string | null;
+  owner_id?: string | null;
 };
 type ReportRow = {
   id: string;
@@ -45,6 +46,11 @@ type ProjectFile = {
   created_at: string;
   metadata?: { size?: number };
 };
+type TeamMember = {
+  user_id: string;
+  role_in_project: string | null;
+  profiles?: { email?: string | null; full_name?: string | null } | null;
+};
 
 export default function ProjectDetailPage() {
   const params = useParams<{ projectId: string }>();
@@ -57,6 +63,9 @@ export default function ProjectDetailPage() {
 
   const [project, setProject] = useState<Project | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -144,6 +153,7 @@ export default function ProjectDetailPage() {
       .select([
         "id",
         "name",
+        "owner_id",
         "project_number",
         "client_name",
         "client_address",
@@ -219,7 +229,59 @@ export default function ProjectDetailPage() {
       setRole((mem as any)?.role_in_project ?? null);
     }
 
-    // 3) Reports laden
+    // 3) Team laden
+    setTeamLoading(true);
+    setTeamError(null);
+    const { data: members, error: membersErr } = await supabase
+      .from("project_members")
+      .select("user_id, role_in_project")
+      .eq("project_id", projectId);
+
+    const ownerId = projectRow.owner_id ?? null;
+    const baseMembers = (members ?? []) as Array<{ user_id: string; role_in_project: string | null }>;
+    const hasOwnerRow = ownerId ? baseMembers.some((m) => m.user_id === ownerId) : false;
+    const withOwner = ownerId && !hasOwnerRow ? [...baseMembers, { user_id: ownerId, role_in_project: "owner" }] : baseMembers;
+
+    if (membersErr) {
+      setTeamError("Team laden fehlgeschlagen: " + membersErr.message);
+      setTeamMembers(
+        ownerId
+          ? [{ user_id: ownerId, role_in_project: "owner", profiles: null }]
+          : []
+      );
+      setTeamLoading(false);
+    } else {
+      const ids = Array.from(new Set(withOwner.map((m) => m.user_id)));
+      let emailMap = new Map<string, { email?: string | null }>();
+
+      const { data: emails, error: emailsErr } = await supabase.rpc("get_project_member_emails", {
+        p_project_id: projectId,
+      });
+      if (!emailsErr && Array.isArray(emails)) {
+        emailMap = new Map(emails.map((row: any) => [row.user_id as string, { email: row.email }]));
+      } else {
+        const { data: profiles, error: profilesErr } = await supabase
+          .from("profiles")
+          .select("id,email")
+          .in("id", ids);
+        if (profilesErr) {
+          setTeamError("Profile laden fehlgeschlagen: " + profilesErr.message);
+        } else {
+          emailMap = new Map((profiles ?? []).map((p: any) => [p.id as string, { email: p.email }]));
+        }
+      }
+
+      setTeamMembers(
+        withOwner.map((m) => ({
+          ...m,
+          profiles: emailMap.get(m.user_id) ?? null,
+        })) as TeamMember[]
+      );
+
+      setTeamLoading(false);
+    }
+
+    // 4) Reports laden
     const { data: reps, error: repsErr } = await supabase
       .from("reports")
       .select("id,title,created_at,user_id,status,report_type")
@@ -234,7 +296,7 @@ export default function ProjectDetailPage() {
 
     setReports((reps ?? []) as ReportRow[]);
 
-    // 4) Dateien laden
+    // 5) Dateien laden
     setFilesLoading(true);
     setFilesErr(null);
     const { data: fileList, error: fileErr } = await supabase.storage
@@ -460,10 +522,37 @@ export default function ProjectDetailPage() {
     setMymapsSaving(false);
   };
 
+  const isOwner = role === "owner" || (project?.owner_id && me?.id && project.owner_id === me.id);
+  const sortedTeam = useMemo(() => {
+    const list = [...teamMembers];
+    list.sort((a, b) => {
+      const ar = a.role_in_project === "owner" ? 0 : 1;
+      const br = b.role_in_project === "owner" ? 0 : 1;
+      if (ar !== br) return ar - br;
+      const an = (a.profiles?.full_name || a.profiles?.email || a.user_id || "").toLowerCase();
+      const bn = (b.profiles?.full_name || b.profiles?.email || b.user_id || "").toLowerCase();
+      return an.localeCompare(bn);
+    });
+    return list;
+  }, [teamMembers]);
+
+  const getMymapsEmbedUrl = (rawUrl?: string | null) => {
+    if (!rawUrl) return "";
+    try {
+      const url = new URL(rawUrl);
+      if (!/google\./i.test(url.hostname)) return rawUrl;
+      if (!/\/maps\/d\//i.test(url.pathname)) return rawUrl;
+      if (url.pathname.includes("/embed")) return url.toString();
+      url.pathname = url.pathname.replace("/edit", "/embed");
+      return url.toString();
+    } catch {
+      return rawUrl;
+    }
+  };
+
   const canEditOrDelete = (r: ReportRow) => {
     if (!me) return false;
     const isCreator = r.user_id === me.id;
-    const isOwner = role === "owner";
     return isCreator || isOwner;
   };
 
@@ -803,126 +892,201 @@ export default function ProjectDetailPage() {
       )}
 
       <div className="grid gap-6 xl:grid-cols-2">
-        {role === "owner" && (
-          <SectionCard
-            title="Team"
-            subtitle="Mitgliederverwaltung für dieses Projekt"
-          >
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-800 ring-1 ring-sky-200">
+        <SectionCard
+          title="Team"
+          subtitle="Mitgliederverwaltung für dieses Projekt"
+        >
+          {isOwner ? (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-800 ring-1 ring-sky-200">
+                  <Users className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div className="flex-1 min-w-[240px]">
+                  <div className="text-sm font-semibold text-slate-800">Mitglied hinzufügen</div>
+                  <div className="text-xs text-slate-500">Nur existierende Nutzer können hinzugefügt werden.</div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <input
+                  className="min-w-[240px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  placeholder="E-Mail des Users"
+                  value={memberEmail}
+                  onChange={(e) => setMemberEmail(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={addMemberByEmail}
+                  disabled={addingMember}
+                >
+                  {addingMember ? "Füge hinzu…" : "Hinzufügen"}
+                </button>
+              </div>
+              {memberErr && <div className="mt-2 text-xs text-red-600">{memberErr}</div>}
+              {memberOk && <div className="mt-2 text-xs text-green-700">{memberOk}</div>}
+            </>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-700 ring-1 ring-slate-200">
                 <Users className="h-5 w-5" aria-hidden="true" />
               </div>
-              <div className="flex-1 min-w-[240px]">
-                <div className="text-sm font-semibold text-slate-800">Mitglied hinzufügen</div>
-                <div className="text-xs text-slate-500">Nur existierende Nutzer können hinzugefügt werden.</div>
-              </div>
+              <div className="text-xs text-slate-500">Nur der Projekt‑Owner kann Mitglieder hinzufügen.</div>
             </div>
+          )}
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              <input
-                className="min-w-[240px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-                placeholder="E-Mail des Users"
-                value={memberEmail}
-                onChange={(e) => setMemberEmail(e.target.value)}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={addMemberByEmail}
-                disabled={addingMember}
-              >
-                {addingMember ? "Füge hinzu…" : "Hinzufügen"}
-              </button>
+          <div className="mt-5 rounded-xl border border-slate-200/70 bg-white">
+            <div className="border-b border-slate-200/70 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Mitglieder
             </div>
-            {memberErr && <div className="mt-2 text-xs text-red-600">{memberErr}</div>}
-            {memberOk && <div className="mt-2 text-xs text-green-700">{memberOk}</div>}
-          </SectionCard>
-        )}
+            <div className="divide-y divide-slate-100">
+              {teamLoading ? (
+                <div className="px-4 py-3 text-sm text-slate-600">Lade Team…</div>
+              ) : teamError ? (
+                <div className="px-4 py-3 text-sm text-red-600">{teamError}</div>
+              ) : sortedTeam.length === 0 ? (
+                <div className="px-4 py-3 text-sm text-slate-500">Noch keine Mitglieder.</div>
+              ) : (
+                sortedTeam.map((m) => {
+                  const isMemberOwner = m.role_in_project === "owner";
+                  const email = m.profiles?.email?.trim() || "";
+                  return (
+                    <div key={m.user_id} className="flex items-center justify-between px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-slate-800">
+                          {email || "E-Mail unbekannt"}
+                        </div>
+                        {!email ? <div className="truncate text-xs text-slate-500">{m.user_id}</div> : null}
+                      </div>
+                      <div className="ml-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold">
+                        {isMemberOwner ? (
+                          <>
+                            <Crown className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
+                            Owner
+                          </>
+                        ) : (
+                          <>
+                            <User className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                            Mitglied
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </SectionCard>
 
         <SectionCard
           title="Google My Maps"
           subtitle="Projektkarte als Link speichern und öffnen"
         >
           <div className="rounded-2xl border border-dashed border-slate-200/70 p-4">
-            <div className="flex items-start gap-3">
-              <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-700 ring-1 ring-slate-200">
-                <MapPin className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-slate-800">My Maps Link</div>
-                <div className="text-xs text-slate-500">Link einfügen oder hier hineinziehen.</div>
-              </div>
-            </div>
+            {isOwner ? (
+              <>
+                <div className="flex items-start gap-3">
+                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-700 ring-1 ring-slate-200">
+                    <MapPin className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">My Maps Link</div>
+                    <div className="text-xs text-slate-500">Link einfügen oder hier hineinziehen.</div>
+                  </div>
+                </div>
 
-            <div
-              className="mt-3 rounded-xl border border-slate-200/70 bg-white p-3 text-xs text-slate-500"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                const text = e.dataTransfer.getData("text");
-                if (text) setMymapsUrlInput(text.trim());
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <Link2 className="h-4 w-4" aria-hidden="true" />
-                <input
-                  className="w-full border-0 bg-transparent p-0 text-sm text-slate-700 outline-none"
-                  placeholder="https://www.google.com/maps/d/..."
-                  value={mymapsUrlInput}
-                  onChange={(e) => setMymapsUrlInput(e.target.value)}
-                />
-              </div>
-            </div>
+                <div
+                  className="mt-3 rounded-xl border border-slate-200/70 bg-white p-3 text-xs text-slate-500"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const text = e.dataTransfer.getData("text");
+                    if (text) setMymapsUrlInput(text.trim());
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Link2 className="h-4 w-4" aria-hidden="true" />
+                    <input
+                      className="w-full border-0 bg-transparent p-0 text-sm text-slate-700 outline-none"
+                      placeholder="https://www.google.com/maps/d/..."
+                      value={mymapsUrlInput}
+                      onChange={(e) => setMymapsUrlInput(e.target.value)}
+                    />
+                  </div>
+                </div>
 
-            <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={saveMymapsLink}
-                disabled={mymapsSaving}
-              >
-                {mymapsSaving ? "Speichert…" : "Link speichern"}
-              </button>
-              {project?.mymaps_url ? (
-                <button
-                  type="button"
-                  className="btn btn-danger"
-                  onClick={removeMymapsLink}
-                  disabled={mymapsSaving}
-                >
-                  Entfernen
-                </button>
-              ) : null}
-              {project?.mymaps_url ? (
-                <a
-                  className="text-xs text-sky-700 hover:underline"
-                  href={project.mymaps_url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Link öffnen
-                </a>
-              ) : null}
-            </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={saveMymapsLink}
+                    disabled={mymapsSaving}
+                  >
+                    {mymapsSaving ? "Speichert…" : "Link speichern"}
+                  </button>
+                  {project?.mymaps_url ? (
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      onClick={removeMymapsLink}
+                      disabled={mymapsSaving}
+                    >
+                      Entfernen
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-start gap-3">
+                <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-700 ring-1 ring-slate-200">
+                  <MapPin className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">Projektkarte</div>
+                  <div className="text-xs text-slate-500">
+                    Nur der Projekt‑Owner kann den Link bearbeiten.
+                  </div>
+                </div>
+              </div>
+            )}
             {mymapsError && <div className="mt-2 text-xs text-red-600">{mymapsError}</div>}
 
             {project?.mymaps_url && (
-              <a
-                href={project.mymaps_url}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-4 flex items-center justify-between rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-left shadow-sm transition hover:shadow"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-slate-800">
-                    {project.mymaps_title || "Google My Maps"}
-                  </div>
-                  <div className="mt-1 truncate text-xs text-slate-500">
-                    {project.mymaps_url}
+              <div className="mt-4 rounded-xl border border-slate-200/70 bg-white p-3 shadow-sm">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-slate-800">
+                      {project.mymaps_title || "Google My Maps"}
+                    </div>
+                    {isOwner ? (
+                      <div className="mt-1 truncate text-xs text-slate-500">
+                        {project.mymaps_url}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
-                <ExternalLink className="h-4 w-4 text-slate-500" aria-hidden="true" />
-              </a>
+                <div className="overflow-hidden rounded-lg border border-slate-200/70">
+                  <div className="relative aspect-[4/3] w-full">
+                    <iframe
+                      title={project.mymaps_title || "Google My Maps"}
+                      src={getMymapsEmbedUrl(project.mymaps_url)}
+                      className="h-full w-full"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      allowFullScreen
+                    />
+                    <a
+                      href={project.mymaps_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="absolute inset-0"
+                      aria-label="My Maps öffnen"
+                    />
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </SectionCard>
