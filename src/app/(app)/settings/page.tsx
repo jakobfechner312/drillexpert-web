@@ -252,7 +252,7 @@ export default function SettingsPage() {
               ) : (
                 customWorkCycles.map((cycle, idx) => (
                   <div key={`${cycle}-${idx}`} className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-500">#{20 + idx}</span>
+                    <span className="text-xs font-semibold text-slate-500">#{23 + idx}</span>
                     <input
                       className="flex-1 min-w-[220px] rounded-xl border p-2 text-sm"
                       value={cycle}

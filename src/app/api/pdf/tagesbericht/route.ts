@@ -336,12 +336,22 @@ export async function POST(req: Request) {
       draw(display, WCOL.stundenStartX + j * WCOL.stundenStep, stundenHeaderY, 8);
     }
 
-    // Markierung der gewählten Arbeitstakte in der Liste rechts
+    // Markierung der gewählten Arbeitstakte in der Liste rechts (nur 1-19)
     const selectedCycles = new Set<number>();
+    const specialCycles: string[] = [];
+    const specialSeen = new Set<number>();
     workCycles.forEach((label: string) => {
       const idx = workCycleOptions.indexOf(label);
       if (idx >= 0) {
-        selectedCycles.add(idx + 1);
+        const nr = idx + 1;
+        if (nr <= 19) {
+          selectedCycles.add(nr);
+        } else {
+          if (!specialSeen.has(nr)) {
+            specialSeen.add(nr);
+            specialCycles.push(`${nr} - ${label}`);
+          }
+        }
       }
     });
 
@@ -369,8 +379,8 @@ export async function POST(req: Request) {
       });
     });
 
-    // Eigene Takte (20+) haben keine feste Position in der gedruckten Liste,
-    // daher hier keine Markierung setzen.
+    // Eigene/zusätzliche Takte (20+) haben keine feste Position in der Liste,
+    // daher hier keine Markierung setzen. Sie kommen in die Bemerkungen.
 
     workers.slice(0, 3).forEach((w: any, i: number) => {
       const y = workersStartY - i * workerRowH;
@@ -703,12 +713,13 @@ export async function POST(req: Request) {
     // Bemerkungen / Anordnungen / Besuche (+ eigene Arbeitstakte)
     const baseRemarks = String(data.remarks ?? "");
     const customWithNumbers = customCycleOrder.map((label, idx) => `${23 + idx} - ${label}`);
+    const extraCycles = [...specialCycles, ...customWithNumbers];
     const remarksCombined =
-      baseRemarks.trim() && customWithNumbers.length
-        ? `${baseRemarks}\n\n${customWithNumbers.join("\n")}`
+      baseRemarks.trim() && extraCycles.length
+        ? `${baseRemarks}\n\n${extraCycles.join("\n")}`
         : baseRemarks.trim()
           ? baseRemarks
-          : customWithNumbers.join("\n");
+          : extraCycles.join("\n");
 
     const remarkLines = wrapLines(remarksCombined, {
       maxLines: BOTTOM.remarksMaxLines,
