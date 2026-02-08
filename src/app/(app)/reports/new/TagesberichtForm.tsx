@@ -1645,10 +1645,10 @@ if (mode === "edit") {
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <div className="text-sm font-semibold uppercase tracking-wider text-slate-500">
                 Schritt {stepIndex + 1} von {steps.length}
               </div>
-              <div className="text-lg font-semibold text-slate-900">{steps[stepIndex]?.title}</div>
+              <div className="text-xl font-semibold text-slate-900">{steps[stepIndex]?.title}</div>
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -1657,7 +1657,7 @@ if (mode === "edit") {
                 key={s.key}
                 type="button"
                 onClick={() => setStepIndex(i)}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                className={`rounded-full border px-4 py-2 text-sm font-semibold ${
                   i === stepIndex
                     ? "bg-sky-50 text-sky-800 border-sky-200"
                     : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"

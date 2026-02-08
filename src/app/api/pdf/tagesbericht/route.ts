@@ -397,7 +397,7 @@ export async function POST(req: Request) {
     const rows = Array.isArray(data.tableRows) ? data.tableRows : [];
 
     const COL = {
-      boNr: 26,
+      boNr: 10,
       gebohrtVon: 51,
       gebohrtBis: 72,
       verrohrtVon: 95,
