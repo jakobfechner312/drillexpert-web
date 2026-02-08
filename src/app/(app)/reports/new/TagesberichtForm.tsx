@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/browser";
 import { useDraftActions } from "@/components/DraftActions";
 import { useMemo, useRef, useEffect, useState, useCallback } from "react";
 import SignatureCanvas from "react-signature-canvas";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import type {
   Tagesbericht,
@@ -308,7 +308,9 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
 export default function TagesberichtForm({ projectId, reportId, mode = "create", stepper = true }: TagesberichtFormProps) {
   const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
-  const draftId = searchParams.get("draftId");
+  const pathname = usePathname();
+  const draftId = useMemo(() => searchParams.get("draftId") ?? "", [searchParams]);
+  const hasDraftId = draftId.length > 0;
 
   useEffect(() => {
     console.log("[PROPS CHECK]", { mode, reportId, projectId });
@@ -318,6 +320,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   const reportSaveKeyRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveReadyRef = useRef(false);
+  const localDraftLoadedRef = useRef(false);
 
   type SaveScope = "unset" | "project" | "my_reports";
   const [saveScope, setSaveScope] = useState<SaveScope>(projectId ? "project" : "unset");
@@ -459,13 +462,27 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
 
   const [report, setReport] = useState<Tagesbericht>(() => {
     const base = createDefaultTagesbericht();
-    return {
+    const fallback: Tagesbericht = {
       ...base,
       tableRows: Array.isArray(base.tableRows) && base.tableRows.length ? base.tableRows : [emptyTableRow()],
       workers: Array.isArray(base.workers) && base.workers.length ? base.workers : [emptyWorker()],
       umsetzenRows: Array.isArray(base.umsetzenRows) && base.umsetzenRows.length ? base.umsetzenRows : [emptyUmsetzenRow()],
       pegelAusbauRows: Array.isArray(base.pegelAusbauRows) && base.pegelAusbauRows.length ? base.pegelAusbauRows : [emptyPegelAusbauRow()],
     };
+
+    if (mode === "edit" || hasDraftId) return fallback;
+    if (typeof window === "undefined") return fallback;
+
+    try {
+      const raw = localStorage.getItem("tagesbericht_draft");
+      if (!raw) return fallback;
+      const parsed = JSON.parse(raw);
+      localDraftLoadedRef.current = true;
+      return normalizeTagesbericht(parsed);
+    } catch (e) {
+      console.warn("Local draft load failed", e);
+      return fallback;
+    }
   });
   const [customCycleDraft, setCustomCycleDraft] = useState<Record<number, string>>({});
   const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
@@ -607,7 +624,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   // 🧩 LOAD DRAFT (CREATE MODE)
   // ======================
   useEffect(() => {
-    if (mode !== "create" || !draftId) return;
+    if (mode !== "create" || !hasDraftId) return;
 
     const supabase = createClient();
     const loadDraft = async () => {
@@ -627,7 +644,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
     };
 
     loadDraft();
-  }, [mode, draftId]);
+  }, [mode, draftId, hasDraftId]);
 
   // ================== DRAFT + REPORT SAVE HANDLERS ==================
   const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
@@ -1011,10 +1028,12 @@ if (mode === "edit") {
   }
 
   useEffect(() => {
-    if (mode === "edit" || draftId) return;
+    if (mode === "edit" || hasDraftId) return;
+    if (localDraftLoadedRef.current) {
+      autoSaveReadyRef.current = true;
+      return;
+    }
     try {
-      const allowAuto = localStorage.getItem("pref_autoload_draft");
-      if (allowAuto === "false") return;
       const raw = localStorage.getItem("tagesbericht_draft");
       if (!raw) return;
       const parsed = JSON.parse(raw);
@@ -1024,23 +1043,65 @@ if (mode === "edit") {
     } finally {
       autoSaveReadyRef.current = true;
     }
-  }, [mode]);
+  }, [mode, draftId, hasDraftId]);
 
   useEffect(() => {
-    if (mode === "edit" || draftId) return;
+    if (mode === "edit" || hasDraftId) return;
+    const saveNow = () => {
+      try {
+        localStorage.setItem("tagesbericht_draft", JSON.stringify(reportRef.current));
+      } catch (e) {
+        console.warn("Local draft save on pagehide failed", e);
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") saveNow();
+    };
+    window.addEventListener("pagehide", saveNow);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", saveNow);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [mode, draftId, hasDraftId]);
+
+  useEffect(() => {
+    if (mode === "edit" || hasDraftId) return;
+    return () => {
+      try {
+        localStorage.setItem("tagesbericht_draft", JSON.stringify(reportRef.current));
+      } catch (e) {
+        console.warn("Local draft save on route change failed", e);
+      }
+    };
+  }, [pathname, mode, hasDraftId]);
+
+  useEffect(() => {
+    if (mode === "edit" || hasDraftId) return;
     if (!autoSaveReadyRef.current) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
       try {
-        localStorage.setItem("tagesbericht_draft", JSON.stringify(reportRef.current));
+        localStorage.setItem("tagesbericht_draft", JSON.stringify(report));
       } catch (e) {
         console.warn("Local draft autosave failed", e);
       }
-    }, 400);
+    }, 250);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [report, mode, draftId]);
+  }, [report, mode, draftId, hasDraftId]);
+
+  useEffect(() => {
+    return () => {
+      if (mode === "edit" || hasDraftId) return;
+      try {
+        localStorage.setItem("tagesbericht_draft", JSON.stringify(report));
+      } catch (e) {
+        console.warn("Local draft save on unmount failed", e);
+      }
+    };
+  }, [mode, draftId, hasDraftId, report]);
 
   function fillTestData() {
     const base = createDefaultTagesbericht();
