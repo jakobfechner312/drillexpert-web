@@ -488,9 +488,8 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
   const [expandedLines, setExpandedLines] = useState<Record<string, boolean>>({});
   const [pegelSumpfEnabled, setPegelSumpfEnabled] = useState<Record<number, boolean>>({});
+  const [pegelStahlEnabled, setPegelStahlEnabled] = useState<Record<number, boolean>>({});
   const [clientSigEnabled, setClientSigEnabled] = useState(false);
-  const [pegelMode, setPegelMode] = useState<"ueberflur" | "unterflur" | null>(null);
-  const [pegelPromptOpen, setPegelPromptOpen] = useState(false);
   const useStepper = stepper;
   const steps = useMemo(
     () => [
@@ -559,30 +558,12 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   }, [supabase]);
 
   useEffect(() => {
-    if (stepIndex === 7 && !pegelMode) {
-      setPegelPromptOpen(true);
-    }
-  }, [stepIndex, pegelMode]);
-
-  useEffect(() => {
     if (clientSigEnabled) return;
     const hasClientSig =
       Boolean(report?.signatures?.clientOrManagerSigPng) ||
       Boolean(report?.signatures?.clientOrManagerName);
     if (hasClientSig) setClientSigEnabled(true);
   }, [clientSigEnabled, report?.signatures?.clientOrManagerSigPng, report?.signatures?.clientOrManagerName]);
-
-  useEffect(() => {
-    if (pegelMode !== "unterflur") return;
-    setReport((p) => ({
-      ...p,
-      pegelAusbauRows: (Array.isArray(p.pegelAusbauRows) ? p.pegelAusbauRows : [emptyPegelAusbauRow()]).map((row) => ({
-        ...row,
-        aufsatzStahlVon: "",
-        aufsatzStahlBis: "",
-      })),
-    }));
-  }, [pegelMode]);
 
   // ======================
 // 🧩 LOAD REPORT (EDIT MODE)
@@ -1762,38 +1743,7 @@ if (mode === "edit") {
           </div>
         </div>
       )}
-      {pegelPromptOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow">
-            <h3 className="text-lg font-semibold text-sky-900">Pegel‑Ausbau</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              Bitte auswählen, ob der Ausbau unter- oder überflur erfolgt.
-            </p>
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                className="rounded-xl border border-sky-200 bg-white px-4 py-2 text-sky-700 hover:bg-sky-50"
-                onClick={() => {
-                  setPegelMode("ueberflur");
-                  setPegelPromptOpen(false);
-                }}
-              >
-                Überflur
-              </button>
-              <button
-                type="button"
-                className="rounded-xl border border-sky-200 bg-white px-4 py-2 text-sky-700 hover:bg-sky-50"
-                onClick={() => {
-                  setPegelMode("unterflur");
-                  setPegelPromptOpen(false);
-                }}
-              >
-                Unterflur
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      
       {/* ======================= KOPF (PDF-LAYOUT) ======================= */}
       {showHeaderBlock ? (
         <GroupCard title="Tagesbericht" badge="Kopfbereich">
@@ -2973,7 +2923,7 @@ if (mode === "edit") {
                 onChange={(e) => updatePegel(i, { pegelDm: e.target.value })}
               >
                 <option value="">Pegel Ø</option>
-                {['2"', '3"', '4"', '5"', '6"', "DIN300", "DIN400", "DIN500", "DIN600", "DIN700", "DIN800"].map((opt) => (
+                {['2"', '3"', '4"', '5"', '6"', '8"', "DN300", "DN400", "DN500", "DN600", "DN700", "DN800"].map((opt) => (
                   <option key={opt} value={opt}>
                     {opt}
                   </option>
@@ -3016,7 +2966,24 @@ if (mode === "edit") {
                 <input className="rounded-xl border p-3" placeholder="Aufsatz PVC von" value={r.aufsatzPvcVon} onChange={(e) => updatePegel(i, { aufsatzPvcVon: e.target.value })} />
                 <input className="rounded-xl border p-3" placeholder="Aufsatz PVC bis" value={r.aufsatzPvcBis} onChange={(e) => updatePegel(i, { aufsatzPvcBis: e.target.value })} />
 
-                {pegelMode !== "unterflur" ? (
+                <div className="lg:col-span-6 flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-sky-900">
+                    <input
+                      type="checkbox"
+                      checked={pegelStahlEnabled[i] ?? Boolean(r.aufsatzStahlVon || r.aufsatzStahlBis)}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        setPegelStahlEnabled((p) => ({ ...p, [i]: next }));
+                        if (!next) {
+                          updatePegel(i, { aufsatzStahlVon: "", aufsatzStahlBis: "" });
+                        }
+                      }}
+                    />
+                    Aufsatz Stahl anzeigen
+                  </label>
+                </div>
+
+                {(pegelStahlEnabled[i] ?? Boolean(r.aufsatzStahlVon || r.aufsatzStahlBis)) ? (
                   <>
                     <input className="rounded-xl border p-3" placeholder="Aufsatz Stahl von" value={r.aufsatzStahlVon} onChange={(e) => updatePegel(i, { aufsatzStahlVon: e.target.value })} />
                     <input className="rounded-xl border p-3" placeholder="Aufsatz Stahl bis" value={r.aufsatzStahlBis} onChange={(e) => updatePegel(i, { aufsatzStahlBis: e.target.value })} />
