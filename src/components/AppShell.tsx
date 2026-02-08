@@ -72,6 +72,20 @@ function AppTopbar({
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       setUserEmail(session?.user?.email ?? null);
       setAuthLoading(false);
+      if (!session?.user) {
+        try {
+          localStorage.setItem("tagesbericht_draft_block", "1");
+          localStorage.removeItem("tagesbericht_draft");
+        } catch (e) {
+          console.warn("Failed to clear local draft on auth change", e);
+        }
+      } else {
+        try {
+          localStorage.removeItem("tagesbericht_draft_block");
+        } catch (e) {
+          console.warn("Failed to clear draft block on auth change", e);
+        }
+      }
     });
 
     return () => {
@@ -81,6 +95,12 @@ function AppTopbar({
   }, [supabase]);
 
   async function handleLogout() {
+    try {
+      localStorage.setItem("tagesbericht_draft_block", "1");
+      localStorage.removeItem("tagesbericht_draft");
+    } catch (e) {
+      console.warn("Failed to clear local draft on logout", e);
+    }
     await supabase.auth.signOut();
     window.location.href = "/login";
   }

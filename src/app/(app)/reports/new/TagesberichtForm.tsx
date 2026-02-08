@@ -321,6 +321,13 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveReadyRef = useRef(false);
   const localDraftLoadedRef = useRef(false);
+  const isAutoSaveBlocked = () => {
+    try {
+      return localStorage.getItem("tagesbericht_draft_block") === "1";
+    } catch {
+      return false;
+    }
+  };
 
   type SaveScope = "unset" | "project" | "my_reports";
   const [saveScope, setSaveScope] = useState<SaveScope>(projectId ? "project" : "unset");
@@ -1010,6 +1017,11 @@ if (mode === "edit") {
 
   useEffect(() => {
     if (mode === "edit" || hasDraftId) return;
+    try {
+      localStorage.removeItem("tagesbericht_draft_block");
+    } catch (e) {
+      console.warn("Failed to clear draft block on mount", e);
+    }
     if (localDraftLoadedRef.current) {
       autoSaveReadyRef.current = true;
       return;
@@ -1029,6 +1041,7 @@ if (mode === "edit") {
   useEffect(() => {
     if (mode === "edit" || hasDraftId) return;
     const saveNow = () => {
+      if (isAutoSaveBlocked()) return;
       try {
         localStorage.setItem("tagesbericht_draft", JSON.stringify(reportRef.current));
       } catch (e) {
@@ -1049,6 +1062,7 @@ if (mode === "edit") {
   useEffect(() => {
     if (mode === "edit" || hasDraftId) return;
     return () => {
+      if (isAutoSaveBlocked()) return;
       try {
         localStorage.setItem("tagesbericht_draft", JSON.stringify(reportRef.current));
       } catch (e) {
@@ -1062,6 +1076,7 @@ if (mode === "edit") {
     if (!autoSaveReadyRef.current) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
+      if (isAutoSaveBlocked()) return;
       try {
         localStorage.setItem("tagesbericht_draft", JSON.stringify(report));
       } catch (e) {
@@ -1076,6 +1091,7 @@ if (mode === "edit") {
   useEffect(() => {
     return () => {
       if (mode === "edit" || hasDraftId) return;
+      if (isAutoSaveBlocked()) return;
       try {
         localStorage.setItem("tagesbericht_draft", JSON.stringify(report));
       } catch (e) {
