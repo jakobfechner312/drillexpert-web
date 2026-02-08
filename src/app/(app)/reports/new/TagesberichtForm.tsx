@@ -1263,6 +1263,23 @@ if (mode === "edit") {
     setReport(filled);
   }
 
+  const resetAllInputs = () => {
+    if (!confirm("Alle Eingaben wirklich löschen?")) return;
+    const base = createDefaultTagesbericht();
+    setReport({
+      ...base,
+      tableRows: Array.isArray(base.tableRows) && base.tableRows.length ? base.tableRows : [emptyTableRow()],
+      workers: Array.isArray(base.workers) && base.workers.length ? base.workers : [emptyWorker()],
+      umsetzenRows: Array.isArray(base.umsetzenRows) && base.umsetzenRows.length ? base.umsetzenRows : [emptyUmsetzenRow()],
+      pegelAusbauRows: Array.isArray(base.pegelAusbauRows) && base.pegelAusbauRows.length ? base.pegelAusbauRows : [emptyPegelAusbauRow()],
+    });
+    try {
+      localStorage.removeItem("tagesbericht_draft");
+    } catch {
+      // ignore
+    }
+  };
+
   async function openTestPdf() {
     console.log("[PREVIEW payload]", report);
     const res = await fetch("/api/pdf/tagesbericht", {
@@ -3236,6 +3253,13 @@ if (mode === "edit") {
             onClick={fillTestData}
           >
             Testdaten füllen
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger"
+            onClick={resetAllInputs}
+          >
+            Alles löschen
           </button>
           <button
             type="button"
