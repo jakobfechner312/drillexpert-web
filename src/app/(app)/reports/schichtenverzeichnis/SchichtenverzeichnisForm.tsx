@@ -931,7 +931,7 @@ export default function SchichtenverzeichnisForm({
     try {
       saveOffsetsSnapshot();
       const params = new URLSearchParams();
-      if (showGrid) params.set("debug", "1");
+      params.set("debug", "1");
       if (Number(gridStep)) params.set("grid", String(Number(gridStep)));
       const payload = {
         ...data,
