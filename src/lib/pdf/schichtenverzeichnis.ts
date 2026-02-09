@@ -214,12 +214,21 @@ export async function generateSchichtenverzeichnisPdf(
   const fieldOffsetsPage1 =
     (data?.field_offsets_page_1 as Record<string, { x?: number | string; y?: number | string }>) ||
     {};
+  const rowFieldOffsetsPage1 =
+    (data?.schicht_row_field_offsets_page_1 as Record<
+      string,
+      Record<string, { x?: number | string; y?: number | string }>
+    >) || {};
   const getPage1FieldOffset = (fieldKey: string, axis: "x" | "y") => {
     const hasCustom = fieldOffsetsPage1?.[fieldKey]?.[axis] != null;
     if (hasCustom) {
       return Number(fieldOffsetsPage1[fieldKey][axis]) || 0;
     }
     return DEFAULT_FIELD_OFFSETS_PAGE_1[fieldKey]?.[axis] ?? 0;
+  };
+  const getRowFieldOffsetPage1 = (rowIndex: number, fieldKey: string, axis: "x" | "y") => {
+    const raw = rowFieldOffsetsPage1?.[String(rowIndex)]?.[fieldKey]?.[axis];
+    return Number(raw) || 0;
   };
   const hasRowData = Array.isArray(data?.schicht_rows) && data.schicht_rows.length > 0;
   const skipKeys = new Set([
@@ -328,11 +337,17 @@ export async function generateSchichtenverzeichnisPdf(
             ansatzField.x +
               pageXOffset +
               getXOffset("ansatzpunkt_bis", pageIndex) +
-              (pageIndex === 0 ? getPage1FieldOffset("schicht_ansatzpunkt_bis", "x") : 0),
+              (pageIndex === 0
+                ? getPage1FieldOffset("schicht_ansatzpunkt_bis", "x") +
+                  getRowFieldOffsetPage1(localIdx, "schicht_ansatzpunkt_bis", "x")
+                : 0),
             ansatzField.y +
               pageStartOffset -
               yOffset +
-              (pageIndex === 0 ? getPage1FieldOffset("schicht_ansatzpunkt_bis", "y") : 0),
+              (pageIndex === 0
+                ? getPage1FieldOffset("schicht_ansatzpunkt_bis", "y") +
+                  getRowFieldOffsetPage1(localIdx, "schicht_ansatzpunkt_bis", "y")
+                : 0),
             ansatzField.size ?? 10
           );
         }
@@ -348,12 +363,18 @@ export async function generateSchichtenverzeichnisPdf(
             festField.x +
             pageXOffset +
             getXOffset("feststellungen", pageIndex) +
-            (pageIndex === 0 ? getPage1FieldOffset("feststellungen", "x") : 0);
+            (pageIndex === 0
+              ? getPage1FieldOffset("feststellungen", "x") +
+                getRowFieldOffsetPage1(localIdx, "feststellungen", "x")
+              : 0);
           const probenX =
             probenArtField.x +
             pageXOffset +
             getXOffset("proben_art", pageIndex) +
-            (pageIndex === 0 ? getPage1FieldOffset("proben_art", "x") : 0);
+            (pageIndex === 0
+              ? getPage1FieldOffset("proben_art", "x") +
+                getRowFieldOffsetPage1(localIdx, "proben_art", "x")
+              : 0);
           const maxWidth = Math.max(40, probenX - festX - 6);
           const maxHeight = Math.max(40, Math.min(rowHeight - 20, 120));
           drawWrappedText(
@@ -363,7 +384,10 @@ export async function generateSchichtenverzeichnisPdf(
             festField.y +
               pageStartOffset -
               yOffset +
-              (pageIndex === 0 ? getPage1FieldOffset("feststellungen", "y") : 0),
+              (pageIndex === 0
+                ? getPage1FieldOffset("feststellungen", "y") +
+                  getRowFieldOffsetPage1(localIdx, "feststellungen", "y")
+                : 0),
             maxWidth,
             maxHeight,
             field.size ?? 10
@@ -379,12 +403,18 @@ export async function generateSchichtenverzeichnisPdf(
               field.x +
               pageXOffset +
               getXOffset(rowKey as keyof typeof rowFields, pageIndex) +
-              (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "x") : 0);
+              (pageIndex === 0
+                ? getPage1FieldOffset(fieldKey, "x") +
+                  getRowFieldOffsetPage1(localIdx, fieldKey, "x")
+                : 0);
             const yTop =
               field.y +
               pageStartOffset -
               yOffset +
-              (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "y") : 0);
+              (pageIndex === 0
+                ? getPage1FieldOffset(fieldKey, "y") +
+                  getRowFieldOffsetPage1(localIdx, fieldKey, "y")
+                : 0);
             const maxWidth = Math.max(20, field.width);
             const maxHeight = Math.max(20, rowHeight - 10);
             const fixedSize = field.size ?? 6;
@@ -400,12 +430,18 @@ export async function generateSchichtenverzeichnisPdf(
             field.x +
             pageXOffset +
             getXOffset(rowKey as keyof typeof rowFields, pageIndex) +
-            (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "x") : 0);
+            (pageIndex === 0
+              ? getPage1FieldOffset(fieldKey, "x") +
+                getRowFieldOffsetPage1(localIdx, fieldKey, "x")
+              : 0);
           const yTop =
             field.y +
             pageStartOffset -
             yOffset +
-            (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "y") : 0);
+            (pageIndex === 0
+              ? getPage1FieldOffset(fieldKey, "y") +
+                getRowFieldOffsetPage1(localIdx, fieldKey, "y")
+              : 0);
           const maxWidth = Math.max(20, field.width);
           const maxHeight = Math.max(20, rowHeight - 10);
           const baseSize = field.size ?? 6;
@@ -440,11 +476,17 @@ export async function generateSchichtenverzeichnisPdf(
           field.x +
             pageXOffset +
             getXOffset(rowKey as keyof typeof rowFields, pageIndex) +
-            (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "x") : 0),
+            (pageIndex === 0
+              ? getPage1FieldOffset(fieldKey, "x") +
+                getRowFieldOffsetPage1(localIdx, fieldKey, "x")
+              : 0),
           field.y +
             pageStartOffset -
             yOffset +
-            (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "y") : 0),
+            (pageIndex === 0
+              ? getPage1FieldOffset(fieldKey, "y") +
+                getRowFieldOffsetPage1(localIdx, fieldKey, "y")
+              : 0),
           field.size ?? 10
         );
       });

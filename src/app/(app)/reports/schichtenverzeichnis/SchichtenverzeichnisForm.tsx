@@ -35,6 +35,24 @@ type GroundwaterRow = {
 };
 
 type FieldOffsetXY = { x: string; y: string };
+type RowFieldOffsetMap = Record<string, Record<string, FieldOffsetXY>>;
+
+const SCHICHT_FINE_TUNE_FIELD_KEYS = [
+  "schicht_ansatzpunkt_bis",
+  "schicht_a1",
+  "schicht_a2",
+  "schicht_b",
+  "schicht_c",
+  "schicht_d",
+  "schicht_e",
+  "schicht_f",
+  "schicht_g",
+  "schicht_h",
+  "feststellungen",
+  "proben_art",
+  "proben_nr",
+  "proben_tiefe",
+] as const;
 
 const buildFieldOffsetState = (
   overrides?: Record<string, { x?: number | string; y?: number | string }>
@@ -59,6 +77,23 @@ const buildFieldOffsetState = (
   ) as Record<string, FieldOffsetXY>;
 
   return { ...base, ...normalized };
+};
+
+const buildRowFieldOffsetState = (
+  overrides?: Record<string, Record<string, { x?: number | string; y?: number | string }>>
+): RowFieldOffsetMap => {
+  if (!overrides) return {};
+  const normalized: RowFieldOffsetMap = {};
+  Object.entries(overrides).forEach(([rowIndex, fields]) => {
+    normalized[rowIndex] = {};
+    Object.entries(fields ?? {}).forEach(([fieldKey, value]) => {
+      normalized[rowIndex][fieldKey] = {
+        x: String(Number(value?.x) || 0),
+        y: String(Number(value?.y) || 0),
+      };
+    });
+  });
+  return normalized;
 };
 
 const MAX_FESTSTELLUNGEN_CHARS = 200;
@@ -258,6 +293,8 @@ export default function SchichtenverzeichnisForm({
   const [fieldOffsetsPage1, setFieldOffsetsPage1] = useState<Record<string, FieldOffsetXY>>(
     () => buildFieldOffsetState()
   );
+  const [rowFieldOffsetsPage1, setRowFieldOffsetsPage1] = useState<RowFieldOffsetMap>({});
+  const [selectedFineTuneRow, setSelectedFineTuneRow] = useState(0);
   const useStepper = stepper;
   const steps = useMemo(
     () => [
@@ -293,6 +330,29 @@ export default function SchichtenverzeichnisForm({
         ])
       ),
     [fieldOffsetsPage1]
+  );
+  const rowFieldOffsetsPage1Payload = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(rowFieldOffsetsPage1).map(([rowIndex, fields]) => [
+          rowIndex,
+          Object.fromEntries(
+            Object.entries(fields).map(([fieldKey, value]) => [
+              fieldKey,
+              { x: Number(value.x) || 0, y: Number(value.y) || 0 },
+            ])
+          ),
+        ])
+      ),
+    [rowFieldOffsetsPage1]
+  );
+  const schichtFineTuneFields = useMemo(
+    () =>
+      SCHICHT_FINE_TUNE_FIELD_KEYS.map((key) => {
+        const mapped = SV_FIELDS.find((field) => field.key === key);
+        return { key, label: mapped?.label ?? key };
+      }),
+    []
   );
   const setFieldOffsetValue = useCallback(
     (fieldKey: string, axis: "x" | "y", value: string) => {
@@ -331,6 +391,54 @@ export default function SchichtenverzeichnisForm({
       ...prev,
       [fieldKey]: { x: String(fallback.x), y: String(fallback.y) },
     }));
+  }, []);
+  const setRowFieldOffsetValue = useCallback(
+    (rowIndex: number, fieldKey: string, axis: "x" | "y", value: string) => {
+      const rowKey = String(rowIndex);
+      setRowFieldOffsetsPage1((prev) => {
+        const row = prev[rowKey] ?? {};
+        const current = row[fieldKey] ?? { x: "0", y: "0" };
+        return {
+          ...prev,
+          [rowKey]: {
+            ...row,
+            [fieldKey]: { ...current, [axis]: value },
+          },
+        };
+      });
+    },
+    []
+  );
+  const adjustRowFieldOffset = useCallback(
+    (rowIndex: number, fieldKey: string, axis: "x" | "y", delta: number) => {
+      const rowKey = String(rowIndex);
+      setRowFieldOffsetsPage1((prev) => {
+        const row = prev[rowKey] ?? {};
+        const current = row[fieldKey] ?? { x: "0", y: "0" };
+        const nextValue = (Number(current[axis]) || 0) + delta;
+        return {
+          ...prev,
+          [rowKey]: {
+            ...row,
+            [fieldKey]: { ...current, [axis]: String(nextValue) },
+          },
+        };
+      });
+    },
+    []
+  );
+  const resetRowFieldOffset = useCallback((rowIndex: number, fieldKey: string) => {
+    const rowKey = String(rowIndex);
+    setRowFieldOffsetsPage1((prev) => {
+      const row = prev[rowKey] ?? {};
+      return {
+        ...prev,
+        [rowKey]: {
+          ...row,
+          [fieldKey]: { x: "0", y: "0" },
+        },
+      };
+    });
   }, []);
   const stepProgress = useMemo(() => {
     const progress = [
@@ -615,6 +723,19 @@ export default function SchichtenverzeichnisForm({
           )
         );
       }
+      if (
+        db?.schicht_row_field_offsets_page_1 != null &&
+        typeof db.schicht_row_field_offsets_page_1 === "object"
+      ) {
+        setRowFieldOffsetsPage1(
+          buildRowFieldOffsetState(
+            db.schicht_row_field_offsets_page_1 as Record<
+              string,
+              Record<string, { x?: number | string; y?: number | string }>
+            >
+          )
+        );
+      }
       if (db?.schicht_row_offsets_page_2 != null && Array.isArray(db.schicht_row_offsets_page_2)) {
         setSchichtRowOffsetsPage2(db.schicht_row_offsets_page_2.map((v: number | string) => String(v ?? "0")));
       }
@@ -666,6 +787,7 @@ export default function SchichtenverzeichnisForm({
             Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
           ),
           field_offsets_page_1: fieldOffsetsPage1Payload,
+          schicht_row_field_offsets_page_1: rowFieldOffsetsPage1Payload,
           schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
         };
 
@@ -743,6 +865,7 @@ export default function SchichtenverzeichnisForm({
     schichtXOffsetsPage1,
     schichtXOffsetsPage2,
     fieldOffsetsPage1Payload,
+    rowFieldOffsetsPage1Payload,
     schichtRowOffsetsPage2,
     ensureSaveTarget,
     setSaveDraftHandler,
@@ -781,6 +904,19 @@ export default function SchichtenverzeichnisForm({
           )
         );
       }
+      if (
+        saved.schichtRowFieldOffsetsPage1 != null &&
+        typeof saved.schichtRowFieldOffsetsPage1 === "object"
+      ) {
+        setRowFieldOffsetsPage1(
+          buildRowFieldOffsetState(
+            saved.schichtRowFieldOffsetsPage1 as Record<
+              string,
+              Record<string, { x?: number | string; y?: number | string }>
+            >
+          )
+        );
+      }
       if (saved.xOffsets != null && saved.xOffsetsPage2 == null) {
         setSchichtXOffsetsPage2((prev) => ({ ...prev, ...saved.xOffsets }));
       }
@@ -814,6 +950,7 @@ export default function SchichtenverzeichnisForm({
           xOffsetsPage1: schichtXOffsetsPage1,
           xOffsetsPage2: schichtXOffsetsPage2,
           fieldOffsetsPage1: fieldOffsetsPage1Payload,
+          schichtRowFieldOffsetsPage1: rowFieldOffsetsPage1Payload,
           rowOffsetsPage2: schichtRowOffsetsPage2,
           gridStep: Number(gridStep) || 50,
           showGrid,
@@ -833,6 +970,7 @@ export default function SchichtenverzeichnisForm({
     schichtXOffsetsPage1,
     schichtXOffsetsPage2,
     fieldOffsetsPage1Payload,
+    rowFieldOffsetsPage1Payload,
     schichtRowOffsetsPage2,
     gridStep,
     showGrid,
@@ -880,6 +1018,19 @@ export default function SchichtenverzeichnisForm({
           )
         );
       }
+      if (
+        saved.schichtRowFieldOffsetsPage1 != null &&
+        typeof saved.schichtRowFieldOffsetsPage1 === "object"
+      ) {
+        setRowFieldOffsetsPage1(
+          buildRowFieldOffsetState(
+            saved.schichtRowFieldOffsetsPage1 as Record<
+              string,
+              Record<string, { x?: number | string; y?: number | string }>
+            >
+          )
+        );
+      }
       if (saved.xOffsets != null) {
         setSchichtXOffsetsPage1((prev) => ({ ...prev, ...saved.xOffsets }));
         setSchichtXOffsetsPage2((prev) => ({ ...prev, ...saved.xOffsets }));
@@ -908,6 +1059,7 @@ export default function SchichtenverzeichnisForm({
     xOffsetsPage1: schichtXOffsetsPage1,
     xOffsetsPage2: schichtXOffsetsPage2,
     fieldOffsetsPage1: fieldOffsetsPage1Payload,
+    schichtRowFieldOffsetsPage1: rowFieldOffsetsPage1Payload,
     rowOffsetsPage2: schichtRowOffsetsPage2,
     gridStep: Number(gridStep) || 50,
     showGrid,
@@ -960,6 +1112,7 @@ export default function SchichtenverzeichnisForm({
           Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
         ),
         field_offsets_page_1: fieldOffsetsPage1Payload,
+        schicht_row_field_offsets_page_1: rowFieldOffsetsPage1Payload,
         schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
       };
       const res = await fetch(`/api/pdf/schichtenverzeichnis?${params.toString()}`, {
@@ -1004,6 +1157,7 @@ export default function SchichtenverzeichnisForm({
           Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
         ),
         field_offsets_page_1: fieldOffsetsPage1Payload,
+        schicht_row_field_offsets_page_1: rowFieldOffsetsPage1Payload,
         schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
       };
 
@@ -1386,6 +1540,98 @@ export default function SchichtenverzeichnisForm({
                 </div>
               );
             })}
+          </div>
+          <div className="mt-5 rounded-xl border border-slate-200/80 bg-slate-50/40 p-3">
+            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+              Schicht-Zeilen individuell (Seite 1)
+            </div>
+            <div className="mt-2 text-xs text-slate-500">
+              Hier kannst du dieselben Felder je Zeile separat feinjustieren.
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {Array.from({ length: Math.max(1, Number(schichtRowsPerPage1) || 4) }, (_, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                    selectedFineTuneRow === idx
+                      ? "border-sky-200 bg-sky-50 text-sky-800"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                  onClick={() => setSelectedFineTuneRow(idx)}
+                >
+                  Zeile {idx + 1}
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 grid gap-2">
+              {schichtFineTuneFields.map((field) => {
+                const value = rowFieldOffsetsPage1[String(selectedFineTuneRow)]?.[field.key] ?? {
+                  x: "0",
+                  y: "0",
+                };
+                return (
+                  <div
+                    key={`${selectedFineTuneRow}-${field.key}`}
+                    className="grid items-center gap-2 rounded-xl border border-slate-200/80 bg-white p-2 md:grid-cols-[1.3fr_auto_auto_auto_auto_auto_auto_auto_auto]"
+                  >
+                    <div className="min-w-0 text-xs font-semibold text-slate-700">
+                      <span className="truncate">{field.label}</span>
+                      <span className="ml-2 text-[10px] text-slate-400">{field.key}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                      onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "x", -10)}
+                    >
+                      X -10
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                      onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "x", 10)}
+                    >
+                      X +10
+                    </button>
+                    <input
+                      className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
+                      value={value.x}
+                      onChange={(e) =>
+                        setRowFieldOffsetValue(selectedFineTuneRow, field.key, "x", e.target.value)
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                      onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "y", -10)}
+                    >
+                      Y -10
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                      onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "y", 10)}
+                    >
+                      Y +10
+                    </button>
+                    <input
+                      className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
+                      value={value.y}
+                      onChange={(e) =>
+                        setRowFieldOffsetValue(selectedFineTuneRow, field.key, "y", e.target.value)
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                      onClick={() => resetRowFieldOffset(selectedFineTuneRow, field.key)}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </details>
