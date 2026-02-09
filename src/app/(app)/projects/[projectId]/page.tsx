@@ -1068,7 +1068,7 @@ export default function ProjectDetailPage() {
                   </div>
                 </div>
                 <div className="overflow-hidden rounded-lg border border-slate-200/70">
-                  <div className="relative aspect-[4/3] w-full">
+                  <div className="aspect-[4/3] w-full">
                     <iframe
                       title={project.mymaps_title || "Google My Maps"}
                       src={getMymapsEmbedUrl(project.mymaps_url)}
@@ -1076,13 +1076,6 @@ export default function ProjectDetailPage() {
                       loading="lazy"
                       referrerPolicy="no-referrer-when-downgrade"
                       allowFullScreen
-                    />
-                    <a
-                      href={project.mymaps_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="absolute inset-0"
-                      aria-label="My Maps öffnen"
                     />
                   </div>
                 </div>
