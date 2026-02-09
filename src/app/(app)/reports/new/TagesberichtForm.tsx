@@ -1845,35 +1845,61 @@ if (mode === "edit") {
                         className=""
                       />
                     </div>
-                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                      <div className="rounded-xl border border-slate-200/70 bg-white p-3">
-                        <div className="text-sm font-medium text-slate-700">Arbeitszeit</div>
-                        <div className="mt-2 space-y-3">
-                          {safeWorkTimes.slice(0, 3).map((r, i) => (
-                            <div key={i} className="grid gap-3 lg:grid-cols-[1.2fr_1fr_1fr]">
-                              <input
-                                className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
-                                value={r.name ?? ""}
-                                onChange={(e) => setTimeRowName(i, e.target.value)}
-                                placeholder="Name"
-                              />
-                              <input type="time" className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm" value={r.from ?? ""} onChange={(e) => setWorkTimeRow(i, { from: e.target.value })} />
-                              <input type="time" className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm" value={r.to ?? ""} onChange={(e) => setWorkTimeRow(i, { to: e.target.value })} />
+                    <div className="mt-3 space-y-4">
+                      {safeWorkTimes.slice(0, 3).map((r, i) => {
+                        const b = safeBreaks[i] ?? { from: "", to: "" };
+                        return (
+                          <div key={i} className="rounded-xl border border-slate-200/70 bg-white p-3">
+                            <div className="grid gap-3 lg:grid-cols-[1.1fr_1fr_1fr_1fr_1fr]">
+                              <label className="space-y-1">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Name</span>
+                                <input
+                                  className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                  value={r.name ?? ""}
+                                  onChange={(e) => setTimeRowName(i, e.target.value)}
+                                  placeholder="Name"
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Arbeitszeit von</span>
+                                <input
+                                  type="time"
+                                  className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                  value={r.from ?? ""}
+                                  onChange={(e) => setWorkTimeRow(i, { from: e.target.value })}
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Arbeitszeit bis</span>
+                                <input
+                                  type="time"
+                                  className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                  value={r.to ?? ""}
+                                  onChange={(e) => setWorkTimeRow(i, { to: e.target.value })}
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pause von</span>
+                                <input
+                                  type="time"
+                                  className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                  value={b.from ?? ""}
+                                  onChange={(e) => setBreakRow(i, { from: e.target.value })}
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pause bis</span>
+                                <input
+                                  type="time"
+                                  className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                  value={b.to ?? ""}
+                                  onChange={(e) => setBreakRow(i, { to: e.target.value })}
+                                />
+                              </label>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-slate-200/70 bg-white p-3">
-                        <div className="text-sm font-medium text-slate-700">Pausen</div>
-                        <div className="mt-2 space-y-3">
-                          {safeBreaks.slice(0, 3).map((r, i) => (
-                            <div key={i} className="grid gap-3 lg:grid-cols-2">
-                              <input type="time" className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm" value={r.from ?? ""} onChange={(e) => setBreakRow(i, { from: e.target.value })} />
-                              <input type="time" className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm" value={r.to ?? ""} onChange={(e) => setBreakRow(i, { to: e.target.value })} />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ) : null}
