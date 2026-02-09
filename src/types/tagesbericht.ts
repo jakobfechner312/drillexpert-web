@@ -78,6 +78,7 @@ export type WorkerRow = {
   ausloeseN: boolean;
   arbeitsakteNr: string;
   stunden: string[]; // 16 Kästchen
+  workCycles?: string[];
 };
 
 export type TableSectionsEnabled = {

@@ -69,6 +69,7 @@ function emptyWorker(): WorkerRow {
     ausloeseN: false,
     arbeitsakteNr: "",
     stunden: Array(16).fill(""),
+    workCycles: [""],
   };
 }
 
@@ -246,7 +247,12 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
       probenValues: typeof row?.probenValues === "object" && row?.probenValues ? row.probenValues : {},
     })
   );
-  r.workers = Array.isArray(r.workers) && r.workers.length ? r.workers : [emptyWorker()];
+  r.workers = (Array.isArray(r.workers) && r.workers.length ? r.workers : [emptyWorker()]).map((w) => {
+    const cycles = Array.isArray((w as any).workCycles) && (w as any).workCycles.length ? (w as any).workCycles : r.workCycles ?? [""];
+    const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
+    while (st.length < cycles.length) st.push("");
+    return { ...emptyWorker(), ...w, workCycles: cycles, stunden: st.slice(0, cycles.length) };
+  });
   r.umsetzenRows = Array.isArray(r.umsetzenRows) && r.umsetzenRows.length ? r.umsetzenRows : [emptyUmsetzenRow()];
   r.pegelAusbauRows =
     Array.isArray(r.pegelAusbauRows) && r.pegelAusbauRows.length ? r.pegelAusbauRows : [emptyPegelAusbauRow()];
@@ -491,7 +497,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
       return fallback;
     }
   });
-  const [customCycleDraft, setCustomCycleDraft] = useState<Record<number, string>>({});
+  const [customCycleDraft, setCustomCycleDraft] = useState<Record<string, string>>({});
   const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
   const [expandedLines, setExpandedLines] = useState<Record<string, boolean>>({});
   const [pegelSumpfEnabled, setPegelSumpfEnabled] = useState<Record<number, boolean>>({});
@@ -985,9 +991,43 @@ if (mode === "edit") {
     }
   }
 
+  const buildPdfPayload = (source: Tagesbericht): Tagesbericht => {
+    if (source.workCyclesSame) return source;
+    const workers = Array.isArray(source.workers) ? source.workers : [];
+    const union: string[] = [];
+    const pushCycle = (label: string) => {
+      const trimmed = String(label ?? "").trim();
+      if (!trimmed) return;
+      if (!union.includes(trimmed)) union.push(trimmed);
+    };
+    workers.forEach((w) => {
+      const list = Array.isArray(w.workCycles) ? w.workCycles : [];
+      list.forEach(pushCycle);
+    });
+    const cycles =
+      union.length
+        ? union
+        : Array.isArray(source.workCycles) && source.workCycles.length
+          ? source.workCycles
+          : [""];
+    const mappedWorkers = workers.map((w) => {
+      const list = Array.isArray(w.workCycles) ? w.workCycles : [];
+      const st = Array.isArray(w.stunden) ? w.stunden : [];
+      const map = new Map<string, string>();
+      list.forEach((label, idx) => {
+        const key = String(label ?? "").trim();
+        if (!key) return;
+        map.set(key, st[idx] ?? "");
+      });
+      const aligned = cycles.map((label) => map.get(label) ?? "");
+      return { ...w, stunden: aligned };
+    });
+    return { ...source, workCycles: cycles, workers: mappedWorkers };
+  };
+
   async function downloadPdfToLocal() {
     try {
-      const payload = reportRef.current;
+      const payload = buildPdfPayload(reportRef.current);
       const res = await fetch("/api/pdf/tagesbericht", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1281,11 +1321,11 @@ if (mode === "edit") {
   };
 
   async function openTestPdf() {
-    console.log("[PREVIEW payload]", report);
+    const payload = buildPdfPayload(report);
     const res = await fetch("/api/pdf/tagesbericht", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(report),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) return alert("PDF-API Fehler");
     const blob = await res.blob();
@@ -1403,6 +1443,26 @@ if (mode === "edit") {
       return { ...p, workers: rows };
     });
   }
+
+  const getWorkerCycles = (w: WorkerRow) =>
+    Array.isArray(w.workCycles) && w.workCycles.length
+      ? w.workCycles
+      : Array.isArray(report.workCycles) && report.workCycles.length
+        ? report.workCycles
+        : [""];
+
+  const setWorkerCycles = (workerIndex: number, next: string[]) => {
+    setReport((p) => {
+      const rows = Array.isArray(p.workers) && p.workers.length ? [...p.workers] : [emptyWorker()];
+      const w = rows[workerIndex] ?? emptyWorker();
+      const cycles = next.length ? next : [""];
+      const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
+      while (st.length < cycles.length) st.push("");
+      const trimmed = st.slice(0, cycles.length);
+      rows[workerIndex] = { ...w, workCycles: cycles, stunden: trimmed };
+      return { ...p, workers: rows };
+    });
+  };
 
   const parseTimeToMinutes = (value?: string | null) => {
     if (!value) return null;
@@ -2085,8 +2145,6 @@ if (mode === "edit") {
                     setReport((p) => ({
                       ...p,
                       workCyclesSame: true,
-                      workTimeRows: syncTimeRows(Array.isArray(p.workTimeRows) ? p.workTimeRows : [emptyTimeRow()]),
-                      breakRows: syncTimeRows(Array.isArray(p.breakRows) ? p.breakRows : [emptyTimeRow()]),
                     }));
                   } else {
                     setReport((p) => ({ ...p, workCyclesSame: false }));
@@ -2095,37 +2153,41 @@ if (mode === "edit") {
               />
               Alle Arbeitstakte gleich
             </label>
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Arbeitstakte</span>
-            <button
-              type="button"
-              className="rounded-lg border border-sky-200 bg-white px-2 py-1 text-xs text-sky-700 hover:bg-sky-50 disabled:opacity-50"
-              onClick={() =>
-                setReport((p) => {
-                  const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
-                  if (list.length >= 22) return p;
-                  list.push("");
-                  return { ...p, workCycles: list };
-                })
-              }
-              disabled={(Array.isArray(report.workCycles) ? report.workCycles : []).length >= 22}
-            >
-              + Takt
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-sky-200 bg-white px-2 py-1 text-xs text-sky-700 hover:bg-sky-50 disabled:opacity-50"
-              onClick={() =>
-                setReport((p) => {
-                  const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
-                  if (list.length <= 1) return { ...p, workCycles: list };
-                  list.pop();
-                  return { ...p, workCycles: list };
-                })
-              }
-              disabled={(Array.isArray(report.workCycles) ? report.workCycles : []).length <= 1}
-            >
-              – Takt
-            </button>
+            {report.workCyclesSame ? (
+              <>
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Arbeitstakte</span>
+                <button
+                  type="button"
+                  className="rounded-lg border border-sky-200 bg-white px-2 py-1 text-xs text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                  onClick={() =>
+                    setReport((p) => {
+                      const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
+                      if (list.length >= 22) return p;
+                      list.push("");
+                      return { ...p, workCycles: list };
+                    })
+                  }
+                  disabled={(Array.isArray(report.workCycles) ? report.workCycles : []).length >= 22}
+                >
+                  + Takt
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-sky-200 bg-white px-2 py-1 text-xs text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                  onClick={() =>
+                    setReport((p) => {
+                      const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
+                      if (list.length <= 1) return { ...p, workCycles: list };
+                      list.pop();
+                      return { ...p, workCycles: list };
+                    })
+                  }
+                  disabled={(Array.isArray(report.workCycles) ? report.workCycles : []).length <= 1}
+                >
+                  – Takt
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -2147,7 +2209,7 @@ if (mode === "edit") {
                         return { ...p, workCycles: list };
                       });
                       if (next !== "__custom__") {
-                        setCustomCycleDraft((p) => ({ ...p, [i]: "" }));
+                        setCustomCycleDraft((p) => ({ ...p, [`shared-${i}`]: "" }));
                       }
                     }}
                   >
@@ -2184,16 +2246,16 @@ if (mode === "edit") {
                       <input
                         className="w-full rounded border px-2 py-2 text-sm"
                         placeholder="Eigener Takt"
-                        value={customCycleDraft[i] ?? ""}
+                        value={customCycleDraft[`shared-${i}`] ?? ""}
                         onChange={(e) =>
-                          setCustomCycleDraft((p) => ({ ...p, [i]: e.target.value }))
+                          setCustomCycleDraft((p) => ({ ...p, [`shared-${i}`]: e.target.value }))
                         }
                       />
                       <button
                         type="button"
                         className="btn btn-secondary btn-xs"
                         onClick={() => {
-                          const text = (customCycleDraft[i] ?? "").trim();
+                          const text = (customCycleDraft[`shared-${i}`] ?? "").trim();
                           if (!text) return;
                           setReport((p) => {
                             const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
@@ -2211,7 +2273,7 @@ if (mode === "edit") {
                             void saveCustomWorkCycles(next);
                             return next;
                           });
-                          setCustomCycleDraft((p) => ({ ...p, [i]: "" }));
+                          setCustomCycleDraft((p) => ({ ...p, [`shared-${i}`]: "" }));
                         }}
                       >
                         Übernehmen
@@ -2237,352 +2299,181 @@ if (mode === "edit") {
           </div>
         ) : null}
 
-        <div className={`mt-4 space-y-4 xl:hidden ${report.workCyclesSame ? "hidden" : ""}`}>
-          <div className="rounded-xl border p-4 space-y-3">
-            <div className="text-sm font-semibold text-slate-800">Arbeitstakte</div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {(Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((val, i) => (
-                <div key={i} className="rounded-lg border border-slate-200/70 p-3 space-y-2">
-                  <div className="text-xs font-semibold text-slate-500">Takt {i + 1}</div>
-                  <select
-                    className="w-full rounded border px-2 py-2 text-sm"
-                    value={val ?? ""}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setReport((p) => {
-                        const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
-                        list[i] = next;
-                        return { ...p, workCycles: list };
-                      });
-                      if (next !== "__custom__") {
-                        setCustomCycleDraft((p) => ({ ...p, [i]: "" }));
-                      }
-                    }}
-                  >
-                    <option value="">Bitte wählen…</option>
-                    <option value="Transport">1 Transport</option>
-                    <option value="Einrichten und Aufstellen">2 Einrichten und Aufstellen</option>
-                    <option value="Umsetzen">3 Umsetzen</option>
-                    <option value="Rammbohren/EK-bohren">4 Rammbohren/EK-bohren</option>
-                    <option value="Kernbohren">5 Kernbohren</option>
-                    <option value="Vollbohren">6 Vollbohren</option>
-                    <option value="Hindernisse durchbohren">7 Hindernisse durchbohren</option>
-                    <option value="Schachten">8 Schachten</option>
-                    <option value="Proben/Bohrung aufnehmen">9 Proben/Bohrung aufnehmen</option>
-                    <option value="Bo. aufnehmen m. GA">10 Bo. aufnehmen m. GA</option>
-                    <option value="Pumpversuche">11 Pumpversuche</option>
-                    <option value="Bohrloch Versuche">12 Bohrloch Versuche</option>
-                    <option value="Bohrloch Verfüllung">13 Bohrloch Verfüllung</option>
-                    <option value="Pegel:einbau mit Verfüllung">14 Pegel:einbau mit Verfüllung</option>
-                    <option value="Fahrten">15 Fahrten</option>
-                    <option value="Bohrstelle räumen, Flurschäden beseitigen">16 Bohrstelle räumen, Flurschäden beseitigen</option>
-                    <option value="Baustelle räumen">17 Baustelle räumen</option>
-                    <option value="Werkstatt/Laden">18 Werkstatt/Laden</option>
-                    <option value="Geräte-Pflege/Reparatur">19 Geräte-Pflege/Reparatur</option>
-                    <option value="Kampfmittel">20 Kampfmittel</option>
-                    <option value="Wasser fahren">21 Wasser fahren</option>
-                    <option value="Platten legen">22 Platten legen</option>
-                    {customWorkCycles.map((c, idx) => (
-                      <option key={`custom-${c}`} value={c}>{23 + idx} {c}</option>
-                    ))}
-                    <option value="__custom__">Eigener Takt…</option>
-                  </select>
-                  {val === "__custom__" ? (
+        {!report.workCyclesSame ? (
+          <div className="mt-4 space-y-4">
+            {safeWorkers.map((w, idx) => {
+              const taktStr = getTaktHoursStringForWorker(w);
+              const timeStr = getTimeHoursStringForWorker(idx);
+              const invalid = hasInvalidStunden(w);
+              const matches = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr === timeStr;
+              const mismatch = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr !== timeStr;
+              const workerCycles = getWorkerCycles(w);
+              return (
+                <div key={idx} className="rounded-xl border p-4 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-slate-800">
+                      {w.name?.trim() ? w.name : `Arbeiter ${idx + 1}`}
+                    </div>
                     <div className="flex items-center gap-2">
-                      <input
-                        className="w-full rounded border px-2 py-2 text-sm"
-                        placeholder="Eigener Takt"
-                        value={customCycleDraft[i] ?? ""}
-                        onChange={(e) =>
-                          setCustomCycleDraft((p) => ({ ...p, [i]: e.target.value }))
-                        }
-                      />
+                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Arbeitstakte</span>
                       <button
                         type="button"
-                        className="btn btn-secondary btn-xs"
+                        className="rounded-lg border border-sky-200 bg-white px-2 py-1 text-xs text-sky-700 hover:bg-sky-50 disabled:opacity-50"
                         onClick={() => {
-                          const text = (customCycleDraft[i] ?? "").trim();
-                          if (!text) return;
-                          setReport((p) => {
-                            const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
-                            list[i] = text;
-                            return { ...p, workCycles: list };
-                          });
-                          setCustomWorkCycles((prev) => {
-                            const exists = prev.some((v) => v.toLowerCase() === text.toLowerCase());
-                            if (exists) return prev;
-                            if (prev.length >= MAX_CUSTOM_WORK_CYCLES) {
-                              alert(`Maximal ${MAX_CUSTOM_WORK_CYCLES} eigene Arbeitstakte erlaubt.`);
-                              return prev;
-                            }
-                            const next = [...prev, text];
-                            void saveCustomWorkCycles(next);
-                            return next;
-                          });
-                          setCustomCycleDraft((p) => ({ ...p, [i]: "" }));
+                          const next = [...workerCycles, ""];
+                          if (next.length > 22) return;
+                          setWorkerCycles(idx, next);
                         }}
+                        disabled={workerCycles.length >= 22}
                       >
-                        Übernehmen
+                        + Takt
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-sky-200 bg-white px-2 py-1 text-xs text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                        onClick={() => {
+                          if (workerCycles.length <= 1) return;
+                          setWorkerCycles(idx, workerCycles.slice(0, -1));
+                        }}
+                        disabled={workerCycles.length <= 1}
+                      >
+                        – Takt
                       </button>
                     </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </div>
+                  </div>
 
-          {safeWorkers.map((w, idx) => {
-            const taktStr = getTaktHoursStringForWorker(w);
-            const timeStr = getTimeHoursStringForWorker(idx);
-            const invalid = hasInvalidStunden(w);
-            const matches = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr === timeStr;
-            const mismatch = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr !== timeStr;
-            return (
-            <div key={idx} className="rounded-xl border p-4 space-y-4">
-              <div className="text-sm font-semibold text-slate-800">Arbeiter {idx + 1}</div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1">
-                  <span className="text-xs text-slate-500">Name</span>
-                  <input className="w-full rounded border px-2 py-2 text-sm" value={w.name ?? ""} onChange={(e) => setWorker(idx, { name: e.target.value })} />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs text-slate-500">Reine Std.</span>
-                  <input className={`w-full rounded border px-2 py-2 text-sm ${invalid ? "bg-rose-50 border-rose-300" : matches ? "bg-emerald-50 border-emerald-300" : mismatch ? "bg-rose-50 border-rose-300" : "bg-slate-50"}`} value={w.reineArbeitsStd ?? ""} readOnly />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs text-slate-500">Wochenend</span>
-                  <input className="w-full rounded border px-2 py-2 text-sm" value={w.wochenendfahrt ?? ""} onChange={(e) => setWorker(idx, { wochenendfahrt: e.target.value })} />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs text-slate-500">Ausfall</span>
-                  <input className="w-full rounded border px-2 py-2 text-sm" value={w.ausfallStd ?? ""} onChange={(e) => setWorker(idx, { ausfallStd: e.target.value })} />
-                </label>
-              </div>
-
-              <div className="flex items-center gap-4 text-sm">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={!!w.ausloeseT} onChange={(e) => setWorker(idx, { ausloeseT: e.target.checked })} />
-                  Auslöse T
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={!!w.ausloeseN} onChange={(e) => setWorker(idx, { ausloeseN: e.target.checked })} />
-                  Auslöse N
-                </label>
-              </div>
-
-              {!report.workCyclesSame ? (
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold text-slate-500">Stunden je Takt</div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {(Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((val, j) => (
-                      <label key={j} className="space-y-1">
-                        <span className="text-xs text-slate-500">Takt {j + 1}{val ? ` – ${val}` : ""}</span>
-                        <input
-                          className={`w-full rounded border px-2 py-2 text-sm ${isQuarterInput((Array.isArray(w.stunden) ? w.stunden[j] : "") ?? "") ? "" : "border-rose-400 bg-rose-50"}`}
-                          value={(Array.isArray(w.stunden) ? w.stunden[j] : "") ?? ""}
-                          onChange={(e) => {
-                            const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
-                            while (st.length < (Array.isArray(report.workCycles) ? report.workCycles.length : 1)) st.push("");
-                            st[j] = e.target.value;
-                            setWorker(idx, { stunden: st });
-                          }}
-                          placeholder="Std."
-                        />
-                      </label>
-                    ))}
+                    <label className="space-y-1">
+                      <span className="text-xs text-slate-500">Reine Std.</span>
+                      <input className={`w-full rounded border px-2 py-2 text-sm ${invalid ? "bg-rose-50 border-rose-300" : matches ? "bg-emerald-50 border-emerald-300" : mismatch ? "bg-rose-50 border-rose-300" : "bg-slate-50"}`} value={w.reineArbeitsStd ?? ""} readOnly />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs text-slate-500">Wochenend</span>
+                      <input className="w-full rounded border px-2 py-2 text-sm" value={w.wochenendfahrt ?? ""} onChange={(e) => setWorker(idx, { wochenendfahrt: e.target.value })} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs text-slate-500">Ausfall</span>
+                      <input className="w-full rounded border px-2 py-2 text-sm" value={w.ausfallStd ?? ""} onChange={(e) => setWorker(idx, { ausfallStd: e.target.value })} />
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-sm">
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={!!w.ausloeseT} onChange={(e) => setWorker(idx, { ausloeseT: e.target.checked })} />
+                      Auslöse T
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={!!w.ausloeseN} onChange={(e) => setWorker(idx, { ausloeseN: e.target.checked })} />
+                      Auslöse N
+                    </label>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-slate-500">Arbeitstakte je Arbeiter</div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {workerCycles.map((val, j) => (
+                        <div key={j} className="rounded-lg border border-slate-200/70 p-3 space-y-2">
+                          <div className="text-xs font-semibold text-slate-500">Takt {j + 1}</div>
+                          <select
+                            className="w-full rounded border px-2 py-2 text-sm"
+                            value={val ?? ""}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              const list = [...workerCycles];
+                              list[j] = next;
+                              setWorkerCycles(idx, list);
+                              if (next !== "__custom__") {
+                                setCustomCycleDraft((p) => ({ ...p, [`w${idx}-${j}`]: "" }));
+                              }
+                            }}
+                          >
+                            <option value="">Bitte wählen…</option>
+                            <option value="Transport">1 Transport</option>
+                            <option value="Einrichten und Aufstellen">2 Einrichten und Aufstellen</option>
+                            <option value="Umsetzen">3 Umsetzen</option>
+                            <option value="Rammbohren/EK-bohren">4 Rammbohren/EK-bohren</option>
+                            <option value="Kernbohren">5 Kernbohren</option>
+                            <option value="Vollbohren">6 Vollbohren</option>
+                            <option value="Hindernisse durchbohren">7 Hindernisse durchbohren</option>
+                            <option value="Schachten">8 Schachten</option>
+                            <option value="Proben/Bohrung aufnehmen">9 Proben/Bohrung aufnehmen</option>
+                            <option value="Bo. aufnehmen m. GA">10 Bo. aufnehmen m. GA</option>
+                            <option value="Pumpversuche">11 Pumpversuche</option>
+                            <option value="Bohrloch Versuche">12 Bohrloch Versuche</option>
+                            <option value="Bohrloch Verfüllung">13 Bohrloch Verfüllung</option>
+                            <option value="Pegel:einbau mit Verfüllung">14 Pegel:einbau mit Verfüllung</option>
+                            <option value="Fahrten">15 Fahrten</option>
+                            <option value="Bohrstelle räumen, Flurschäden beseitigen">16 Bohrstelle räumen, Flurschäden beseitigen</option>
+                            <option value="Baustelle räumen">17 Baustelle räumen</option>
+                            <option value="Werkstatt/Laden">18 Werkstatt/Laden</option>
+                            <option value="Geräte-Pflege/Reparatur">19 Geräte-Pflege/Reparatur</option>
+                            <option value="Kampfmittel">20 Kampfmittel</option>
+                            <option value="Wasser fahren">21 Wasser fahren</option>
+                            <option value="Platten legen">22 Platten legen</option>
+                            {customWorkCycles.map((c, idx2) => (
+                              <option key={`custom-${c}`} value={c}>{23 + idx2} {c}</option>
+                            ))}
+                            <option value="__custom__">Eigener Takt…</option>
+                          </select>
+                          {val === "__custom__" ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                className="w-full rounded border px-2 py-2 text-sm"
+                                placeholder="Eigener Takt"
+                                value={customCycleDraft[`w${idx}-${j}`] ?? ""}
+                                onChange={(e) =>
+                                  setCustomCycleDraft((p) => ({ ...p, [`w${idx}-${j}`]: e.target.value }))
+                                }
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-xs"
+                                onClick={() => {
+                                  const text = (customCycleDraft[`w${idx}-${j}`] ?? "").trim();
+                                  if (!text) return;
+                                  const list = [...workerCycles];
+                                  list[j] = text;
+                                  setWorkerCycles(idx, list);
+                                  setCustomWorkCycles((prev) => {
+                                    const exists = prev.some((v) => v.toLowerCase() === text.toLowerCase());
+                                    if (exists) return prev;
+                                    if (prev.length >= MAX_CUSTOM_WORK_CYCLES) {
+                                      alert(`Maximal ${MAX_CUSTOM_WORK_CYCLES} eigene Arbeitstakte erlaubt.`);
+                                      return prev;
+                                    }
+                                    const next = [...prev, text];
+                                    void saveCustomWorkCycles(next);
+                                    return next;
+                                  });
+                                  setCustomCycleDraft((p) => ({ ...p, [`w${idx}-${j}`]: "" }));
+                                }}
+                              >
+                                Übernehmen
+                              </button>
+                            </div>
+                          ) : null}
+                          <div className="space-y-1">
+                            <div className="text-xs text-slate-500">Stunden</div>
+                            <input
+                              className={`w-full rounded border px-2 py-2 text-sm ${isQuarterInput((Array.isArray(w.stunden) ? w.stunden[j] : "") ?? "") ? "" : "border-rose-400 bg-rose-50"}`}
+                              value={(Array.isArray(w.stunden) ? w.stunden[j] : "") ?? ""}
+                              onChange={(e) => {
+                                const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
+                                while (st.length < workerCycles.length) st.push("");
+                                st[j] = e.target.value;
+                                setWorker(idx, { stunden: st });
+                              }}
+                              placeholder="Std."
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              ) : null}
-            </div>
-          )})}
-        </div>
-
-        {!report.workCyclesSame ? (
-        <div className="mt-4 hidden xl:block overflow-x-auto rounded-xl border">
-          <div className="min-w-[840px] w-full">
-            <div
-              className="grid w-full border-b text-[12px] font-medium text-slate-600"
-              style={{
-                gridTemplateColumns: `220px 80px 80px 80px 50px 50px repeat(${Math.max(
-                  1,
-                  (Array.isArray(report.workCycles) ? report.workCycles : []).length
-                )}, minmax(140px,1fr))`,
-              }}
-            >
-              <div className="border-b border-r px-2 py-1" />
-              <div className="border-b border-r px-2 py-1" />
-              <div className="border-b border-r px-2 py-1" />
-              <div className="border-b border-r px-2 py-1" />
-              <div className="border-b border-r px-2 py-1 text-center" style={{ gridColumn: "span 2" }}>
-                Auslöse
-              </div>
-              {(Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((_, i) => (
-                <div key={i} className="border-b border-r px-2 py-1 text-center text-[11px] font-semibold text-slate-500">
-                  {i + 1}
-                </div>
-              ))}
-            </div>
-            <div
-              className="grid w-full border-b text-[12px] font-medium text-slate-600"
-              style={{
-                gridTemplateColumns: `220px 80px 80px 80px 50px 50px repeat(${Math.max(
-                  1,
-                  (Array.isArray(report.workCycles) ? report.workCycles : []).length
-                )}, minmax(120px,1fr))`,
-              }}
-            >
-              <div className="border-b border-r px-2 py-2">Name</div>
-              <div className="border-b border-r px-2 py-2">Reine Std.</div>
-              <div className="border-b border-r px-2 py-2">Wochenend</div>
-              <div className="border-b border-r px-2 py-2">Ausfall</div>
-              <div className="border-b border-r px-2 py-2 text-center">T</div>
-              <div className="border-b border-r px-2 py-2 text-center">N</div>
-              {(Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((val, i) => (
-                <div key={i} className="border-b border-r px-2 py-1">
-                  <select
-                    className="w-full rounded border px-1 py-1 text-[11px]"
-                    value={val ?? ""}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setReport((p) => {
-                        const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
-                        list[i] = next;
-                        return { ...p, workCycles: list };
-                      });
-                      if (next !== "__custom__") {
-                        setCustomCycleDraft((p) => ({ ...p, [i]: "" }));
-                      }
-                    }}
-                  >
-                    <option value="">Bitte wählen…</option>
-                    <option value="Transport">1 Transport</option>
-                    <option value="Einrichten und Aufstellen">2 Einrichten und Aufstellen</option>
-                    <option value="Umsetzen">3 Umsetzen</option>
-                    <option value="Rammbohren/EK-bohren">4 Rammbohren/EK-bohren</option>
-                    <option value="Kernbohren">5 Kernbohren</option>
-                    <option value="Vollbohren">6 Vollbohren</option>
-                    <option value="Hindernisse durchbohren">7 Hindernisse durchbohren</option>
-                    <option value="Schachten">8 Schachten</option>
-                    <option value="Proben/Bohrung aufnehmen">9 Proben/Bohrung aufnehmen</option>
-                    <option value="Bo. aufnehmen m. GA">10 Bo. aufnehmen m. GA</option>
-                    <option value="Pumpversuche">11 Pumpversuche</option>
-                    <option value="Bohrloch Versuche">12 Bohrloch Versuche</option>
-                    <option value="Bohrloch Verfüllung">13 Bohrloch Verfüllung</option>
-                    <option value="Pegel:einbau mit Verfüllung">14 Pegel:einbau mit Verfüllung</option>
-                    <option value="Fahrten">15 Fahrten</option>
-                    <option value="Bohrstelle räumen, Flurschäden beseitigen">16 Bohrstelle räumen, Flurschäden beseitigen</option>
-                    <option value="Baustelle räumen">17 Baustelle räumen</option>
-                    <option value="Werkstatt/Laden">18 Werkstatt/Laden</option>
-                    <option value="Geräte-Pflege/Reparatur">19 Geräte-Pflege/Reparatur</option>
-                    <option value="Kampfmittel">20 Kampfmittel</option>
-                    <option value="Wasser fahren">21 Wasser fahren</option>
-                    <option value="Platten legen">22 Platten legen</option>
-                    {customWorkCycles.map((c, idx) => (
-                      <option key={`custom-${c}`} value={c}>{23 + idx} {c}</option>
-                    ))}
-                    <option value="__custom__">Eigener Takt…</option>
-                  </select>
-                  {val === "__custom__" ? (
-                    <div className="mt-1 flex items-center gap-1">
-                      <input
-                        className="w-full rounded border px-2 py-1 text-[11px]"
-                        placeholder="Eigener Takt"
-                        value={customCycleDraft[i] ?? ""}
-                        onChange={(e) =>
-                          setCustomCycleDraft((p) => ({ ...p, [i]: e.target.value }))
-                        }
-                      />
-                      <button
-                        type="button"
-                        className="rounded border border-sky-200 bg-white px-2 py-1 text-[11px] text-sky-700 hover:bg-sky-50"
-                        onClick={() => {
-                          const text = (customCycleDraft[i] ?? "").trim();
-                          if (!text) return;
-                          setReport((p) => {
-                            const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
-                            list[i] = text;
-                            return { ...p, workCycles: list };
-                          });
-                          setCustomWorkCycles((prev) => {
-                            const exists = prev.some((v) => v.toLowerCase() === text.toLowerCase());
-                            if (exists) return prev;
-                            if (prev.length >= MAX_CUSTOM_WORK_CYCLES) {
-                              alert(`Maximal ${MAX_CUSTOM_WORK_CYCLES} eigene Arbeitstakte erlaubt.`);
-                              return prev;
-                            }
-                            const next = [...prev, text];
-                            void saveCustomWorkCycles(next);
-                            return next;
-                          });
-                          setCustomCycleDraft((p) => ({ ...p, [i]: "" }));
-                        }}
-                      >
-                        Übernehmen
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-
-            {safeWorkers.map((w, idx) => {
-            const taktStr = getTaktHoursStringForWorker(w);
-            const timeStr = getTimeHoursStringForWorker(idx);
-            const invalid = hasInvalidStunden(w);
-            const matches = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr === timeStr;
-            const mismatch = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr !== timeStr;
-              return (
-              <div
-                key={idx}
-                className="grid w-full text-[12px]"
-                style={{
-                  gridTemplateColumns: `220px 80px 80px 80px 50px 50px repeat(${Math.max(
-                    1,
-                    (Array.isArray(report.workCycles) ? report.workCycles : []).length
-                  )}, minmax(120px,1fr))`,
-                }}
-              >
-                <div className="border-b border-r px-2 py-1">
-                  <input className="w-full rounded border px-2 py-1 text-[12px]" value={w.name ?? ""} onChange={(e) => setWorker(idx, { name: e.target.value })} />
-                </div>
-                <div className="border-b border-r px-2 py-1">
-                  <input className={`w-full rounded border px-2 py-1 text-center text-[12px] ${invalid ? "bg-rose-50 border-rose-300" : matches ? "bg-emerald-50 border-emerald-300" : mismatch ? "bg-rose-50 border-rose-300" : "bg-slate-50"}`} value={w.reineArbeitsStd ?? ""} readOnly />
-                </div>
-                <div className="border-b border-r px-2 py-1">
-                  <input className="w-full rounded border px-2 py-1 text-center text-[12px]" value={w.wochenendfahrt ?? ""} onChange={(e) => setWorker(idx, { wochenendfahrt: e.target.value })} />
-                </div>
-                <div className="border-b border-r px-2 py-1">
-                  <input className="w-full rounded border px-2 py-1 text-center text-[12px]" value={w.ausfallStd ?? ""} onChange={(e) => setWorker(idx, { ausfallStd: e.target.value })} />
-                </div>
-                <div className="border-b border-r flex items-center justify-center">
-                  <input type="checkbox" checked={!!w.ausloeseT} onChange={(e) => setWorker(idx, { ausloeseT: e.target.checked })} />
-                </div>
-                <div className="border-b border-r flex items-center justify-center">
-                  <input type="checkbox" checked={!!w.ausloeseN} onChange={(e) => setWorker(idx, { ausloeseN: e.target.checked })} />
-                </div>
-                {!report.workCyclesSame
-                  ? (Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((_, j) => (
-                      <div key={j} className="border-b border-r px-2 py-1">
-                        <input
-                          className={`w-full rounded border px-1 py-1 text-center text-[12px] ${isQuarterInput((Array.isArray(w.stunden) ? w.stunden[j] : "") ?? "") ? "" : "border-rose-400 bg-rose-50"}`}
-                          value={(Array.isArray(w.stunden) ? w.stunden[j] : "") ?? ""}
-                          onChange={(e) => {
-                            const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
-                            while (st.length < (Array.isArray(report.workCycles) ? report.workCycles.length : 1)) st.push("");
-                            st[j] = e.target.value;
-                            setWorker(idx, { stunden: st });
-                          }}
-                          placeholder="Std."
-                        />
-                      </div>
-                    ))
-                  : (Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((_, j) => (
-                      <div key={j} className="border-b border-r px-2 py-1" />
-                    ))}
-              </div>
-            )})}
+              );
+            })}
           </div>
-        </div>
         ) : null}
       </GroupCard> : null}
 

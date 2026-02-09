@@ -88,6 +88,7 @@ export function createDefaultTagesbericht(): Tagesbericht {
         ausloeseN: false,
         arbeitsakteNr: "",
         stunden: Array(16).fill(""),
+        workCycles: [""],
       },
     ],
 
