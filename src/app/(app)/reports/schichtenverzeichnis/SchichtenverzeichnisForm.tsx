@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
 import { useDraftActions } from "@/components/DraftActions";
+import { SV_FIELDS } from "@/lib/pdf/schichtenverzeichnis.mapping";
 
 type FormData = Record<string, string>;
 type SchichtRow = {
@@ -31,6 +32,8 @@ type GroundwaterRow = {
   uk_verrohrg: string;
   bohrtiefe: string;
 };
+
+type FieldOffsetXY = { x: string; y: string };
 
 const MAX_FESTSTELLUNGEN_CHARS = 200;
 
@@ -226,6 +229,7 @@ export default function SchichtenverzeichnisForm({
     proben_nr: "0",
     proben_tiefe: "0",
   });
+  const [fieldOffsetsPage1, setFieldOffsetsPage1] = useState<Record<string, FieldOffsetXY>>({});
   const useStepper = stepper;
   const steps = useMemo(
     () => [
@@ -241,6 +245,64 @@ export default function SchichtenverzeichnisForm({
     []
   );
   const [stepIndex, setStepIndex] = useState(0);
+  const page1PdfFields = useMemo(
+    () =>
+      SV_FIELDS.filter((field) => field.page === 1).map((field) => ({
+        key: field.key,
+        label: field.label ?? field.key,
+      })),
+    []
+  );
+  const fieldOffsetsPage1Payload = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(fieldOffsetsPage1).map(([key, value]) => [
+          key,
+          {
+            x: Number(value.x) || 0,
+            y: Number(value.y) || 0,
+          },
+        ])
+      ),
+    [fieldOffsetsPage1]
+  );
+  const setFieldOffsetValue = useCallback(
+    (fieldKey: string, axis: "x" | "y", value: string) => {
+      setFieldOffsetsPage1((prev) => {
+        const current = prev[fieldKey] ?? { x: "0", y: "0" };
+        return {
+          ...prev,
+          [fieldKey]: {
+            ...current,
+            [axis]: value,
+          },
+        };
+      });
+    },
+    []
+  );
+  const adjustFieldOffset = useCallback(
+    (fieldKey: string, axis: "x" | "y", delta: number) => {
+      setFieldOffsetsPage1((prev) => {
+        const current = prev[fieldKey] ?? { x: "0", y: "0" };
+        const nextValue = (Number(current[axis]) || 0) + delta;
+        return {
+          ...prev,
+          [fieldKey]: {
+            ...current,
+            [axis]: String(nextValue),
+          },
+        };
+      });
+    },
+    []
+  );
+  const resetFieldOffset = useCallback((fieldKey: string) => {
+    setFieldOffsetsPage1((prev) => ({
+      ...prev,
+      [fieldKey]: { x: "0", y: "0" },
+    }));
+  }, []);
   const stepProgress = useMemo(() => {
     const progress = [
       {
@@ -517,6 +579,20 @@ export default function SchichtenverzeichnisForm({
       if (db?.schicht_rows_per_page_2 != null) setSchichtRowsPerPage2(String(db.schicht_rows_per_page_2));
       if (db?.schicht_x_offsets_page_1 != null) setSchichtXOffsetsPage1((prev) => ({ ...prev, ...db.schicht_x_offsets_page_1 }));
       if (db?.schicht_x_offsets_page_2 != null) setSchichtXOffsetsPage2((prev) => ({ ...prev, ...db.schicht_x_offsets_page_2 }));
+      if (db?.field_offsets_page_1 != null && typeof db.field_offsets_page_1 === "object") {
+        const normalized = Object.fromEntries(
+          Object.entries(db.field_offsets_page_1 as Record<string, { x?: number | string; y?: number | string }>).map(
+            ([key, value]) => [
+              key,
+              {
+                x: String(Number(value?.x) || 0),
+                y: String(Number(value?.y) || 0),
+              },
+            ]
+          )
+        );
+        setFieldOffsetsPage1(normalized);
+      }
       if (db?.schicht_row_offsets_page_2 != null && Array.isArray(db.schicht_row_offsets_page_2)) {
         setSchichtRowOffsetsPage2(db.schicht_row_offsets_page_2.map((v: number | string) => String(v ?? "0")));
       }
@@ -567,6 +643,7 @@ export default function SchichtenverzeichnisForm({
           schicht_x_offsets_page_2: Object.fromEntries(
             Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
           ),
+          field_offsets_page_1: fieldOffsetsPage1Payload,
           schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
         };
 
@@ -643,6 +720,7 @@ export default function SchichtenverzeichnisForm({
     schichtRowsPerPage2,
     schichtXOffsetsPage1,
     schichtXOffsetsPage2,
+    fieldOffsetsPage1Payload,
     schichtRowOffsetsPage2,
     ensureSaveTarget,
     setSaveDraftHandler,
@@ -673,6 +751,20 @@ export default function SchichtenverzeichnisForm({
       }
       if (saved.xOffsetsPage2 != null) {
         setSchichtXOffsetsPage2((prev) => ({ ...prev, ...saved.xOffsetsPage2 }));
+      }
+      if (saved.fieldOffsetsPage1 != null && typeof saved.fieldOffsetsPage1 === "object") {
+        const normalized = Object.fromEntries(
+          Object.entries(saved.fieldOffsetsPage1 as Record<string, { x?: number | string; y?: number | string }>).map(
+            ([key, value]) => [
+              key,
+              {
+                x: String(Number(value?.x) || 0),
+                y: String(Number(value?.y) || 0),
+              },
+            ]
+          )
+        );
+        setFieldOffsetsPage1(normalized);
       }
       if (saved.xOffsets != null && saved.xOffsetsPage2 == null) {
         setSchichtXOffsetsPage2((prev) => ({ ...prev, ...saved.xOffsets }));
@@ -706,6 +798,7 @@ export default function SchichtenverzeichnisForm({
           rowsPerPage2: Number(schichtRowsPerPage2) || 8,
           xOffsetsPage1: schichtXOffsetsPage1,
           xOffsetsPage2: schichtXOffsetsPage2,
+          fieldOffsetsPage1: fieldOffsetsPage1Payload,
           rowOffsetsPage2: schichtRowOffsetsPage2,
           gridStep: Number(gridStep) || 50,
           showGrid,
@@ -724,6 +817,7 @@ export default function SchichtenverzeichnisForm({
     schichtRowsPerPage2,
     schichtXOffsetsPage1,
     schichtXOffsetsPage2,
+    fieldOffsetsPage1Payload,
     schichtRowOffsetsPage2,
     gridStep,
     showGrid,
@@ -764,6 +858,20 @@ export default function SchichtenverzeichnisForm({
       if (saved.xOffsetsPage2 != null) {
         setSchichtXOffsetsPage2((prev) => ({ ...prev, ...saved.xOffsetsPage2 }));
       }
+      if (saved.fieldOffsetsPage1 != null && typeof saved.fieldOffsetsPage1 === "object") {
+        const normalized = Object.fromEntries(
+          Object.entries(saved.fieldOffsetsPage1 as Record<string, { x?: number | string; y?: number | string }>).map(
+            ([key, value]) => [
+              key,
+              {
+                x: String(Number(value?.x) || 0),
+                y: String(Number(value?.y) || 0),
+              },
+            ]
+          )
+        );
+        setFieldOffsetsPage1(normalized);
+      }
       if (saved.xOffsets != null) {
         setSchichtXOffsetsPage1((prev) => ({ ...prev, ...saved.xOffsets }));
         setSchichtXOffsetsPage2((prev) => ({ ...prev, ...saved.xOffsets }));
@@ -791,6 +899,7 @@ export default function SchichtenverzeichnisForm({
     rowsPerPage2: Number(schichtRowsPerPage2) || 8,
     xOffsetsPage1: schichtXOffsetsPage1,
     xOffsetsPage2: schichtXOffsetsPage2,
+    fieldOffsetsPage1: fieldOffsetsPage1Payload,
     rowOffsetsPage2: schichtRowOffsetsPage2,
     gridStep: Number(gridStep) || 50,
     showGrid,
@@ -842,6 +951,7 @@ export default function SchichtenverzeichnisForm({
         schicht_x_offsets_page_2: Object.fromEntries(
           Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
         ),
+        field_offsets_page_1: fieldOffsetsPage1Payload,
         schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
       };
       const res = await fetch(`/api/pdf/schichtenverzeichnis?${params.toString()}`, {
@@ -885,6 +995,7 @@ export default function SchichtenverzeichnisForm({
         schicht_x_offsets_page_2: Object.fromEntries(
           Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
         ),
+        field_offsets_page_1: fieldOffsetsPage1Payload,
         schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
       };
 
@@ -1199,6 +1310,77 @@ export default function SchichtenverzeichnisForm({
           </label>
         </div>
       </header>
+      <details className="rounded-2xl border border-slate-200/70 bg-white shadow-sm">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-slate-700">
+          Seite 1 Feld-Feinjustierung (X / Y)
+        </summary>
+        <div className="border-t border-slate-200/70 px-4 py-4">
+          <div className="mb-3 text-xs text-slate-500">
+            Pro Feld kannst du X und Y direkt mit ±10 verschieben.
+          </div>
+          <div className="grid gap-2">
+            {page1PdfFields.map((field) => {
+              const value = fieldOffsetsPage1[field.key] ?? { x: "0", y: "0" };
+              return (
+                <div
+                  key={field.key}
+                  className="grid items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/40 p-2 md:grid-cols-[1.3fr_auto_auto_auto_auto_auto_auto_auto_auto]"
+                >
+                  <div className="min-w-0 text-xs font-semibold text-slate-700">
+                    <span className="truncate">{field.label}</span>
+                    <span className="ml-2 text-[10px] text-slate-400">{field.key}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                    onClick={() => adjustFieldOffset(field.key, "x", -10)}
+                  >
+                    X -10
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                    onClick={() => adjustFieldOffset(field.key, "x", 10)}
+                  >
+                    X +10
+                  </button>
+                  <input
+                    className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
+                    value={value.x}
+                    onChange={(e) => setFieldOffsetValue(field.key, "x", e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                    onClick={() => adjustFieldOffset(field.key, "y", -10)}
+                  >
+                    Y -10
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                    onClick={() => adjustFieldOffset(field.key, "y", 10)}
+                  >
+                    Y +10
+                  </button>
+                  <input
+                    className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
+                    value={value.y}
+                    onChange={(e) => setFieldOffsetValue(field.key, "y", e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                    onClick={() => resetFieldOffset(field.key)}
+                  >
+                    Reset
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </details>
 
       {showStep(0)
         ? renderStep(

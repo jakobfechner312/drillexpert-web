@@ -6,6 +6,7 @@ import { SV_FIELDS } from "@/lib/pdf/schichtenverzeichnis.mapping";
 type GenerateOptions = {
   debugGrid?: boolean;
   debugGridStep?: number;
+  debugGridPage?: number;
   markers?: Array<{
     page: number;
     x: number;
@@ -94,7 +95,12 @@ export async function generateSchichtenverzeichnisPdf(
 
   if (options.debugGrid) {
     const step = options.debugGridStep ?? 50;
-    pages.forEach((page) => drawGrid(page, font, step));
+    if (options.debugGridPage && options.debugGridPage >= 1) {
+      const page = pages[Math.max(0, Math.min(pages.length - 1, options.debugGridPage - 1))];
+      if (page) drawGrid(page, font, step);
+    } else {
+      pages.forEach((page) => drawGrid(page, font, step));
+    }
   }
 
   if (options.markers && options.markers.length) {
@@ -204,6 +210,13 @@ export async function generateSchichtenverzeichnisPdf(
   };
 
   const fieldMap = new Map(SV_FIELDS.map((f) => [f.key, f]));
+  const fieldOffsetsPage1 =
+    (data?.field_offsets_page_1 as Record<string, { x?: number | string; y?: number | string }>) ||
+    {};
+  const getPage1FieldOffset = (fieldKey: string, axis: "x" | "y") => {
+    const raw = fieldOffsetsPage1?.[fieldKey]?.[axis];
+    return Number(raw) || 0;
+  };
   const hasRowData = Array.isArray(data?.schicht_rows) && data.schicht_rows.length > 0;
   const skipKeys = new Set([
     "schicht_a1",
@@ -236,7 +249,9 @@ export async function generateSchichtenverzeichnisPdf(
       field.aliases?.map((k) => data?.[k]).find((v) => v != null);
     const text = value == null ? "" : String(value);
     if (!text) return;
-    drawText(pageIndex, text, field.x, field.y, field.size ?? 10);
+    const x = field.x + (pageIndex === 0 ? getPage1FieldOffset(field.key, "x") : 0);
+    const y = field.y + (pageIndex === 0 ? getPage1FieldOffset(field.key, "y") : 0);
+    drawText(pageIndex, text, x, y, field.size ?? 10);
   });
 
   if (hasRowData) {
@@ -306,8 +321,14 @@ export async function generateSchichtenverzeichnisPdf(
           drawText(
             pageIndex,
             text,
-            ansatzField.x + pageXOffset + getXOffset("ansatzpunkt_bis", pageIndex),
-            ansatzField.y + pageStartOffset - yOffset,
+            ansatzField.x +
+              pageXOffset +
+              getXOffset("ansatzpunkt_bis", pageIndex) +
+              (pageIndex === 0 ? getPage1FieldOffset("schicht_ansatzpunkt_bis", "x") : 0),
+            ansatzField.y +
+              pageStartOffset -
+              yOffset +
+              (pageIndex === 0 ? getPage1FieldOffset("schicht_ansatzpunkt_bis", "y") : 0),
             ansatzField.size ?? 10
           );
         }
@@ -319,15 +340,26 @@ export async function generateSchichtenverzeichnisPdf(
         const text = value == null ? "" : String(value);
         if (!text) return;
         if (fieldKey === "feststellungen" && festField && probenArtField) {
-          const festX = festField.x + pageXOffset + getXOffset("feststellungen", pageIndex);
-          const probenX = probenArtField.x + pageXOffset + getXOffset("proben_art", pageIndex);
+          const festX =
+            festField.x +
+            pageXOffset +
+            getXOffset("feststellungen", pageIndex) +
+            (pageIndex === 0 ? getPage1FieldOffset("feststellungen", "x") : 0);
+          const probenX =
+            probenArtField.x +
+            pageXOffset +
+            getXOffset("proben_art", pageIndex) +
+            (pageIndex === 0 ? getPage1FieldOffset("proben_art", "x") : 0);
           const maxWidth = Math.max(40, probenX - festX - 6);
           const maxHeight = Math.max(40, Math.min(rowHeight - 20, 120));
           drawWrappedText(
             pageIndex,
             text,
             festX,
-            festField.y + pageStartOffset - yOffset,
+            festField.y +
+              pageStartOffset -
+              yOffset +
+              (pageIndex === 0 ? getPage1FieldOffset("feststellungen", "y") : 0),
             maxWidth,
             maxHeight,
             field.size ?? 10
@@ -339,8 +371,16 @@ export async function generateSchichtenverzeichnisPdf(
             ? row.proben_tiefen.filter((v: any) => String(v ?? "").trim() !== "").slice(0, 10)
             : [];
           if (list.length) {
-            const x = field.x + pageXOffset + getXOffset(rowKey as keyof typeof rowFields, pageIndex);
-            const yTop = field.y + pageStartOffset - yOffset;
+            const x =
+              field.x +
+              pageXOffset +
+              getXOffset(rowKey as keyof typeof rowFields, pageIndex) +
+              (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "x") : 0);
+            const yTop =
+              field.y +
+              pageStartOffset -
+              yOffset +
+              (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "y") : 0);
             const maxWidth = Math.max(20, field.width);
             const maxHeight = Math.max(20, rowHeight - 10);
             const fixedSize = field.size ?? 6;
@@ -352,8 +392,16 @@ export async function generateSchichtenverzeichnisPdf(
             });
             return;
           }
-          const x = field.x + pageXOffset + getXOffset(rowKey as keyof typeof rowFields, pageIndex);
-          const yTop = field.y + pageStartOffset - yOffset;
+          const x =
+            field.x +
+            pageXOffset +
+            getXOffset(rowKey as keyof typeof rowFields, pageIndex) +
+            (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "x") : 0);
+          const yTop =
+            field.y +
+            pageStartOffset -
+            yOffset +
+            (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "y") : 0);
           const maxWidth = Math.max(20, field.width);
           const maxHeight = Math.max(20, rowHeight - 10);
           const baseSize = field.size ?? 6;
@@ -385,8 +433,14 @@ export async function generateSchichtenverzeichnisPdf(
         drawText(
           pageIndex,
           text,
-          field.x + pageXOffset + getXOffset(rowKey as keyof typeof rowFields, pageIndex),
-          field.y + pageStartOffset - yOffset,
+          field.x +
+            pageXOffset +
+            getXOffset(rowKey as keyof typeof rowFields, pageIndex) +
+            (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "x") : 0),
+          field.y +
+            pageStartOffset -
+            yOffset +
+            (pageIndex === 0 ? getPage1FieldOffset(fieldKey, "y") : 0),
           field.size ?? 10
         );
       });
@@ -417,8 +471,8 @@ export async function generateSchichtenverzeichnisPdf(
         drawText(
           field.page - 1,
           text,
-          field.x,
-          field.y - idx * gwRowH + 2,
+          field.x + (field.page === 1 ? getPage1FieldOffset(field.key, "x") : 0),
+          field.y - idx * gwRowH + 2 + (field.page === 1 ? getPage1FieldOffset(field.key, "y") : 0),
           field.size ?? 9
         );
       });
