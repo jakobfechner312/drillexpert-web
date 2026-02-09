@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
 import { useDraftActions } from "@/components/DraftActions";
 import { SV_FIELDS } from "@/lib/pdf/schichtenverzeichnis.mapping";
-import { DEFAULT_FIELD_OFFSETS_PAGE_1 } from "@/lib/pdf/schichtenverzeichnis.default-offsets";
+import {
+  DEFAULT_FIELD_OFFSETS_PAGE_1,
+  DEFAULT_ROW_FIELD_OFFSETS_PAGE_1,
+} from "@/lib/pdf/schichtenverzeichnis.default-offsets";
 
 type FormData = Record<string, string>;
 type SchichtRow = {
@@ -82,10 +85,21 @@ const buildFieldOffsetState = (
 const buildRowFieldOffsetState = (
   overrides?: Record<string, Record<string, { x?: number | string; y?: number | string }>>
 ): RowFieldOffsetMap => {
-  if (!overrides) return {};
-  const normalized: RowFieldOffsetMap = {};
+  const base = Object.fromEntries(
+    Object.entries(DEFAULT_ROW_FIELD_OFFSETS_PAGE_1).map(([rowIndex, fields]) => [
+      rowIndex,
+      Object.fromEntries(
+        Object.entries(fields).map(([fieldKey, value]) => [
+          fieldKey,
+          { x: String(value.x), y: String(value.y) },
+        ])
+      ),
+    ])
+  ) as RowFieldOffsetMap;
+  if (!overrides) return base;
+  const normalized: RowFieldOffsetMap = { ...base };
   Object.entries(overrides).forEach(([rowIndex, fields]) => {
-    normalized[rowIndex] = {};
+    normalized[rowIndex] = { ...(normalized[rowIndex] ?? {}) };
     Object.entries(fields ?? {}).forEach(([fieldKey, value]) => {
       normalized[rowIndex][fieldKey] = {
         x: String(Number(value?.x) || 0),
@@ -293,14 +307,15 @@ export default function SchichtenverzeichnisForm({
   const [fieldOffsetsPage1, setFieldOffsetsPage1] = useState<Record<string, FieldOffsetXY>>(
     () => buildFieldOffsetState()
   );
-  const [rowFieldOffsetsPage1, setRowFieldOffsetsPage1] = useState<RowFieldOffsetMap>({});
+  const [rowFieldOffsetsPage1, setRowFieldOffsetsPage1] = useState<RowFieldOffsetMap>(() =>
+    buildRowFieldOffsetState()
+  );
   const [selectedFineTuneRow, setSelectedFineTuneRow] = useState(0);
   const useStepper = stepper;
   const steps = useMemo(
     () => [
       { key: "kopf", title: "Kopf & Projekt" },
       { key: "bohrung", title: "Bohrung / Verrohrung" },
-      { key: "ansatzpunkt", title: "Ansatzpunkt & Gitter" },
       { key: "grundwasser", title: "Grundwasserstände" },
       { key: "pegel", title: "Pegelrohr / Ausbau" },
       { key: "filter", title: "Filter / Dichtung / Bohrgut" },
@@ -429,13 +444,14 @@ export default function SchichtenverzeichnisForm({
   );
   const resetRowFieldOffset = useCallback((rowIndex: number, fieldKey: string) => {
     const rowKey = String(rowIndex);
+    const fallback = DEFAULT_ROW_FIELD_OFFSETS_PAGE_1[rowKey]?.[fieldKey] ?? { x: 0, y: 0 };
     setRowFieldOffsetsPage1((prev) => {
       const row = prev[rowKey] ?? {};
       return {
         ...prev,
         [rowKey]: {
           ...row,
-          [fieldKey]: { x: "0", y: "0" },
+          [fieldKey]: { x: String(fallback.x), y: String(fallback.y) },
         },
       };
     });
@@ -457,17 +473,6 @@ export default function SchichtenverzeichnisForm({
           data.verrohr_durch_1,
         ]),
         total: 7,
-      },
-      {
-        filled: countFilled([
-          data.hoehe_ansatzpunkt,
-          data.bezogen_auf,
-          data.eingemessen_durch,
-          data.gitterwert,
-          data.gitterwert_rechts,
-          data.gitterwert_links,
-        ]),
-        total: 6,
       },
       {
         filled:
@@ -1704,39 +1709,6 @@ export default function SchichtenverzeichnisForm({
 
       {showStep(2)
         ? renderStep(
-            <Card title="Ansatzpunkt & Gitter">
-              <div className="grid gap-4 md:grid-cols-[1fr_1fr_1fr]">
-                <Field
-                  label="Höhe des Ansatzpunktes (NN)"
-                  value={data.hoehe_ansatzpunkt}
-                  onChange={(v) => update("hoehe_ansatzpunkt", v)}
-                />
-                <Field label="Bezogen auf" value={data.bezogen_auf} onChange={(v) => update("bezogen_auf", v)} />
-                <Field
-                  label="Eingemessen durch"
-                  value={data.eingemessen_durch}
-                  onChange={(v) => update("eingemessen_durch", v)}
-                />
-              </div>
-              <div className="mt-4 grid gap-4 md:grid-cols-[1fr_0.8fr_0.8fr]">
-                <Field
-                  label="Gitterwert (Rechts)"
-                  value={data.gitterwert_rechts}
-                  onChange={(v) => update("gitterwert_rechts", v)}
-                />
-                <Field
-                  label="Gitterwert (Links)"
-                  value={data.gitterwert_links}
-                  onChange={(v) => update("gitterwert_links", v)}
-                />
-                <Field label="Gitterwert (Hoch)" value={data.gitterwert} onChange={(v) => update("gitterwert", v)} />
-              </div>
-            </Card>
-          )
-        : null}
-
-      {showStep(3)
-        ? renderStep(
             <Card title="Grundwasserstände">
         <div className="flex items-center justify-between gap-3">
           <div className="text-xs text-slate-500">Max. 4 Zeilen</div>
@@ -1849,7 +1821,7 @@ export default function SchichtenverzeichnisForm({
           )
         : null}
 
-      {showStep(4)
+      {showStep(3)
         ? renderStep(
             <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
               <Card title="Pegelrohr / Ausbau">
@@ -1878,7 +1850,7 @@ export default function SchichtenverzeichnisForm({
           )
         : null}
 
-      {showStep(5)
+      {showStep(4)
         ? renderStep(
             <Card title="Filter / Dichtung / Bohrgut">
               <div className="grid gap-4 md:grid-cols-2">
@@ -1907,7 +1879,7 @@ export default function SchichtenverzeichnisForm({
           )
         : null}
 
-      {showStep(6)
+      {showStep(5)
         ? renderStep(
             <Card title="Schichtbeschreibung (Auszug)">
         <details className="rounded-xl border border-slate-200 bg-white">
@@ -2330,7 +2302,7 @@ export default function SchichtenverzeichnisForm({
           )
         : null}
 
-      {showStep(7)
+      {showStep(6)
         ? renderStep(
             <Card title="Proben / Übergabe">
               <div className="grid gap-4 md:grid-cols-4">

@@ -2,7 +2,10 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fs from "fs";
 import path from "path";
 import { SV_FIELDS } from "@/lib/pdf/schichtenverzeichnis.mapping";
-import { DEFAULT_FIELD_OFFSETS_PAGE_1 } from "@/lib/pdf/schichtenverzeichnis.default-offsets";
+import {
+  DEFAULT_FIELD_OFFSETS_PAGE_1,
+  DEFAULT_ROW_FIELD_OFFSETS_PAGE_1,
+} from "@/lib/pdf/schichtenverzeichnis.default-offsets";
 
 type GenerateOptions = {
   debugGrid?: boolean;
@@ -17,7 +20,16 @@ type GenerateOptions = {
   }>;
 };
 
-const TEMPLATE_FILES = ["SV_1.pdf", "SV_2.pdf"] as const;
+const TEMPLATE_PAGE_1 = "SV_1.pdf" as const;
+const TEMPLATE_PAGE_N = "SV_2.pdf" as const;
+const HIDDEN_FIELD_KEYS = new Set([
+  "hoehe_ansatzpunkt",
+  "bezogen_auf",
+  "gitterwert",
+  "gitterwert_rechts",
+  "gitterwert_links",
+  "eingemessen_durch",
+]);
 
 function getTemplatePath(fileName: string) {
   return path.join(process.cwd(), "public", "templates", fileName);
@@ -79,19 +91,44 @@ export async function generateSchichtenverzeichnisPdf(
   const outDoc = await PDFDocument.create();
   const font = await outDoc.embedFont(StandardFonts.Helvetica);
 
+  const hasRowData = Array.isArray(data?.schicht_rows) && data.schicht_rows.length > 0;
+  const fallbackRowsPerPage = Math.max(1, Number(data?.schicht_rows_per_page) || 4);
+  const rowsPerPagePage1 = Math.max(
+    1,
+    Number(data?.schicht_rows_per_page_1) || fallbackRowsPerPage
+  );
+  const rowsPerPagePageN = Math.max(
+    1,
+    Number(data?.schicht_rows_per_page_2) || fallbackRowsPerPage
+  );
+  const rowCount = hasRowData ? data.schicht_rows.length : 0;
+  const remainingAfterPage1 = Math.max(0, rowCount - rowsPerPagePage1);
+  const requiredPageNCopies = hasRowData
+    ? Math.max(1, Math.ceil(remainingAfterPage1 / rowsPerPagePageN))
+    : 1;
+
   const pages: Array<ReturnType<typeof outDoc.addPage>> = [];
 
-  for (const fileName of TEMPLATE_FILES) {
-    const templatePath = getTemplatePath(fileName);
-    if (!fs.existsSync(templatePath)) {
-      throw new Error(`Template PDF not found at: ${templatePath}`);
-    }
+  const page1TemplatePath = getTemplatePath(TEMPLATE_PAGE_1);
+  if (!fs.existsSync(page1TemplatePath)) {
+    throw new Error(`Template PDF not found at: ${page1TemplatePath}`);
+  }
+  const page1TemplateBytes = fs.readFileSync(page1TemplatePath);
+  const page1SrcDoc = await PDFDocument.load(page1TemplateBytes);
+  const [firstPage] = await outDoc.copyPages(page1SrcDoc, [0]);
+  outDoc.addPage(firstPage);
+  pages.push(firstPage);
 
-    const templateBytes = fs.readFileSync(templatePath);
-    const srcDoc = await PDFDocument.load(templateBytes);
-    const [page] = await outDoc.copyPages(srcDoc, [0]);
-    outDoc.addPage(page);
-    pages.push(page);
+  const pageNTemplatePath = getTemplatePath(TEMPLATE_PAGE_N);
+  if (!fs.existsSync(pageNTemplatePath)) {
+    throw new Error(`Template PDF not found at: ${pageNTemplatePath}`);
+  }
+  const pageNTemplateBytes = fs.readFileSync(pageNTemplatePath);
+  const pageNSrcDoc = await PDFDocument.load(pageNTemplateBytes);
+  for (let i = 0; i < requiredPageNCopies; i += 1) {
+    const [pageN] = await outDoc.copyPages(pageNSrcDoc, [0]);
+    outDoc.addPage(pageN);
+    pages.push(pageN);
   }
 
   if (options.debugGrid) {
@@ -227,10 +264,13 @@ export async function generateSchichtenverzeichnisPdf(
     return DEFAULT_FIELD_OFFSETS_PAGE_1[fieldKey]?.[axis] ?? 0;
   };
   const getRowFieldOffsetPage1 = (rowIndex: number, fieldKey: string, axis: "x" | "y") => {
-    const raw = rowFieldOffsetsPage1?.[String(rowIndex)]?.[fieldKey]?.[axis];
-    return Number(raw) || 0;
+    const rowKey = String(rowIndex);
+    const hasCustom = rowFieldOffsetsPage1?.[rowKey]?.[fieldKey]?.[axis] != null;
+    if (hasCustom) {
+      return Number(rowFieldOffsetsPage1[rowKey][fieldKey][axis]) || 0;
+    }
+    return DEFAULT_ROW_FIELD_OFFSETS_PAGE_1[rowKey]?.[fieldKey]?.[axis] ?? 0;
   };
-  const hasRowData = Array.isArray(data?.schicht_rows) && data.schicht_rows.length > 0;
   const skipKeys = new Set([
     "schicht_a1",
     "schicht_a2",
@@ -255,6 +295,7 @@ export async function generateSchichtenverzeichnisPdf(
 
   // Datenfelder anhand Mapping platzieren
   SV_FIELDS.forEach((field) => {
+    if (HIDDEN_FIELD_KEYS.has(field.key)) return;
     if (hasRowData && skipKeys.has(field.key)) return;
     const pageIndex = Math.max(0, Math.min(pages.length - 1, field.page - 1));
     const value =
@@ -269,15 +310,6 @@ export async function generateSchichtenverzeichnisPdf(
 
   if (hasRowData) {
     const rowHeight = Number(data?.schicht_row_height) || 95;
-    const fallbackRowsPerPage = Math.max(1, Number(data?.schicht_rows_per_page) || 4);
-    const rowsPerPagePage1 = Math.max(
-      1,
-      Number(data?.schicht_rows_per_page_1) || fallbackRowsPerPage
-    );
-    const rowsPerPagePage2 = Math.max(
-      1,
-      Number(data?.schicht_rows_per_page_2) || fallbackRowsPerPage
-    );
     const startOffsetPage1 = Number(data?.schicht_start_offset_page_1) || 0;
     const startOffsetPage2 = Number(data?.schicht_start_offset_page_2) || 0;
     const xOffsetPage1 = Number(data?.schicht_x_offset_page_1) || 0;
@@ -315,16 +347,21 @@ export async function generateSchichtenverzeichnisPdf(
       const source = pageIndex === 0 ? xOffsetsPage1 : xOffsetsPage2;
       return Number(source?.[key]) || 0;
     };
-    const maxRows = rowsPerPagePage1 + rowsPerPagePage2;
     const ansatzField = fieldMap.get("schicht_ansatzpunkt_bis");
 
     data.schicht_rows.forEach((row: any, idx: number) => {
-      if (idx >= maxRows) return;
-      const pageIndex = idx < rowsPerPagePage1 ? 0 : 1;
-      const localIdx = idx < rowsPerPagePage1 ? idx : idx - rowsPerPagePage1;
+      const pageIndex =
+        idx < rowsPerPagePage1
+          ? 0
+          : 1 + Math.floor((idx - rowsPerPagePage1) / rowsPerPagePageN);
+      if (pageIndex >= pages.length) return;
+      const localIdx =
+        idx < rowsPerPagePage1
+          ? idx
+          : (idx - rowsPerPagePage1) % rowsPerPagePageN;
       const yOffset =
         localIdx * rowHeight +
-        (pageIndex === 1 ? Number(rowOffsetsPage2[localIdx]) || 0 : 0);
+        (pageIndex >= 1 ? Number(rowOffsetsPage2[localIdx]) || 0 : 0);
       const pageStartOffset = pageIndex === 0 ? startOffsetPage1 : startOffsetPage2;
       const pageXOffset = pageIndex === 0 ? xOffsetPage1 : xOffsetPage2;
       if (ansatzField) {
