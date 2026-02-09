@@ -137,6 +137,11 @@ const emptyGroundwaterRow = (): GroundwaterRow => ({
   bohrtiefe: "",
 });
 
+const isFilled = (value: string | undefined | null) => Boolean(value?.trim());
+
+const countFilled = (values: Array<string | undefined | null>) =>
+  values.reduce((acc, value) => (isFilled(value) ? acc + 1 : acc), 0);
+
 type SchichtenverzeichnisFormProps = {
   projectId?: string;
   reportId?: string;
@@ -236,6 +241,143 @@ export default function SchichtenverzeichnisForm({
     []
   );
   const [stepIndex, setStepIndex] = useState(0);
+  const stepProgress = useMemo(() => {
+    const progress = [
+      {
+        filled: countFilled([data.auftrag_nr, data.bohrmeister, data.blatt_nr, data.projekt_name]),
+        total: 4,
+      },
+      {
+        filled: countFilled([
+          data.bohrung_nr,
+          data.durchfuehrungszeit,
+          data.rammbohrung,
+          data.rotationskernbohrung,
+          data.ek_dks,
+          data.verrohrt_bis_1,
+          data.verrohr_durch_1,
+        ]),
+        total: 7,
+      },
+      {
+        filled: countFilled([
+          data.hoehe_ansatzpunkt,
+          data.bezogen_auf,
+          data.eingemessen_durch,
+          data.gitterwert,
+          data.gitterwert_rechts,
+          data.gitterwert_links,
+        ]),
+        total: 6,
+      },
+      {
+        filled:
+          countFilled([data.pegel_durchmesser]) +
+          grundwasserRows.reduce(
+            (acc, row) =>
+              acc +
+              countFilled([
+                row.grundwasserstand,
+                row.datum,
+                row.uhrzeit,
+                row.tiefe_m,
+                row.uk_verrohrg,
+                row.bohrtiefe,
+              ]),
+            0
+          ),
+        total: 1 + Math.max(1, grundwasserRows.length) * 6,
+      },
+      {
+        filled: countFilled([
+          data.rok,
+          data.sumpf,
+          data.filter_rohr,
+          data.sw,
+          data.vollrohr_pvc,
+          data.vollrohr_stahl,
+          data.passavant,
+          data.ferngas,
+          data.seba,
+          data.hydr_kp,
+          data.betonsockel,
+        ]),
+        total: 11,
+      },
+      {
+        filled: countFilled([
+          data.filterkies_von,
+          data.filterkies_bis,
+          data.tondichtung_von,
+          data.tondichtung_bis,
+          data.gegenfilter_von,
+          data.gegenfilter_bis,
+          data.tondichtung_von_2,
+          data.tondichtung_bis_2,
+          data.zement_bent_von,
+          data.zement_bent_bis,
+          data.bohrgut_von,
+          data.bohrgut_bis,
+        ]),
+        total: 12,
+      },
+      {
+        filled: schichtRows.reduce(
+          (acc, row) =>
+            acc +
+            countFilled([
+              row.ansatzpunkt_bis,
+              row.a1,
+              row.a2,
+              row.b,
+              row.c,
+              row.d,
+              row.e,
+              row.f,
+              row.g,
+              row.h,
+              row.feststellungen,
+              row.proben_art,
+              row.proben_nr,
+              row.proben_tiefe,
+            ]) +
+            countFilled(row.proben_tiefen),
+          0
+        ),
+        total: Math.max(1, schichtRows.length) * 17,
+      },
+      {
+        filled: countFilled([
+          data.probe_gp,
+          data.probe_kp,
+          data.probe_sp,
+          data.probe_wp,
+          data.probe_ki,
+          data.probe_bkb,
+          data.probe_spt,
+          data.proben_art,
+          data.proben_nr,
+          data.proben_tiefe,
+          data.uebergeben_am,
+          data.uebergeben_an,
+        ]),
+        total: 12,
+      },
+    ];
+
+    const filled = progress.reduce((acc, step) => acc + step.filled, 0);
+    const total = progress.reduce((acc, step) => acc + step.total, 0);
+    const percent = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
+    const firstIncompleteStep = progress.findIndex((step) => step.filled < step.total);
+
+    return {
+      steps: progress,
+      totalFilled: filled,
+      totalFields: total,
+      percent,
+      firstIncompleteStep: firstIncompleteStep === -1 ? null : firstIncompleteStep,
+    };
+  }, [data, grundwasserRows, schichtRows]);
 
   const supabase = useMemo(() => createClient(), []);
   const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
@@ -896,6 +1038,29 @@ export default function SchichtenverzeichnisForm({
               </div>
               <div className="text-lg font-semibold text-slate-900">{steps[stepIndex]?.title}</div>
             </div>
+            <div className="min-w-[220px] flex-1">
+              <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+                <span>Fortschritt</span>
+                <span>
+                  {stepProgress.percent}% ({stepProgress.totalFilled}/{stepProgress.totalFields})
+                </span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-sky-500 to-teal-500 transition-all"
+                  style={{ width: `${stepProgress.percent}%` }}
+                />
+              </div>
+            </div>
+            {stepProgress.firstIncompleteStep != null ? (
+              <button
+                type="button"
+                className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+                onClick={() => setStepIndex(stepProgress.firstIncompleteStep ?? 0)}
+              >
+                Nächster offener Schritt
+              </button>
+            ) : null}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {steps.map((s, i) => (
@@ -906,10 +1071,15 @@ export default function SchichtenverzeichnisForm({
                 className={`rounded-full border px-3 py-1 text-xs font-semibold ${
                   i === stepIndex
                     ? "bg-sky-50 text-sky-800 border-sky-200"
-                    : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                    : stepProgress.steps[i]?.filled === stepProgress.steps[i]?.total
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
                 }`}
               >
-                {i + 1}. {s.title}
+                {i + 1}. {s.title}{" "}
+                <span className="ml-1 text-[10px] font-medium opacity-75">
+                  ({stepProgress.steps[i]?.filled ?? 0}/{stepProgress.steps[i]?.total ?? 0})
+                </span>
               </button>
             ))}
           </div>
@@ -1161,73 +1331,78 @@ export default function SchichtenverzeichnisForm({
         </div>
         <div className="mt-4 space-y-3">
           {grundwasserRows.map((row, idx) => (
-            <div key={idx} className="grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_1fr_1fr_1fr]">
-              <Field
-                label="Grundwasserstand"
-                value={row.grundwasserstand}
-                onChange={(v) =>
-                  setGrundwasserRows((prev) => {
-                    const next = [...prev];
-                    next[idx] = { ...next[idx], grundwasserstand: v };
-                    return next;
-                  })
-                }
-              />
-              <Field
-                label="Datum"
-                value={row.datum}
-                onChange={(v) =>
-                  setGrundwasserRows((prev) => {
-                    const next = [...prev];
-                    next[idx] = { ...next[idx], datum: v };
-                    return next;
-                  })
-                }
-              />
-              <Field
-                label="Uhrzeit"
-                value={row.uhrzeit}
-                onChange={(v) =>
-                  setGrundwasserRows((prev) => {
-                    const next = [...prev];
-                    next[idx] = { ...next[idx], uhrzeit: v };
-                    return next;
-                  })
-                }
-              />
-              <Field
-                label="Tiefe (m)"
-                value={row.tiefe_m}
-                onChange={(v) =>
-                  setGrundwasserRows((prev) => {
-                    const next = [...prev];
-                    next[idx] = { ...next[idx], tiefe_m: v };
-                    return next;
-                  })
-                }
-              />
-              <Field
-                label="UK Verrohrg. (m)"
-                value={row.uk_verrohrg}
-                onChange={(v) =>
-                  setGrundwasserRows((prev) => {
-                    const next = [...prev];
-                    next[idx] = { ...next[idx], uk_verrohrg: v };
-                    return next;
-                  })
-                }
-              />
-              <Field
-                label="Bohrtiefe (m)"
-                value={row.bohrtiefe}
-                onChange={(v) =>
-                  setGrundwasserRows((prev) => {
-                    const next = [...prev];
-                    next[idx] = { ...next[idx], bohrtiefe: v };
-                    return next;
-                  })
-                }
-              />
+            <div key={idx} className="rounded-xl border border-slate-200/80 bg-slate-50/30 p-3">
+              <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Messung {idx + 1}
+              </div>
+              <div className="grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_1fr_1fr_1fr]">
+                <Field
+                  label="Grundwasserstand"
+                  value={row.grundwasserstand}
+                  onChange={(v) =>
+                    setGrundwasserRows((prev) => {
+                      const next = [...prev];
+                      next[idx] = { ...next[idx], grundwasserstand: v };
+                      return next;
+                    })
+                  }
+                />
+                <Field
+                  label="Datum"
+                  value={row.datum}
+                  onChange={(v) =>
+                    setGrundwasserRows((prev) => {
+                      const next = [...prev];
+                      next[idx] = { ...next[idx], datum: v };
+                      return next;
+                    })
+                  }
+                />
+                <Field
+                  label="Uhrzeit"
+                  value={row.uhrzeit}
+                  onChange={(v) =>
+                    setGrundwasserRows((prev) => {
+                      const next = [...prev];
+                      next[idx] = { ...next[idx], uhrzeit: v };
+                      return next;
+                    })
+                  }
+                />
+                <Field
+                  label="Tiefe (m)"
+                  value={row.tiefe_m}
+                  onChange={(v) =>
+                    setGrundwasserRows((prev) => {
+                      const next = [...prev];
+                      next[idx] = { ...next[idx], tiefe_m: v };
+                      return next;
+                    })
+                  }
+                />
+                <Field
+                  label="UK Verrohrg. (m)"
+                  value={row.uk_verrohrg}
+                  onChange={(v) =>
+                    setGrundwasserRows((prev) => {
+                      const next = [...prev];
+                      next[idx] = { ...next[idx], uk_verrohrg: v };
+                      return next;
+                    })
+                  }
+                />
+                <Field
+                  label="Bohrtiefe (m)"
+                  value={row.bohrtiefe}
+                  onChange={(v) =>
+                    setGrundwasserRows((prev) => {
+                      const next = [...prev];
+                      next[idx] = { ...next[idx], bohrtiefe: v };
+                      return next;
+                    })
+                  }
+                />
+              </div>
             </div>
           ))}
         </div>
@@ -1387,11 +1562,48 @@ export default function SchichtenverzeichnisForm({
           {schichtRows.map((row, idx) => (
             <div
               key={idx}
-              className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr_0.4fr]"
-              style={{
-                minHeight: `${Number(schichtRowHeight) || 200}px`,
-              }}
+              className="rounded-2xl border border-slate-200/80 bg-slate-50/30 p-3"
             >
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Schichtzeile {idx + 1}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+                    onClick={() =>
+                      setSchichtRows((prev) => {
+                        const clone = {
+                          ...prev[idx],
+                          proben_tiefen: Array.isArray(prev[idx].proben_tiefen)
+                            ? [...prev[idx].proben_tiefen]
+                            : ["", "", ""],
+                        };
+                        return [...prev.slice(0, idx + 1), clone, ...prev.slice(idx + 1)];
+                      })
+                    }
+                  >
+                    Duplizieren
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-rose-200 bg-white px-2 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                    onClick={() =>
+                      setSchichtRows((prev) => (prev.length > 1 ? prev.filter((_, rowIndex) => rowIndex !== idx) : prev))
+                    }
+                    disabled={schichtRows.length <= 1}
+                  >
+                    Entfernen
+                  </button>
+                </div>
+              </div>
+              <div
+                className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr_0.4fr]"
+                style={{
+                  minHeight: `${Number(schichtRowHeight) || 200}px`,
+                }}
+              >
               <div className="rounded-xl border border-slate-200 h-full bg-white">
                 <div className="grid h-full grid-cols-[0.35fr_1fr]">
                   <div className="border-r border-slate-200 px-3 py-2 text-xs text-slate-600">
@@ -1674,6 +1886,7 @@ export default function SchichtenverzeichnisForm({
                     ))}
                 </div>
               </div>
+            </div>
             </div>
           ))}
         </div>
