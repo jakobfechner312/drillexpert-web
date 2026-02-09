@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fs from "fs";
 import path from "path";
 import { SV_FIELDS } from "@/lib/pdf/schichtenverzeichnis.mapping";
+import { DEFAULT_FIELD_OFFSETS_PAGE_1 } from "@/lib/pdf/schichtenverzeichnis.default-offsets";
 
 type GenerateOptions = {
   debugGrid?: boolean;
@@ -214,8 +215,11 @@ export async function generateSchichtenverzeichnisPdf(
     (data?.field_offsets_page_1 as Record<string, { x?: number | string; y?: number | string }>) ||
     {};
   const getPage1FieldOffset = (fieldKey: string, axis: "x" | "y") => {
-    const raw = fieldOffsetsPage1?.[fieldKey]?.[axis];
-    return Number(raw) || 0;
+    const hasCustom = fieldOffsetsPage1?.[fieldKey]?.[axis] != null;
+    if (hasCustom) {
+      return Number(fieldOffsetsPage1[fieldKey][axis]) || 0;
+    }
+    return DEFAULT_FIELD_OFFSETS_PAGE_1[fieldKey]?.[axis] ?? 0;
   };
   const hasRowData = Array.isArray(data?.schicht_rows) && data.schicht_rows.length > 0;
   const skipKeys = new Set([

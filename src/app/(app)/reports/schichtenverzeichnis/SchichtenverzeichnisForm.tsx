@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
 import { useDraftActions } from "@/components/DraftActions";
 import { SV_FIELDS } from "@/lib/pdf/schichtenverzeichnis.mapping";
+import { DEFAULT_FIELD_OFFSETS_PAGE_1 } from "@/lib/pdf/schichtenverzeichnis.default-offsets";
 
 type FormData = Record<string, string>;
 type SchichtRow = {
@@ -34,6 +35,31 @@ type GroundwaterRow = {
 };
 
 type FieldOffsetXY = { x: string; y: string };
+
+const buildFieldOffsetState = (
+  overrides?: Record<string, { x?: number | string; y?: number | string }>
+): Record<string, FieldOffsetXY> => {
+  const base = Object.fromEntries(
+    Object.entries(DEFAULT_FIELD_OFFSETS_PAGE_1).map(([key, value]) => [
+      key,
+      { x: String(value.x), y: String(value.y) },
+    ])
+  ) as Record<string, FieldOffsetXY>;
+
+  if (!overrides) return base;
+
+  const normalized = Object.fromEntries(
+    Object.entries(overrides).map(([key, value]) => [
+      key,
+      {
+        x: String(Number(value?.x) || 0),
+        y: String(Number(value?.y) || 0),
+      },
+    ])
+  ) as Record<string, FieldOffsetXY>;
+
+  return { ...base, ...normalized };
+};
 
 const MAX_FESTSTELLUNGEN_CHARS = 200;
 
@@ -229,7 +255,9 @@ export default function SchichtenverzeichnisForm({
     proben_nr: "0",
     proben_tiefe: "0",
   });
-  const [fieldOffsetsPage1, setFieldOffsetsPage1] = useState<Record<string, FieldOffsetXY>>({});
+  const [fieldOffsetsPage1, setFieldOffsetsPage1] = useState<Record<string, FieldOffsetXY>>(
+    () => buildFieldOffsetState()
+  );
   const useStepper = stepper;
   const steps = useMemo(
     () => [
@@ -298,9 +326,10 @@ export default function SchichtenverzeichnisForm({
     []
   );
   const resetFieldOffset = useCallback((fieldKey: string) => {
+    const fallback = DEFAULT_FIELD_OFFSETS_PAGE_1[fieldKey] ?? { x: 0, y: 0 };
     setFieldOffsetsPage1((prev) => ({
       ...prev,
-      [fieldKey]: { x: "0", y: "0" },
+      [fieldKey]: { x: String(fallback.x), y: String(fallback.y) },
     }));
   }, []);
   const stepProgress = useMemo(() => {
@@ -580,18 +609,11 @@ export default function SchichtenverzeichnisForm({
       if (db?.schicht_x_offsets_page_1 != null) setSchichtXOffsetsPage1((prev) => ({ ...prev, ...db.schicht_x_offsets_page_1 }));
       if (db?.schicht_x_offsets_page_2 != null) setSchichtXOffsetsPage2((prev) => ({ ...prev, ...db.schicht_x_offsets_page_2 }));
       if (db?.field_offsets_page_1 != null && typeof db.field_offsets_page_1 === "object") {
-        const normalized = Object.fromEntries(
-          Object.entries(db.field_offsets_page_1 as Record<string, { x?: number | string; y?: number | string }>).map(
-            ([key, value]) => [
-              key,
-              {
-                x: String(Number(value?.x) || 0),
-                y: String(Number(value?.y) || 0),
-              },
-            ]
+        setFieldOffsetsPage1(
+          buildFieldOffsetState(
+            db.field_offsets_page_1 as Record<string, { x?: number | string; y?: number | string }>
           )
         );
-        setFieldOffsetsPage1(normalized);
       }
       if (db?.schicht_row_offsets_page_2 != null && Array.isArray(db.schicht_row_offsets_page_2)) {
         setSchichtRowOffsetsPage2(db.schicht_row_offsets_page_2.map((v: number | string) => String(v ?? "0")));
@@ -753,18 +775,11 @@ export default function SchichtenverzeichnisForm({
         setSchichtXOffsetsPage2((prev) => ({ ...prev, ...saved.xOffsetsPage2 }));
       }
       if (saved.fieldOffsetsPage1 != null && typeof saved.fieldOffsetsPage1 === "object") {
-        const normalized = Object.fromEntries(
-          Object.entries(saved.fieldOffsetsPage1 as Record<string, { x?: number | string; y?: number | string }>).map(
-            ([key, value]) => [
-              key,
-              {
-                x: String(Number(value?.x) || 0),
-                y: String(Number(value?.y) || 0),
-              },
-            ]
+        setFieldOffsetsPage1(
+          buildFieldOffsetState(
+            saved.fieldOffsetsPage1 as Record<string, { x?: number | string; y?: number | string }>
           )
         );
-        setFieldOffsetsPage1(normalized);
       }
       if (saved.xOffsets != null && saved.xOffsetsPage2 == null) {
         setSchichtXOffsetsPage2((prev) => ({ ...prev, ...saved.xOffsets }));
@@ -859,18 +874,11 @@ export default function SchichtenverzeichnisForm({
         setSchichtXOffsetsPage2((prev) => ({ ...prev, ...saved.xOffsetsPage2 }));
       }
       if (saved.fieldOffsetsPage1 != null && typeof saved.fieldOffsetsPage1 === "object") {
-        const normalized = Object.fromEntries(
-          Object.entries(saved.fieldOffsetsPage1 as Record<string, { x?: number | string; y?: number | string }>).map(
-            ([key, value]) => [
-              key,
-              {
-                x: String(Number(value?.x) || 0),
-                y: String(Number(value?.y) || 0),
-              },
-            ]
+        setFieldOffsetsPage1(
+          buildFieldOffsetState(
+            saved.fieldOffsetsPage1 as Record<string, { x?: number | string; y?: number | string }>
           )
         );
-        setFieldOffsetsPage1(normalized);
       }
       if (saved.xOffsets != null) {
         setSchichtXOffsetsPage1((prev) => ({ ...prev, ...saved.xOffsets }));
