@@ -631,9 +631,9 @@ export async function generateSchichtenverzeichnisPdf(
       const pageIndex = Math.max(0, Math.min(pages.length - 1, field.page - 1));
       const baseX = field.x + (pageIndex === 0 ? getPage1FieldOffset(field.key, "x") : 0);
       const baseY = field.y + (pageIndex === 0 ? getPage1FieldOffset(field.key, "y") : 0);
-      const values = filterRows
+      const values: string[] = filterRows
         .map((row: any) => String(row?.[fieldKey] ?? "").trim())
-        .filter(Boolean);
+        .filter((value: string): value is string => value.length > 0);
       if (!values.length) return;
 
       if (values.length === 1) {
@@ -912,7 +912,7 @@ export async function generateSchichtenverzeichnisPdf(
           const linesFor = (s: number) => {
             const paragraphs = text.split("\n");
             const lines: string[] = [];
-            paragraphs.forEach((para) => {
+            paragraphs.forEach((para: string) => {
               if (!para.trim()) {
                 lines.push("");
                 return;
