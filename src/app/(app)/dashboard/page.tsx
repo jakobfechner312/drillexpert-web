@@ -23,7 +23,7 @@ type ProjectRow = {
 };
 
 type ProjectMemberSelectRow = {
-  project: ProjectRow | null;
+  project: ProjectRow | ProjectRow[] | null;
 };
 
 type DomainSuggestionRow = {
@@ -145,8 +145,11 @@ export default function DashboardPage() {
       }
 
       const projMapped = ((projRes.data ?? []) as ProjectMemberSelectRow[])
-        .map((row) => row.project)
-        .filter(Boolean) as ProjectRow[];
+        .flatMap((row) => {
+          if (!row.project) return [];
+          return Array.isArray(row.project) ? row.project : [row.project];
+        })
+        .filter((p) => Boolean(p?.id && p?.name));
 
       setProjects(projMapped);
       setReports((repRes.data ?? []) as ReportRow[]);
