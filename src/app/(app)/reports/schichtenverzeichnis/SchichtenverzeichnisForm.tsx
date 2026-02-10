@@ -10,6 +10,44 @@ import {
 } from "@/lib/pdf/schichtenverzeichnis.default-offsets";
 
 type FormData = Record<string, string>;
+type SptEntry = {
+  schlag_1: string;
+  schlag_2: string;
+  schlag_3: string;
+};
+type BohrungEntry = {
+  verfahren: "ramm" | "rotation" | "ek_dks" | "voll";
+  bohrung_bis: string;
+  verrohrt_bis: string;
+  verrohr_durchmesser: string;
+};
+type FilterRow = {
+  filterkies_von: string;
+  filterkies_bis: string;
+  tondichtung_von: string;
+  tondichtung_bis: string;
+  gegenfilter_von: string;
+  gegenfilter_bis: string;
+  tondichtung_von_2: string;
+  tondichtung_bis_2: string;
+  zement_bent_von: string;
+  zement_bent_bis: string;
+  bohrgut_von: string;
+  bohrgut_bis: string;
+};
+type FilterPairFieldKey =
+  | "filterkies_von"
+  | "filterkies_bis"
+  | "tondichtung_von"
+  | "tondichtung_bis"
+  | "gegenfilter_von"
+  | "gegenfilter_bis"
+  | "tondichtung_von_2"
+  | "tondichtung_bis_2"
+  | "zement_bent_von"
+  | "zement_bent_bis"
+  | "bohrgut_von"
+  | "bohrgut_bis";
 type SchichtRow = {
   ansatzpunkt_bis: string;
   a1: string;
@@ -17,6 +55,10 @@ type SchichtRow = {
   b: string;
   c: string;
   d: string;
+  d_color: string;
+  d_mix_x: string;
+  d_mix_y: string;
+  d_tint: string;
   e: string;
   f: string;
   g: string;
@@ -26,6 +68,12 @@ type SchichtRow = {
   proben_nr: string;
   proben_tiefe: string;
   proben_tiefen: string[];
+  proben_arten: string[];
+  spt_eintraege: SptEntry[];
+  spt_gemacht: boolean;
+  spt_schlag_1: string;
+  spt_schlag_2: string;
+  spt_schlag_3: string;
 };
 
 type GroundwaterRow = {
@@ -111,6 +159,129 @@ const buildRowFieldOffsetState = (
 };
 
 const MAX_FESTSTELLUNGEN_CHARS = 200;
+const BOHR_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
+const SCHLITZWEITE_OPTIONS = ["0,5", "0,75", "1", "1,5", "1,75", "2", "2,25", "2,5"] as const;
+const SCHICHT_E_OPTIONS = ["--", "-", "0", "+", "++"] as const;
+const SCHICHT_C_OPTIONS = ["leicht", "mittel", "schwer", "individuell"] as const;
+const SCHICHT_D_COLOR_DEFAULT = "#8b5a2b";
+const SCHICHT_D_TINT_DEFAULT = "gruen";
+const PEGEL_DURCHMESSER_OPTIONS = [
+  '2"',
+  '3"',
+  '4"',
+  '5"',
+  '6"',
+  '8"',
+  "DN100",
+  "DN200",
+  "DN300",
+  "DN400",
+  "DN500",
+  "DN600",
+  "DN700",
+  "DN800",
+] as const;
+const GRUNDWASSERSTAND_OPTIONS = ["ungebohrt", "eingespiegelt", "Bohrende", "im Pegel"] as const;
+const FILTER_PAIR_CONFIG: Array<{
+  id: string;
+  title: string;
+  vonKey: FilterPairFieldKey;
+  bisKey: FilterPairFieldKey;
+  vonLabel: string;
+  bisLabel: string;
+}> = [
+  {
+    id: "filterkies",
+    title: "Filterkies",
+    vonKey: "filterkies_von",
+    bisKey: "filterkies_bis",
+    vonLabel: "Filterkies von",
+    bisLabel: "Filterkies bis",
+  },
+  {
+    id: "tondichtung_1",
+    title: "Tondichtung",
+    vonKey: "tondichtung_von",
+    bisKey: "tondichtung_bis",
+    vonLabel: "Tondichtung von",
+    bisLabel: "Tondichtung bis",
+  },
+  {
+    id: "gegenfilter",
+    title: "Gegenfilter",
+    vonKey: "gegenfilter_von",
+    bisKey: "gegenfilter_bis",
+    vonLabel: "Gegenfilter von",
+    bisLabel: "Gegenfilter bis",
+  },
+  {
+    id: "tondichtung_2",
+    title: "Tondichtung (unten)",
+    vonKey: "tondichtung_von_2",
+    bisKey: "tondichtung_bis_2",
+    vonLabel: "Tondichtung von (unten)",
+    bisLabel: "Tondichtung bis (unten)",
+  },
+  {
+    id: "zement_bent",
+    title: "Zem.-Bent.",
+    vonKey: "zement_bent_von",
+    bisKey: "zement_bent_bis",
+    vonLabel: "Zem.-Bent. von",
+    bisLabel: "Zem.-Bent. bis",
+  },
+  {
+    id: "bohrgut",
+    title: "Bohrgut",
+    vonKey: "bohrgut_von",
+    bisKey: "bohrgut_bis",
+    vonLabel: "Bohrgut von",
+    bisLabel: "Bohrgut bis",
+  },
+];
+const formatDateForRange = (value: string | undefined | null) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return raw;
+  return `${match[3]}.${match[2]}.${match[1]}`;
+};
+const composeDurchfuehrungszeit = (
+  von: string | undefined | null,
+  bis: string | undefined | null,
+  fallback?: string
+) => {
+  const vonText = formatDateForRange(von);
+  const bisText = formatDateForRange(bis);
+  if (vonText && bisText) return `${vonText} - ${bisText}`;
+  if (vonText) return `ab ${vonText}`;
+  if (bisText) return `bis ${bisText}`;
+  return String(fallback ?? "").trim();
+};
+const toDateInputValue = (value: string | undefined | null) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const dmY = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (dmY) return `${dmY[3]}-${dmY[2]}-${dmY[1]}`;
+  return "";
+};
+const fromDateInputValue = (value: string | undefined | null) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[3]}.${iso[2]}.${iso[1]}`;
+  return raw;
+};
+const toTimeInputValue = (value: string | undefined | null) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const hhmm = raw.match(/^(\d{2}:\d{2})$/);
+  if (hhmm) return hhmm[1];
+  const hhmmss = raw.match(/^(\d{2}:\d{2}):\d{2}$/);
+  if (hhmmss) return hhmmss[1];
+  return "";
+};
 
 const initialData: FormData = {
   auftrag_nr: "",
@@ -119,8 +290,11 @@ const initialData: FormData = {
   projekt_name: "",
   bohrung_nr: "",
   durchfuehrungszeit: "",
+  durchfuehrungszeit_von: "",
+  durchfuehrungszeit_bis: "",
   rammbohrung: "",
   rotationskernbohrung: "",
+  vollbohrung: "",
   ek_dks: "",
   verrohrt_bis_1: "",
   verrohr_durch_1: "",
@@ -128,6 +302,8 @@ const initialData: FormData = {
   verrohr_durch_2: "",
   verrohrt_bis_3: "",
   verrohr_durch_3: "",
+  verrohrt_bis_4: "",
+  verrohr_durch_4: "",
   hoehe_ansatzpunkt: "",
   bezogen_auf: "",
   gitterwert: "",
@@ -143,15 +319,14 @@ const initialData: FormData = {
   pegel_durchmesser: "",
   rok: "",
   passavant: "",
-  ferngas: "",
   seba: "",
   sumpf: "",
   filter_rohr: "",
   sw: "",
   vollrohr_pvc: "",
   vollrohr_stahl: "",
-  hydr_kp: "",
   betonsockel: "",
+  kies_koernung: "",
   filterkies_von: "",
   filterkies_bis: "",
   tondichtung_von: "",
@@ -195,6 +370,10 @@ const emptySchichtRow = (): SchichtRow => ({
   b: "",
   c: "",
   d: "",
+  d_color: SCHICHT_D_COLOR_DEFAULT,
+  d_mix_x: "50",
+  d_mix_y: "0",
+  d_tint: SCHICHT_D_TINT_DEFAULT,
   e: "",
   f: "",
   g: "",
@@ -203,8 +382,76 @@ const emptySchichtRow = (): SchichtRow => ({
   proben_art: "",
   proben_nr: "",
   proben_tiefe: "",
-  proben_tiefen: ["", "", ""],
+  proben_tiefen: [""],
+  proben_arten: ["GP"],
+  spt_eintraege: [],
+  spt_gemacht: false,
+  spt_schlag_1: "",
+  spt_schlag_2: "",
+  spt_schlag_3: "",
 });
+
+const normalizeProbeType = (value: string | undefined | null) => {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized === "EP") return "EP";
+  if (normalized === "UP") return "UP";
+  return "GP";
+};
+const emptySptEntry = (): SptEntry => ({
+  schlag_1: "",
+  schlag_2: "",
+  schlag_3: "",
+});
+
+const normalizeSptEntries = (row: Partial<SchichtRow> | null | undefined): SptEntry[] => {
+  const explicit = Array.isArray(row?.spt_eintraege)
+    ? row.spt_eintraege.map((entry) => ({
+        schlag_1: String(entry?.schlag_1 ?? ""),
+        schlag_2: String(entry?.schlag_2 ?? ""),
+        schlag_3: String(entry?.schlag_3 ?? ""),
+      }))
+    : [];
+
+  if (explicit.length > 0) return explicit;
+  if (!row?.spt_gemacht) return [];
+
+  return [
+    {
+      schlag_1: String(row?.spt_schlag_1 ?? ""),
+      schlag_2: String(row?.spt_schlag_2 ?? ""),
+      schlag_3: String(row?.spt_schlag_3 ?? ""),
+    },
+  ];
+};
+
+const normalizeSchichtRow = (row: Partial<SchichtRow> | null | undefined): SchichtRow => {
+  const base = emptySchichtRow();
+  const depthList = Array.isArray(row?.proben_tiefen) && row?.proben_tiefen.length
+    ? row.proben_tiefen.map((v) => String(v ?? ""))
+    : base.proben_tiefen;
+  const defaultType = normalizeProbeType(row?.proben_art);
+  const sourceTypes = Array.isArray(row?.proben_arten) ? row.proben_arten : [];
+  const types = depthList.map((_, idx) => normalizeProbeType(sourceTypes[idx] ?? defaultType));
+  const sptEntries = normalizeSptEntries(row);
+  const firstSpt = sptEntries[0] ?? emptySptEntry();
+
+  return {
+    ...base,
+    ...(row ?? {}),
+    d: String(row?.d ?? base.d),
+    d_color: String(row?.d_color ?? base.d_color),
+    d_mix_x: String(row?.d_mix_x ?? base.d_mix_x),
+    d_mix_y: String(row?.d_mix_y ?? base.d_mix_y),
+    d_tint: String(row?.d_tint ?? base.d_tint),
+    proben_tiefen: depthList,
+    proben_arten: types,
+    spt_eintraege: sptEntries,
+    spt_gemacht: sptEntries.length > 0,
+    spt_schlag_1: firstSpt.schlag_1,
+    spt_schlag_2: firstSpt.schlag_2,
+    spt_schlag_3: firstSpt.schlag_3,
+  };
+};
 
 const emptyGroundwaterRow = (): GroundwaterRow => ({
   grundwasserstand: "",
@@ -214,6 +461,113 @@ const emptyGroundwaterRow = (): GroundwaterRow => ({
   uk_verrohrg: "",
   bohrtiefe: "",
 });
+const emptyFilterRow = (): FilterRow => ({
+  filterkies_von: "",
+  filterkies_bis: "",
+  tondichtung_von: "",
+  tondichtung_bis: "",
+  gegenfilter_von: "",
+  gegenfilter_bis: "",
+  tondichtung_von_2: "",
+  tondichtung_bis_2: "",
+  zement_bent_von: "",
+  zement_bent_bis: "",
+  bohrgut_von: "",
+  bohrgut_bis: "",
+});
+const normalizeFilterRows = (raw: unknown, fallback: FormData): FilterRow[] => {
+  const source = Array.isArray(raw) ? raw : [];
+  const normalized = source
+    .map((entry) => ({
+      filterkies_von: String((entry as Partial<FilterRow>)?.filterkies_von ?? ""),
+      filterkies_bis: String((entry as Partial<FilterRow>)?.filterkies_bis ?? ""),
+      tondichtung_von: String((entry as Partial<FilterRow>)?.tondichtung_von ?? ""),
+      tondichtung_bis: String((entry as Partial<FilterRow>)?.tondichtung_bis ?? ""),
+      gegenfilter_von: String((entry as Partial<FilterRow>)?.gegenfilter_von ?? ""),
+      gegenfilter_bis: String((entry as Partial<FilterRow>)?.gegenfilter_bis ?? ""),
+      tondichtung_von_2: String((entry as Partial<FilterRow>)?.tondichtung_von_2 ?? ""),
+      tondichtung_bis_2: String((entry as Partial<FilterRow>)?.tondichtung_bis_2 ?? ""),
+      zement_bent_von: String((entry as Partial<FilterRow>)?.zement_bent_von ?? ""),
+      zement_bent_bis: String((entry as Partial<FilterRow>)?.zement_bent_bis ?? ""),
+      bohrgut_von: String((entry as Partial<FilterRow>)?.bohrgut_von ?? ""),
+      bohrgut_bis: String((entry as Partial<FilterRow>)?.bohrgut_bis ?? ""),
+    }))
+    .filter((row) => countFilled(Object.values(row)) > 0);
+
+  if (normalized.length > 0) return normalized;
+
+  const legacyFirst: FilterRow = {
+    filterkies_von: fallback.filterkies_von ?? "",
+    filterkies_bis: fallback.filterkies_bis ?? "",
+    tondichtung_von: fallback.tondichtung_von ?? "",
+    tondichtung_bis: fallback.tondichtung_bis ?? "",
+    gegenfilter_von: fallback.gegenfilter_von ?? "",
+    gegenfilter_bis: fallback.gegenfilter_bis ?? "",
+    tondichtung_von_2: fallback.tondichtung_von_2 ?? "",
+    tondichtung_bis_2: fallback.tondichtung_bis_2 ?? "",
+    zement_bent_von: fallback.zement_bent_von ?? "",
+    zement_bent_bis: fallback.zement_bent_bis ?? "",
+    bohrgut_von: fallback.bohrgut_von ?? "",
+    bohrgut_bis: fallback.bohrgut_bis ?? "",
+  };
+  return countFilled(Object.values(legacyFirst)) > 0 ? [legacyFirst] : [emptyFilterRow()];
+};
+const emptyBohrungEntry = (): BohrungEntry => ({
+  verfahren: "ramm",
+  bohrung_bis: "",
+  verrohrt_bis: "",
+  verrohr_durchmesser: "",
+});
+const normalizeBohrverfahren = (value: unknown): BohrungEntry["verfahren"] => {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "rotation") return "rotation";
+  if (raw === "ek_dks") return "ek_dks";
+  if (raw === "voll") return "voll";
+  return "ramm";
+};
+const legacyBohrungenFromData = (values: FormData): BohrungEntry[] => {
+  const rows: BohrungEntry[] = [
+    {
+      verfahren: "ramm",
+      bohrung_bis: values.rammbohrung ?? "",
+      verrohrt_bis: values.verrohrt_bis_1 ?? "",
+      verrohr_durchmesser: values.verrohr_durch_1 ?? "",
+    },
+    {
+      verfahren: "rotation",
+      bohrung_bis: values.rotationskernbohrung ?? "",
+      verrohrt_bis: values.verrohrt_bis_2 ?? "",
+      verrohr_durchmesser: values.verrohr_durch_2 ?? "",
+    },
+    {
+      verfahren: "ek_dks",
+      bohrung_bis: values.ek_dks ?? "",
+      verrohrt_bis: values.verrohrt_bis_3 ?? "",
+      verrohr_durchmesser: values.verrohr_durch_3 ?? "",
+    },
+    {
+      verfahren: "voll",
+      bohrung_bis: values.vollbohrung ?? "",
+      verrohrt_bis: values.verrohrt_bis_4 ?? "",
+      verrohr_durchmesser: values.verrohr_durch_4 ?? "",
+    },
+  ];
+  return rows.filter((row) => countFilled([row.bohrung_bis, row.verrohrt_bis, row.verrohr_durchmesser]) > 0);
+};
+const normalizeBohrungen = (raw: unknown, fallback: FormData): BohrungEntry[] => {
+  const source = Array.isArray(raw) ? raw : [];
+  const normalized = source
+    .map((entry) => ({
+      verfahren: normalizeBohrverfahren((entry as Partial<BohrungEntry>)?.verfahren),
+      bohrung_bis: String((entry as Partial<BohrungEntry>)?.bohrung_bis ?? ""),
+      verrohrt_bis: String((entry as Partial<BohrungEntry>)?.verrohrt_bis ?? ""),
+      verrohr_durchmesser: String((entry as Partial<BohrungEntry>)?.verrohr_durchmesser ?? ""),
+    }))
+    .filter((entry) => countFilled([entry.bohrung_bis, entry.verrohrt_bis, entry.verrohr_durchmesser]) > 0);
+  if (normalized.length > 0) return normalized;
+  const legacy = legacyBohrungenFromData(fallback);
+  return legacy.length > 0 ? legacy : [emptyBohrungEntry()];
+};
 
 const isFilled = (value: string | undefined | null) => Boolean(value?.trim());
 
@@ -248,6 +602,11 @@ export default function SchichtenverzeichnisForm({
 
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [auftragOptions, setAuftragOptions] = useState<string[]>([]);
+  const [projektNameOptions, setProjektNameOptions] = useState<string[]>([]);
+  const [auftragMode, setAuftragMode] = useState<"list" | "custom">("list");
+  const [projektMode, setProjektMode] = useState<"list" | "custom">("list");
+  const [schlitzweiteMode, setSchlitzweiteMode] = useState<"list" | "custom">("list");
   const [projectUiLoading, setProjectUiLoading] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
@@ -257,6 +616,8 @@ export default function SchichtenverzeichnisForm({
   const [schichtRows, setSchichtRows] = useState<SchichtRow[]>([
     emptySchichtRow(),
   ]);
+  const [bohrungen, setBohrungen] = useState<BohrungEntry[]>([emptyBohrungEntry()]);
+  const [filterRows, setFilterRows] = useState<FilterRow[]>([emptyFilterRow()]);
   const [grundwasserRows, setGrundwasserRows] = useState<GroundwaterRow[]>([
     emptyGroundwaterRow(),
   ]);
@@ -456,6 +817,39 @@ export default function SchichtenverzeichnisForm({
       };
     });
   }, []);
+  const getFilterPairEntries = useCallback(
+    (vonKey: FilterPairFieldKey, bisKey: FilterPairFieldKey) => {
+      const entries = filterRows
+        .map((row) => ({ von: row[vonKey] ?? "", bis: row[bisKey] ?? "" }))
+        .filter((entry) => countFilled([entry.von, entry.bis]) > 0);
+      return entries.length > 0 ? entries : [{ von: "", bis: "" }];
+    },
+    [filterRows]
+  );
+  const setFilterPairEntries = useCallback(
+    (
+      vonKey: FilterPairFieldKey,
+      bisKey: FilterPairFieldKey,
+      entries: Array<{ von: string; bis: string }>
+    ) => {
+      setFilterRows((prev) => {
+        const nextLength = Math.max(prev.length, entries.length, 1);
+        const next = Array.from({ length: nextLength }, (_, idx) => ({
+          ...emptyFilterRow(),
+          ...(prev[idx] ?? {}),
+        }));
+        for (let i = 0; i < nextLength; i += 1) {
+          next[i][vonKey] = entries[i]?.von ?? "";
+          next[i][bisKey] = entries[i]?.bis ?? "";
+        }
+        while (next.length > 1 && countFilled(Object.values(next[next.length - 1])) === 0) {
+          next.pop();
+        }
+        return next;
+      });
+    },
+    []
+  );
   const stepProgress = useMemo(() => {
     const progress = [
       {
@@ -463,37 +857,35 @@ export default function SchichtenverzeichnisForm({
         total: 4,
       },
       {
-        filled: countFilled([
-          data.bohrung_nr,
-          data.durchfuehrungszeit,
-          data.rammbohrung,
-          data.rotationskernbohrung,
-          data.ek_dks,
-          data.verrohrt_bis_1,
-          data.verrohr_durch_1,
-        ]),
-        total: 7,
-      },
-      {
         filled:
-          countFilled([data.pegel_durchmesser]) +
-          grundwasserRows.reduce(
-            (acc, row) =>
+          countFilled([data.bohrung_nr, data.durchfuehrungszeit_von, data.durchfuehrungszeit_bis]) +
+          bohrungen.reduce(
+            (acc, entry) =>
               acc +
-              countFilled([
-                row.grundwasserstand,
-                row.datum,
-                row.uhrzeit,
-                row.tiefe_m,
-                row.uk_verrohrg,
-                row.bohrtiefe,
-              ]),
+              countFilled([entry.bohrung_bis, entry.verrohrt_bis, entry.verrohr_durchmesser]),
             0
           ),
-        total: 1 + Math.max(1, grundwasserRows.length) * 6,
+        total: 3 + Math.max(1, bohrungen.length) * 3,
+      },
+      {
+        filled: grundwasserRows.reduce(
+          (acc, row) =>
+            acc +
+            countFilled([
+              row.grundwasserstand,
+              row.datum,
+              row.uhrzeit,
+              row.tiefe_m,
+              row.uk_verrohrg,
+              row.bohrtiefe,
+            ]),
+          0
+        ),
+        total: Math.max(1, grundwasserRows.length) * 6,
       },
       {
         filled: countFilled([
+          data.pegel_durchmesser,
           data.rok,
           data.sumpf,
           data.filter_rohr,
@@ -501,29 +893,15 @@ export default function SchichtenverzeichnisForm({
           data.vollrohr_pvc,
           data.vollrohr_stahl,
           data.passavant,
-          data.ferngas,
           data.seba,
-          data.hydr_kp,
           data.betonsockel,
+          data.kies_koernung,
         ]),
         total: 11,
       },
       {
-        filled: countFilled([
-          data.filterkies_von,
-          data.filterkies_bis,
-          data.tondichtung_von,
-          data.tondichtung_bis,
-          data.gegenfilter_von,
-          data.gegenfilter_bis,
-          data.tondichtung_von_2,
-          data.tondichtung_bis_2,
-          data.zement_bent_von,
-          data.zement_bent_bis,
-          data.bohrgut_von,
-          data.bohrgut_bis,
-        ]),
-        total: 12,
+        filled: filterRows.reduce((acc, row) => acc + countFilled(Object.values(row)), 0),
+        total: Math.max(1, filterRows.length) * 12,
       },
       {
         filled: schichtRows.reduce(
@@ -552,20 +930,14 @@ export default function SchichtenverzeichnisForm({
       },
       {
         filled: countFilled([
-          data.probe_gp,
-          data.probe_kp,
-          data.probe_sp,
-          data.probe_wp,
           data.probe_ki,
-          data.probe_bkb,
-          data.probe_spt,
           data.proben_art,
           data.proben_nr,
           data.proben_tiefe,
           data.uebergeben_am,
           data.uebergeben_an,
         ]),
-        total: 12,
+        total: 6,
       },
     ];
 
@@ -581,7 +953,72 @@ export default function SchichtenverzeichnisForm({
       percent,
       firstIncompleteStep: firstIncompleteStep === -1 ? null : firstIncompleteStep,
     };
-  }, [data, grundwasserRows, schichtRows]);
+  }, [data, bohrungen, filterRows, grundwasserRows, schichtRows]);
+  const effectiveDurchfuehrungszeit = useMemo(
+    () =>
+      composeDurchfuehrungszeit(
+        data.durchfuehrungszeit_von,
+        data.durchfuehrungszeit_bis,
+        data.durchfuehrungszeit
+      ),
+    [data.durchfuehrungszeit_von, data.durchfuehrungszeit_bis, data.durchfuehrungszeit]
+  );
+  const normalizedBohrungenForPayload = useMemo(() => {
+    const rows = bohrungen
+      .map((entry) => ({
+        verfahren: normalizeBohrverfahren(entry?.verfahren),
+        bohrung_bis: String(entry?.bohrung_bis ?? ""),
+        verrohrt_bis: String(entry?.verrohrt_bis ?? ""),
+        verrohr_durchmesser: String(entry?.verrohr_durchmesser ?? ""),
+      }))
+      .filter((entry) => countFilled([entry.bohrung_bis, entry.verrohrt_bis, entry.verrohr_durchmesser]) > 0);
+    return rows.length > 0 ? rows : [emptyBohrungEntry()];
+  }, [bohrungen]);
+  const legacyBohrungsFields = useMemo(() => {
+    const getByType = (type: BohrungEntry["verfahren"]) =>
+      normalizedBohrungenForPayload.find((entry) => entry.verfahren === type);
+    const ramm = getByType("ramm");
+    const rotation = getByType("rotation");
+    const ekdks = getByType("ek_dks");
+    const voll = getByType("voll");
+    return {
+      rammbohrung: ramm?.bohrung_bis ?? "",
+      verrohrt_bis_1: ramm?.verrohrt_bis ?? "",
+      verrohr_durch_1: ramm?.verrohr_durchmesser ?? "",
+      rotationskernbohrung: rotation?.bohrung_bis ?? "",
+      verrohrt_bis_2: rotation?.verrohrt_bis ?? "",
+      verrohr_durch_2: rotation?.verrohr_durchmesser ?? "",
+      ek_dks: ekdks?.bohrung_bis ?? "",
+      verrohrt_bis_3: ekdks?.verrohrt_bis ?? "",
+      verrohr_durch_3: ekdks?.verrohr_durchmesser ?? "",
+      vollbohrung: voll?.bohrung_bis ?? "",
+      verrohrt_bis_4: voll?.verrohrt_bis ?? "",
+      verrohr_durch_4: voll?.verrohr_durchmesser ?? "",
+    };
+  }, [normalizedBohrungenForPayload]);
+  const normalizedFilterRowsForPayload = useMemo(() => {
+    const rows = filterRows
+      .map((row) => ({
+        filterkies_von: String(row.filterkies_von ?? ""),
+        filterkies_bis: String(row.filterkies_bis ?? ""),
+        tondichtung_von: String(row.tondichtung_von ?? ""),
+        tondichtung_bis: String(row.tondichtung_bis ?? ""),
+        gegenfilter_von: String(row.gegenfilter_von ?? ""),
+        gegenfilter_bis: String(row.gegenfilter_bis ?? ""),
+        tondichtung_von_2: String(row.tondichtung_von_2 ?? ""),
+        tondichtung_bis_2: String(row.tondichtung_bis_2 ?? ""),
+        zement_bent_von: String(row.zement_bent_von ?? ""),
+        zement_bent_bis: String(row.zement_bent_bis ?? ""),
+        bohrgut_von: String(row.bohrgut_von ?? ""),
+        bohrgut_bis: String(row.bohrgut_bis ?? ""),
+      }))
+      .filter((row) => countFilled(Object.values(row)) > 0);
+    return rows.length > 0 ? rows : [emptyFilterRow()];
+  }, [filterRows]);
+  const legacyFilterFields = useMemo(() => {
+    const first = normalizedFilterRowsForPayload[0] ?? emptyFilterRow();
+    return { ...first };
+  }, [normalizedFilterRowsForPayload]);
 
   const supabase = useMemo(() => createClient(), []);
   const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
@@ -709,7 +1146,13 @@ export default function SchichtenverzeichnisForm({
 
       const db = row.data as Record<string, any>;
       setData((prev) => ({ ...prev, ...(db ?? {}) }));
-      setSchichtRows(Array.isArray(db?.schicht_rows) && db.schicht_rows.length ? db.schicht_rows : [emptySchichtRow()]);
+      setBohrungen(normalizeBohrungen(db?.bohrungen, { ...initialData, ...(db ?? {}) }));
+      setFilterRows(normalizeFilterRows(db?.filter_rows, { ...initialData, ...(db ?? {}) }));
+      setSchichtRows(
+        Array.isArray(db?.schicht_rows) && db.schicht_rows.length
+          ? db.schicht_rows.map((row: Partial<SchichtRow>) => normalizeSchichtRow(row))
+          : [emptySchichtRow()]
+      );
       setGrundwasserRows(Array.isArray(db?.grundwasser_rows) && db.grundwasser_rows.length ? db.grundwasser_rows : [emptyGroundwaterRow()]);
 
       if (db?.schicht_row_height != null) setSchichtRowHeight(String(db.schicht_row_height));
@@ -750,6 +1193,68 @@ export default function SchichtenverzeichnisForm({
   }, [mode, reportId, supabase]);
 
   useEffect(() => {
+    const loadAuftragOptions = async () => {
+      const { data: rows, error } = await supabase
+        .from("projects")
+        .select("project_number,name")
+        .order("created_at", { ascending: false });
+      if (error) return;
+      const auftragValues = Array.from(
+        new Set(
+          (rows ?? [])
+            .map((row: { project_number?: string | null }) => String(row?.project_number ?? "").trim())
+            .filter(Boolean)
+        )
+      );
+      const projektValues = Array.from(
+        new Set(
+          (rows ?? [])
+            .map((row: { name?: string | null }) => String(row?.name ?? "").trim())
+            .filter(Boolean)
+        )
+      );
+      setAuftragOptions(auftragValues);
+      setProjektNameOptions(projektValues);
+    };
+    loadAuftragOptions();
+  }, [supabase]);
+
+  useEffect(() => {
+    const current = String(data.auftrag_nr ?? "").trim();
+    if (!current) {
+      setAuftragMode("list");
+      return;
+    }
+    if (!auftragOptions.includes(current)) {
+      setAuftragMode("custom");
+    }
+  }, [data.auftrag_nr, auftragOptions]);
+
+  useEffect(() => {
+    const current = String(data.projekt_name ?? "").trim();
+    if (!current) {
+      setProjektMode("list");
+      return;
+    }
+    if (!projektNameOptions.includes(current)) {
+      setProjektMode("custom");
+    }
+  }, [data.projekt_name, projektNameOptions]);
+
+  useEffect(() => {
+    const current = String(data.sw ?? "").trim();
+    if (!current) {
+      setSchlitzweiteMode("list");
+      return;
+    }
+    if (!SCHLITZWEITE_OPTIONS.includes(current as (typeof SCHLITZWEITE_OPTIONS)[number])) {
+      setSchlitzweiteMode("custom");
+    } else {
+      setSchlitzweiteMode("list");
+    }
+  }, [data.sw]);
+
+  useEffect(() => {
     setSaveDraftHandler(null);
     setSaveReportHandler(async () => {
       if (savingRef.current) return;
@@ -775,6 +1280,11 @@ export default function SchichtenverzeichnisForm({
 
         const reportData = {
           ...data,
+          ...legacyBohrungsFields,
+          ...legacyFilterFields,
+          durchfuehrungszeit: effectiveDurchfuehrungszeit,
+          bohrungen: normalizedBohrungenForPayload,
+          filter_rows: normalizedFilterRowsForPayload,
           grundwasser_rows: grundwasserRows,
           schicht_rows: schichtRows,
           schicht_row_height: Number(schichtRowHeight) || 200,
@@ -858,6 +1368,12 @@ export default function SchichtenverzeichnisForm({
     };
   }, [
     data,
+    effectiveDurchfuehrungszeit,
+    legacyBohrungsFields,
+    legacyFilterFields,
+    normalizedBohrungenForPayload,
+    normalizedFilterRowsForPayload,
+    filterRows,
     grundwasserRows,
     schichtRows,
     schichtRowHeight,
@@ -1090,6 +1606,9 @@ export default function SchichtenverzeichnisForm({
   const update = (key: keyof FormData, value: string) => {
     setData((prev) => ({ ...prev, [key]: value }));
   };
+  const toggleMark = (key: keyof FormData, checked: boolean) => {
+    setData((prev) => ({ ...prev, [key]: checked ? "x" : "" }));
+  };
 
   const openPdf = async () => {
     setLoading(true);
@@ -1100,6 +1619,11 @@ export default function SchichtenverzeichnisForm({
       if (Number(gridStep)) params.set("grid", String(Number(gridStep)));
       const payload = {
         ...data,
+        ...legacyBohrungsFields,
+        ...legacyFilterFields,
+        durchfuehrungszeit: effectiveDurchfuehrungszeit,
+        bohrungen: normalizedBohrungenForPayload,
+        filter_rows: normalizedFilterRowsForPayload,
         grundwasser_rows: grundwasserRows,
         schicht_rows: schichtRows,
         schicht_row_height: Number(schichtRowHeight) || 200,
@@ -1145,6 +1669,11 @@ export default function SchichtenverzeichnisForm({
       if (Number(gridStep)) params.set("grid", String(Number(gridStep)));
       const payload = {
         ...data,
+        ...legacyBohrungsFields,
+        ...legacyFilterFields,
+        durchfuehrungszeit: effectiveDurchfuehrungszeit,
+        bohrungen: normalizedBohrungenForPayload,
+        filter_rows: normalizedFilterRowsForPayload,
         grundwasser_rows: grundwasserRows,
         schicht_rows: schichtRows,
         schicht_row_height: Number(schichtRowHeight) || 200,
@@ -1200,16 +1729,21 @@ export default function SchichtenverzeichnisForm({
       blatt_nr: "1",
       projekt_name: "Baustelle Freiburg Nord",
       bohrung_nr: "B-12",
-      durchfuehrungszeit: "07:00–17:00",
+      durchfuehrungszeit: "30.01.2026 - 31.01.2026",
+      durchfuehrungszeit_von: "2026-01-30",
+      durchfuehrungszeit_bis: "2026-01-31",
       rammbohrung: "12,5",
       rotationskernbohrung: "38,0",
+      vollbohrung: "46,0",
       ek_dks: "DN80",
       verrohrt_bis_1: "10,0",
-      verrohr_durch_1: "140",
+      verrohr_durch_1: "146",
       verrohrt_bis_2: "20,0",
-      verrohr_durch_2: "115",
+      verrohr_durch_2: "178",
       verrohrt_bis_3: "30,0",
-      verrohr_durch_3: "90",
+      verrohr_durch_3: "220",
+      verrohrt_bis_4: "40,0",
+      verrohr_durch_4: "273",
       hoehe_ansatzpunkt: "312,45",
       bezogen_auf: "NN",
       gitterwert: "H 124",
@@ -1225,15 +1759,14 @@ export default function SchichtenverzeichnisForm({
       pegel_durchmesser: "DN100",
       rok: "0,45",
       passavant: "x",
-      ferngas: "x",
       seba: "x",
       sumpf: "1,20",
       filter_rohr: "9,80",
-      sw: "0,30",
+      sw: "0,5",
       vollrohr_pvc: "6,00",
       vollrohr_stahl: "4,00",
-      hydr_kp: "x",
       betonsockel: "x",
+      kies_koernung: "2/8",
       filterkies_von: "9,50",
       filterkies_bis: "12,00",
       tondichtung_von: "2,00",
@@ -1252,16 +1785,59 @@ export default function SchichtenverzeichnisForm({
       probe_wp: "",
       probe_ki: "x",
       probe_bkb: "",
-      probe_spt: "x",
+      probe_spt: "",
       uebergeben_am: "30.01.2026",
       uebergeben_an: "Labor X",
     });
+    setBohrungen([
+      { verfahren: "ramm", bohrung_bis: "12,5", verrohrt_bis: "10,0", verrohr_durchmesser: "146" },
+      { verfahren: "rotation", bohrung_bis: "38,0", verrohrt_bis: "20,0", verrohr_durchmesser: "178" },
+      { verfahren: "ek_dks", bohrung_bis: "DN80", verrohrt_bis: "30,0", verrohr_durchmesser: "220" },
+      { verfahren: "voll", bohrung_bis: "46,0", verrohrt_bis: "40,0", verrohr_durchmesser: "273" },
+    ]);
+    setFilterRows([
+      {
+        filterkies_von: "9,50",
+        filterkies_bis: "12,00",
+        tondichtung_von: "2,00",
+        tondichtung_bis: "3,50",
+        gegenfilter_von: "3,50",
+        gegenfilter_bis: "6,00",
+        tondichtung_von_2: "6,00",
+        tondichtung_bis_2: "7,50",
+        zement_bent_von: "7,50",
+        zement_bent_bis: "9,00",
+        bohrgut_von: "9,00",
+        bohrgut_bis: "42,00",
+      },
+      {
+        filterkies_von: "12,00",
+        filterkies_bis: "13,50",
+        tondichtung_von: "3,50",
+        tondichtung_bis: "4,20",
+        gegenfilter_von: "6,00",
+        gegenfilter_bis: "6,80",
+        tondichtung_von_2: "7,50",
+        tondichtung_bis_2: "8,10",
+        zement_bent_von: "9,00",
+        zement_bent_bis: "9,80",
+        bohrgut_von: "42,00",
+        bohrgut_bis: "44,00",
+      },
+    ]);
 
     const maxRows = Math.max(1, Number(schichtRowsPerPage1) + Number(schichtRowsPerPage2));
     setGrundwasserRows(
       Array.from({ length: 4 }, (_, idx) => ({
         ...emptyGroundwaterRow(),
-        grundwasserstand: (2.4 + idx * 0.2).toFixed(2),
+        grundwasserstand:
+          idx === 0
+            ? "ungebohrt"
+            : idx === 1
+              ? "eingespiegelt"
+              : idx === 2
+                ? "Bohrende"
+                : "im Pegel",
         datum: "30.01.2026",
         uhrzeit: "10:30",
         tiefe_m: (3.2 + idx * 0.4).toFixed(2),
@@ -1277,9 +1853,13 @@ export default function SchichtenverzeichnisForm({
         a1: `a1 Beispiel ${idx + 1}`,
         a2: `a2 Beispiel ${idx + 1}`,
         b: "b",
-        c: "c",
-        d: "d",
-        e: "e",
+        c: "mittel",
+        d: "grau",
+        d_color: "#808080",
+        d_mix_x: "50",
+        d_mix_y: "20",
+        d_tint: "blau",
+        e: "0",
         f: "f",
         g: "g",
         h: "h",
@@ -1288,6 +1868,20 @@ export default function SchichtenverzeichnisForm({
         proben_nr: `P-${idx + 1}`,
         proben_tiefe: "3,2",
         proben_tiefen: ["0,0 - 2,3", "3,2", "4,1 - 5,0"],
+        proben_arten: ["GP", "EP", "UP"],
+        spt_eintraege:
+          idx === 0
+            ? [
+                { schlag_1: "54", schlag_2: "40", schlag_3: "15" },
+                { schlag_1: "15", schlag_2: "15", schlag_3: "15" },
+              ]
+            : idx === 1
+              ? [{ schlag_1: "20", schlag_2: "18", schlag_3: "12" }]
+              : [],
+        spt_gemacht: idx <= 1,
+        spt_schlag_1: idx === 0 ? "54" : idx === 1 ? "20" : "",
+        spt_schlag_2: idx === 0 ? "40" : idx === 1 ? "18" : "",
+        spt_schlag_3: idx === 0 ? "15" : idx === 1 ? "12" : "",
       }))
     );
   };
@@ -1295,6 +1889,11 @@ export default function SchichtenverzeichnisForm({
   const resetAllInputs = () => {
     if (!confirm("Alle Eingaben wirklich löschen?")) return;
     setData(initialData);
+    setAuftragMode("list");
+    setProjektMode("list");
+    setSchlitzweiteMode("list");
+    setBohrungen([emptyBohrungEntry()]);
+    setFilterRows([emptyFilterRow()]);
     setSchichtRows([emptySchichtRow()]);
     setGrundwasserRows([emptyGroundwaterRow()]);
   };
@@ -1485,66 +2084,68 @@ export default function SchichtenverzeichnisForm({
           <div className="mb-3 text-xs text-slate-500">
             Pro Feld kannst du X und Y direkt mit ±10 verschieben.
           </div>
-          <div className="grid gap-2">
-            {page1PdfFields.map((field) => {
-              const value = fieldOffsetsPage1[field.key] ?? { x: "0", y: "0" };
-              return (
-                <div
-                  key={field.key}
-                  className="grid items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/40 p-2 md:grid-cols-[1.3fr_auto_auto_auto_auto_auto_auto_auto_auto]"
-                >
-                  <div className="min-w-0 text-xs font-semibold text-slate-700">
-                    <span className="truncate">{field.label}</span>
-                    <span className="ml-2 text-[10px] text-slate-400">{field.key}</span>
+          <div className="overflow-x-auto">
+            <div className="grid min-w-[980px] gap-2">
+              {page1PdfFields.map((field) => {
+                const value = fieldOffsetsPage1[field.key] ?? { x: "0", y: "0" };
+                return (
+                  <div
+                    key={field.key}
+                    className="grid items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/40 p-2 lg:grid-cols-[1.3fr_auto_auto_auto_auto_auto_auto_auto_auto]"
+                  >
+                    <div className="min-w-0 text-xs font-semibold text-slate-700">
+                      <span className="truncate">{field.label}</span>
+                      <span className="ml-2 text-[10px] text-slate-400">{field.key}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                      onClick={() => adjustFieldOffset(field.key, "x", -10)}
+                    >
+                      X -10
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                      onClick={() => adjustFieldOffset(field.key, "x", 10)}
+                    >
+                      X +10
+                    </button>
+                    <input
+                      className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
+                      value={value.x}
+                      onChange={(e) => setFieldOffsetValue(field.key, "x", e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                      onClick={() => adjustFieldOffset(field.key, "y", -10)}
+                    >
+                      Y -10
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                      onClick={() => adjustFieldOffset(field.key, "y", 10)}
+                    >
+                      Y +10
+                    </button>
+                    <input
+                      className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
+                      value={value.y}
+                      onChange={(e) => setFieldOffsetValue(field.key, "y", e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                      onClick={() => resetFieldOffset(field.key)}
+                    >
+                      Reset
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                    onClick={() => adjustFieldOffset(field.key, "x", -10)}
-                  >
-                    X -10
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                    onClick={() => adjustFieldOffset(field.key, "x", 10)}
-                  >
-                    X +10
-                  </button>
-                  <input
-                    className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
-                    value={value.x}
-                    onChange={(e) => setFieldOffsetValue(field.key, "x", e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                    onClick={() => adjustFieldOffset(field.key, "y", -10)}
-                  >
-                    Y -10
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                    onClick={() => adjustFieldOffset(field.key, "y", 10)}
-                  >
-                    Y +10
-                  </button>
-                  <input
-                    className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
-                    value={value.y}
-                    onChange={(e) => setFieldOffsetValue(field.key, "y", e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                    onClick={() => resetFieldOffset(field.key)}
-                  >
-                    Reset
-                  </button>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
           <div className="mt-5 rounded-xl border border-slate-200/80 bg-slate-50/40 p-3">
             <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
@@ -1569,73 +2170,75 @@ export default function SchichtenverzeichnisForm({
                 </button>
               ))}
             </div>
-            <div className="mt-3 grid gap-2">
-              {schichtFineTuneFields.map((field) => {
-                const value = rowFieldOffsetsPage1[String(selectedFineTuneRow)]?.[field.key] ?? {
-                  x: "0",
-                  y: "0",
-                };
-                return (
-                  <div
-                    key={`${selectedFineTuneRow}-${field.key}`}
-                    className="grid items-center gap-2 rounded-xl border border-slate-200/80 bg-white p-2 md:grid-cols-[1.3fr_auto_auto_auto_auto_auto_auto_auto_auto]"
-                  >
-                    <div className="min-w-0 text-xs font-semibold text-slate-700">
-                      <span className="truncate">{field.label}</span>
-                      <span className="ml-2 text-[10px] text-slate-400">{field.key}</span>
+            <div className="mt-3 overflow-x-auto">
+              <div className="grid min-w-[980px] gap-2">
+                {schichtFineTuneFields.map((field) => {
+                  const value = rowFieldOffsetsPage1[String(selectedFineTuneRow)]?.[field.key] ?? {
+                    x: "0",
+                    y: "0",
+                  };
+                  return (
+                    <div
+                      key={`${selectedFineTuneRow}-${field.key}`}
+                      className="grid items-center gap-2 rounded-xl border border-slate-200/80 bg-white p-2 lg:grid-cols-[1.3fr_auto_auto_auto_auto_auto_auto_auto_auto]"
+                    >
+                      <div className="min-w-0 text-xs font-semibold text-slate-700">
+                        <span className="truncate">{field.label}</span>
+                        <span className="ml-2 text-[10px] text-slate-400">{field.key}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                        onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "x", -10)}
+                      >
+                        X -10
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                        onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "x", 10)}
+                      >
+                        X +10
+                      </button>
+                      <input
+                        className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
+                        value={value.x}
+                        onChange={(e) =>
+                          setRowFieldOffsetValue(selectedFineTuneRow, field.key, "x", e.target.value)
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                        onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "y", -10)}
+                      >
+                        Y -10
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                        onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "y", 10)}
+                      >
+                        Y +10
+                      </button>
+                      <input
+                        className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
+                        value={value.y}
+                        onChange={(e) =>
+                          setRowFieldOffsetValue(selectedFineTuneRow, field.key, "y", e.target.value)
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                        onClick={() => resetRowFieldOffset(selectedFineTuneRow, field.key)}
+                      >
+                        Reset
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                      onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "x", -10)}
-                    >
-                      X -10
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                      onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "x", 10)}
-                    >
-                      X +10
-                    </button>
-                    <input
-                      className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
-                      value={value.x}
-                      onChange={(e) =>
-                        setRowFieldOffsetValue(selectedFineTuneRow, field.key, "x", e.target.value)
-                      }
-                    />
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                      onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "y", -10)}
-                    >
-                      Y -10
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                      onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "y", 10)}
-                    >
-                      Y +10
-                    </button>
-                    <input
-                      className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
-                      value={value.y}
-                      onChange={(e) =>
-                        setRowFieldOffsetValue(selectedFineTuneRow, field.key, "y", e.target.value)
-                      }
-                    />
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                      onClick={() => resetRowFieldOffset(selectedFineTuneRow, field.key)}
-                    >
-                      Reset
-                    </button>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -1644,16 +2247,93 @@ export default function SchichtenverzeichnisForm({
       {showStep(0)
         ? renderStep(
             <Card title="Kopf & Projekt">
-              <div className="grid gap-4 md:grid-cols-[1.2fr_1fr_0.6fr]">
-                <Field label="Auftrag‑Nr." value={data.auftrag_nr} onChange={(v) => update("auftrag_nr", v)} />
+              <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_0.6fr]">
+                <div className="space-y-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Auftrag‑Nr.
+                  </span>
+                  <div className="grid gap-2">
+                    <select
+                      className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                      value={
+                        auftragMode === "custom"
+                          ? "__custom__"
+                          : String(data.auftrag_nr ?? "").trim()
+                            ? data.auftrag_nr
+                            : "__empty__"
+                      }
+                      onChange={(e) => {
+                        const selected = e.target.value;
+                        if (selected === "__custom__") {
+                          setAuftragMode("custom");
+                          return;
+                        }
+                        setAuftragMode("list");
+                        update("auftrag_nr", selected === "__empty__" ? "" : selected);
+                      }}
+                    >
+                      <option value="__empty__">Auftrag auswählen…</option>
+                      {auftragOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                      <option value="__custom__">Eigene Auftrag-Nr. eingeben…</option>
+                    </select>
+                    {auftragMode === "custom" ? (
+                      <input
+                        className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                        placeholder="Eigene Auftrag-Nr."
+                        value={data.auftrag_nr ?? ""}
+                        onChange={(e) => update("auftrag_nr", e.target.value)}
+                      />
+                    ) : null}
+                  </div>
+                </div>
                 <Field label="Bohrmeister" value={data.bohrmeister} onChange={(v) => update("bohrmeister", v)} />
                 <Field label="Blatt" value={data.blatt_nr} onChange={(v) => update("blatt_nr", v)} />
-                <Field
-                  label="Projekt"
-                  value={data.projekt_name}
-                  onChange={(v) => update("projekt_name", v)}
-                  className="md:col-span-3"
-                />
+                <div className="space-y-1 md:col-span-3">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Projekt
+                  </span>
+                  <div className="grid gap-2">
+                    <select
+                      className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                      value={
+                        projektMode === "custom"
+                          ? "__custom__"
+                          : String(data.projekt_name ?? "").trim()
+                            ? data.projekt_name
+                            : "__empty__"
+                      }
+                      onChange={(e) => {
+                        const selected = e.target.value;
+                        if (selected === "__custom__") {
+                          setProjektMode("custom");
+                          return;
+                        }
+                        setProjektMode("list");
+                        update("projekt_name", selected === "__empty__" ? "" : selected);
+                      }}
+                    >
+                      <option value="__empty__">Projekt auswählen…</option>
+                      {projektNameOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                      <option value="__custom__">Eigenen Projektnamen eingeben…</option>
+                    </select>
+                    {projektMode === "custom" ? (
+                      <input
+                        className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                        placeholder="Eigener Projektname"
+                        value={data.projekt_name ?? ""}
+                        onChange={(e) => update("projekt_name", e.target.value)}
+                      />
+                    ) : null}
+                  </div>
+                </div>
               </div>
             </Card>
           )
@@ -1661,49 +2341,147 @@ export default function SchichtenverzeichnisForm({
 
       {showStep(1)
         ? renderStep(
-            <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-              <Card title="Bohrung / Verfahren">
-                <div className="grid gap-4">
-                  <div className="grid gap-3 md:grid-cols-[160px_1fr]">
-                    <Field label="Bohrung Nr." value={data.bohrung_nr} onChange={(v) => update("bohrung_nr", v)} />
-                    <Field label="Durchführungszeit" value={data.durchfuehrungszeit} onChange={(v) => update("durchfuehrungszeit", v)} />
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-[1fr_120px]">
-                    <Field label="Rammkernbohrung bis (m)" value={data.rammbohrung} onChange={(v) => update("rammbohrung", v)} />
-                    <Field label="Ø" value={data.verrohr_durch_1} onChange={(v) => update("verrohr_durch_1", v)} />
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-[1fr_120px]">
-                    <Field
-                      label="Rotationskernbohrung bis (m)"
-                      value={data.rotationskernbohrung}
-                      onChange={(v) => update("rotationskernbohrung", v)}
+            <Card title="Bohrung / Verrohrung">
+              <div className="grid gap-4">
+                <div className="grid gap-3 lg:grid-cols-[180px_1fr_1fr]">
+                  <Field label="Bohrung Nr." value={data.bohrung_nr} onChange={(v) => update("bohrung_nr", v)} />
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      Durchführung von
+                    </span>
+                    <input
+                      type="date"
+                      className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                      value={data.durchfuehrungszeit_von ?? ""}
+                      onChange={(e) => update("durchfuehrungszeit_von", e.target.value)}
                     />
-                    <Field label="Ø" value={data.verrohr_durch_2} onChange={(v) => update("verrohr_durch_2", v)} />
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-[1fr_120px]">
-                    <Field label="EK‑DK‑S (Ø)" value={data.ek_dks} onChange={(v) => update("ek_dks", v)} />
-                    <Field label="Ø" value={data.verrohr_durch_3} onChange={(v) => update("verrohr_durch_3", v)} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      Durchführung bis
+                    </span>
+                    <input
+                      type="date"
+                      className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                      value={data.durchfuehrungszeit_bis ?? ""}
+                      onChange={(e) => update("durchfuehrungszeit_bis", e.target.value)}
+                    />
+                  </label>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-slate-500">Eine Zeile pro Bohrung</div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50"
+                      onClick={() => setBohrungen((prev) => [...prev, emptyBohrungEntry()])}
+                    >
+                      + Bohrung
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
+                      onClick={() =>
+                        setBohrungen((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev))
+                      }
+                      disabled={bohrungen.length <= 1}
+                    >
+                      - Bohrung
+                    </button>
                   </div>
                 </div>
-              </Card>
 
-              <Card title="Verrohrung">
-                <div className="grid gap-3">
-                  <div className="grid grid-cols-[1fr_90px] gap-3">
-                    <Field label="Verrohrt bis (m)" value={data.verrohrt_bis_1} onChange={(v) => update("verrohrt_bis_1", v)} />
-                    <Field label="Ø (mm)" value={data.verrohr_durch_1} onChange={(v) => update("verrohr_durch_1", v)} />
-                  </div>
-                  <div className="grid grid-cols-[1fr_90px] gap-3">
-                    <Field label="Verrohrt bis (m)" value={data.verrohrt_bis_2} onChange={(v) => update("verrohrt_bis_2", v)} />
-                    <Field label="Ø (mm)" value={data.verrohr_durch_2} onChange={(v) => update("verrohr_durch_2", v)} />
-                  </div>
-                  <div className="grid grid-cols-[1fr_90px] gap-3">
-                    <Field label="Verrohrt bis (m)" value={data.verrohrt_bis_3} onChange={(v) => update("verrohrt_bis_3", v)} />
-                    <Field label="Ø (mm)" value={data.verrohr_durch_3} onChange={(v) => update("verrohr_durch_3", v)} />
-                  </div>
+                <div className="space-y-2">
+                  {bohrungen.map((entry, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-xl border border-slate-200/80 bg-slate-50/30 p-3"
+                    >
+                      <div className="grid gap-3 xl:grid-cols-[180px_1fr_1fr_120px]">
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                            Verfahren
+                          </span>
+                          <select
+                            className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                            value={entry.verfahren}
+                            onChange={(e) =>
+                              setBohrungen((prev) => {
+                                const next = [...prev];
+                                const nextVerfahren = normalizeBohrverfahren(e.target.value);
+                                next[idx] = {
+                                  ...next[idx],
+                                  verfahren: nextVerfahren,
+                                  verrohr_durchmesser:
+                                    nextVerfahren === "ek_dks"
+                                      ? "146"
+                                      : next[idx].verrohr_durchmesser,
+                                };
+                                return next;
+                              })
+                            }
+                          >
+                            <option value="ramm">Rammkernbohrung</option>
+                            <option value="rotation">Rotationskernbohrung</option>
+                            <option value="ek_dks">EK-DK-S</option>
+                            <option value="voll">Vollbohrung</option>
+                          </select>
+                        </label>
+                        <Field
+                          label={
+                            entry.verfahren === "ek_dks"
+                              ? "Bohrung Ø (mm)"
+                              : "Bohrung bis (m)"
+                          }
+                          value={entry.bohrung_bis}
+                          onChange={(v) =>
+                            setBohrungen((prev) => {
+                              const next = [...prev];
+                              next[idx] = { ...next[idx], bohrung_bis: v };
+                              return next;
+                            })
+                          }
+                        />
+                        <Field
+                          label="Verrohrt bis (m)"
+                          value={entry.verrohrt_bis}
+                          onChange={(v) =>
+                            setBohrungen((prev) => {
+                              const next = [...prev];
+                              next[idx] = { ...next[idx], verrohrt_bis: v };
+                              return next;
+                            })
+                          }
+                        />
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                            Ø (mm)
+                          </span>
+                          <select
+                            className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                            value={entry.verrohr_durchmesser ?? ""}
+                            onChange={(e) =>
+                              setBohrungen((prev) => {
+                                const next = [...prev];
+                                next[idx] = { ...next[idx], verrohr_durchmesser: e.target.value };
+                                return next;
+                              })
+                            }
+                          >
+                            <option value="">Bitte wählen…</option>
+                            {BOHR_DURCHMESSER_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </Card>
-            </section>
+              </div>
+            </Card>
           )
         : null}
 
@@ -1743,42 +2521,72 @@ export default function SchichtenverzeichnisForm({
               <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Messung {idx + 1}
               </div>
-              <div className="grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_1fr_1fr_1fr]">
+              <div className="grid gap-3 xl:grid-cols-[1.2fr_1fr_1fr_1fr_1fr_1fr]">
+                <label className="space-y-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Grundwasserstand
+                  </span>
+                  <select
+                    className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                    value={row.grundwasserstand ?? ""}
+                    onChange={(e) =>
+                      setGrundwasserRows((prev) => {
+                        const next = [...prev];
+                        next[idx] = { ...next[idx], grundwasserstand: e.target.value };
+                        return next;
+                      })
+                    }
+                  >
+                    <option value="">Bitte wählen…</option>
+                    {GRUNDWASSERSTAND_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                    {row.grundwasserstand &&
+                    !GRUNDWASSERSTAND_OPTIONS.includes(
+                      row.grundwasserstand as (typeof GRUNDWASSERSTAND_OPTIONS)[number]
+                    ) ? (
+                      <option value={row.grundwasserstand}>{row.grundwasserstand}</option>
+                    ) : null}
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Datum
+                  </span>
+                  <input
+                    type="date"
+                    className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                    value={toDateInputValue(row.datum)}
+                    onChange={(e) =>
+                      setGrundwasserRows((prev) => {
+                        const next = [...prev];
+                        next[idx] = { ...next[idx], datum: fromDateInputValue(e.target.value) };
+                        return next;
+                      })
+                    }
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Uhrzeit
+                  </span>
+                  <input
+                    type="time"
+                    className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                    value={toTimeInputValue(row.uhrzeit)}
+                    onChange={(e) =>
+                      setGrundwasserRows((prev) => {
+                        const next = [...prev];
+                        next[idx] = { ...next[idx], uhrzeit: e.target.value };
+                        return next;
+                      })
+                    }
+                  />
+                </label>
                 <Field
-                  label="Grundwasserstand"
-                  value={row.grundwasserstand}
-                  onChange={(v) =>
-                    setGrundwasserRows((prev) => {
-                      const next = [...prev];
-                      next[idx] = { ...next[idx], grundwasserstand: v };
-                      return next;
-                    })
-                  }
-                />
-                <Field
-                  label="Datum"
-                  value={row.datum}
-                  onChange={(v) =>
-                    setGrundwasserRows((prev) => {
-                      const next = [...prev];
-                      next[idx] = { ...next[idx], datum: v };
-                      return next;
-                    })
-                  }
-                />
-                <Field
-                  label="Uhrzeit"
-                  value={row.uhrzeit}
-                  onChange={(v) =>
-                    setGrundwasserRows((prev) => {
-                      const next = [...prev];
-                      next[idx] = { ...next[idx], uhrzeit: v };
-                      return next;
-                    })
-                  }
-                />
-                <Field
-                  label="Tiefe (m)"
+                  label="Tiefe (GW)"
                   value={row.tiefe_m}
                   onChange={(v) =>
                     setGrundwasserRows((prev) => {
@@ -1814,36 +2622,114 @@ export default function SchichtenverzeichnisForm({
             </div>
           ))}
         </div>
-        <div className="mt-3 grid gap-3 md:grid-cols-[1fr]">
-          <Field label="Pegelrohr Ø" value={data.pegel_durchmesser} onChange={(v) => update("pegel_durchmesser", v)} />
-        </div>
             </Card>
           )
         : null}
 
       {showStep(3)
         ? renderStep(
-            <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+            <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
               <Card title="Pegelrohr / Ausbau">
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <label className="space-y-1 lg:col-span-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      Pegelrohr Ø
+                    </span>
+                    <select
+                      className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                      value={data.pegel_durchmesser ?? ""}
+                      onChange={(e) => update("pegel_durchmesser", e.target.value)}
+                    >
+                      <option value="">Pegel Ø</option>
+                      {PEGEL_DURCHMESSER_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                      {data.pegel_durchmesser &&
+                      !PEGEL_DURCHMESSER_OPTIONS.includes(
+                        data.pegel_durchmesser as (typeof PEGEL_DURCHMESSER_OPTIONS)[number]
+                      ) ? (
+                        <option value={data.pegel_durchmesser}>{data.pegel_durchmesser}</option>
+                      ) : null}
+                    </select>
+                  </label>
                   <Field label="ROK" value={data.rok} onChange={(v) => update("rok", v)} />
                   <Field label="Sumpf (m)" value={data.sumpf} onChange={(v) => update("sumpf", v)} />
                   <Field label="Filterrohr (m)" value={data.filter_rohr} onChange={(v) => update("filter_rohr", v)} />
-                  <Field label="SW" value={data.sw} onChange={(v) => update("sw", v)} />
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      Schlitzweite (SW)
+                    </span>
+                    <div className="grid gap-2">
+                      <select
+                        className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                        value={schlitzweiteMode === "custom" ? "__custom__" : data.sw || ""}
+                        onChange={(e) => {
+                          if (e.target.value === "__custom__") {
+                            setSchlitzweiteMode("custom");
+                            update("sw", "");
+                            return;
+                          }
+                          setSchlitzweiteMode("list");
+                          update("sw", e.target.value);
+                        }}
+                      >
+                        <option value="">Bitte wählen…</option>
+                        {SCHLITZWEITE_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                        <option value="__custom__">Eigene Schlitzweite…</option>
+                      </select>
+                      {schlitzweiteMode === "custom" ? (
+                        <input
+                          className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                          placeholder="Eigene Schlitzweite"
+                          value={data.sw ?? ""}
+                          onChange={(e) => update("sw", e.target.value)}
+                        />
+                      ) : null}
+                    </div>
+                  </label>
                   <Field label="Vollrohr PVC (m)" value={data.vollrohr_pvc} onChange={(v) => update("vollrohr_pvc", v)} />
                   <Field label="Vollrohr Stahl (m)" value={data.vollrohr_stahl} onChange={(v) => update("vollrohr_stahl", v)} />
                 </div>
-                <div className="mt-4 grid gap-4 md:grid-cols-3">
-                  <Field label="Passavant" value={data.passavant} onChange={(v) => update("passavant", v)} />
-                  <Field label="Ferngas" value={data.ferngas} onChange={(v) => update("ferngas", v)} />
-                  <Field label="Seba" value={data.seba} onChange={(v) => update("seba", v)} />
-                </div>
               </Card>
 
-              <Card title="Hydr./Beton">
-                <div className="grid gap-4">
-                  <Field label="Hydr.Kp." value={data.hydr_kp} onChange={(v) => update("hydr_kp", v)} />
-                  <Field label="Betonsockel" value={data.betonsockel} onChange={(v) => update("betonsockel", v)} />
+              <Card title="Passavant / Seba / Beton">
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(data.passavant?.trim())}
+                      onChange={(e) => toggleMark("passavant", e.target.checked)}
+                    />
+                    Passavant
+                  </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(data.seba?.trim())}
+                      onChange={(e) => toggleMark("seba", e.target.checked)}
+                    />
+                    Seba
+                  </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(data.betonsockel?.trim())}
+                      onChange={(e) => toggleMark("betonsockel", e.target.checked)}
+                    />
+                    Betonsockel
+                  </label>
+                  <Field
+                    label="Kies-Körnung"
+                    value={data.kies_koernung}
+                    onChange={(v) => update("kies_koernung", v)}
+                    className="lg:col-span-2"
+                  />
                 </div>
               </Card>
             </section>
@@ -1853,27 +2739,72 @@ export default function SchichtenverzeichnisForm({
       {showStep(4)
         ? renderStep(
             <Card title="Filter / Dichtung / Bohrgut">
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Filterkies von" value={data.filterkies_von} onChange={(v) => update("filterkies_von", v)} />
-                <Field label="Filterkies bis" value={data.filterkies_bis} onChange={(v) => update("filterkies_bis", v)} />
-                <Field label="Tondichtung von" value={data.tondichtung_von} onChange={(v) => update("tondichtung_von", v)} />
-                <Field label="Tondichtung bis" value={data.tondichtung_bis} onChange={(v) => update("tondichtung_bis", v)} />
-                <Field label="Gegenfilter von" value={data.gegenfilter_von} onChange={(v) => update("gegenfilter_von", v)} />
-                <Field label="Gegenfilter bis" value={data.gegenfilter_bis} onChange={(v) => update("gegenfilter_bis", v)} />
-                <Field
-                  label="Tondichtung von (unten)"
-                  value={data.tondichtung_von_2}
-                  onChange={(v) => update("tondichtung_von_2", v)}
-                />
-                <Field
-                  label="Tondichtung bis (unten)"
-                  value={data.tondichtung_bis_2}
-                  onChange={(v) => update("tondichtung_bis_2", v)}
-                />
-                <Field label="Zem.-Bent. von" value={data.zement_bent_von} onChange={(v) => update("zement_bent_von", v)} />
-                <Field label="Zem.-Bent. bis" value={data.zement_bent_bis} onChange={(v) => update("zement_bent_bis", v)} />
-                <Field label="Bohrgut von" value={data.bohrgut_von} onChange={(v) => update("bohrgut_von", v)} />
-                <Field label="Bohrgut bis" value={data.bohrgut_bis} onChange={(v) => update("bohrgut_bis", v)} />
+              <div className="space-y-4">
+                <div className="text-xs text-slate-500">
+                  Jede Gruppe ist separat erweiterbar. In der PDF stehen die Werte je Gruppe untereinander im gleichen Kasten.
+                </div>
+                <div className="space-y-3">
+                  {FILTER_PAIR_CONFIG.map((cfg) => {
+                    const entries = getFilterPairEntries(cfg.vonKey, cfg.bisKey);
+                    return (
+                      <div key={cfg.id} className="rounded-xl border border-slate-200/80 bg-slate-50/30 p-3">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                            {cfg.title}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50"
+                              onClick={() =>
+                                setFilterPairEntries(cfg.vonKey, cfg.bisKey, [
+                                  ...entries,
+                                  { von: "", bis: "" },
+                                ])
+                              }
+                            >
+                              + Zeile
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
+                              onClick={() =>
+                                setFilterPairEntries(cfg.vonKey, cfg.bisKey, entries.slice(0, -1))
+                              }
+                              disabled={entries.length <= 1}
+                            >
+                              - Zeile
+                            </button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {entries.map((entry, idx) => (
+                            <div key={`${cfg.id}-${idx}`} className="grid gap-4 lg:grid-cols-2">
+                              <Field
+                                label={idx === 0 ? cfg.vonLabel : `${cfg.vonLabel} ${idx + 1}`}
+                                value={entry.von}
+                                onChange={(v) => {
+                                  const next = [...entries];
+                                  next[idx] = { ...next[idx], von: v };
+                                  setFilterPairEntries(cfg.vonKey, cfg.bisKey, next);
+                                }}
+                              />
+                              <Field
+                                label={idx === 0 ? cfg.bisLabel : `${cfg.bisLabel} ${idx + 1}`}
+                                value={entry.bis}
+                                onChange={(v) => {
+                                  const next = [...entries];
+                                  next[idx] = { ...next[idx], bis: v };
+                                  setFilterPairEntries(cfg.vonKey, cfg.bisKey, next);
+                                }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </Card>
           )
@@ -1887,7 +2818,7 @@ export default function SchichtenverzeichnisForm({
             Legende / Hilfe (Original‑Hinweise)
           </summary>
           <div className="px-3 pb-3 text-sm text-slate-600">
-            <div className="grid gap-2 md:grid-cols-[0.8fr_2.6fr_1.2fr_0.6fr_0.6fr_0.6fr]">
+            <div className="grid gap-2 xl:grid-cols-[0.8fr_2.6fr_1.2fr_0.6fr_0.6fr_0.6fr]">
               <div className="rounded-lg border border-slate-200 p-2">
                 <div className="text-xs font-semibold text-slate-700">Ansatzpunkt</div>
                 <div className="mt-1 text-xs">Bis / unter Ansatzpunkt</div>
@@ -1986,7 +2917,10 @@ export default function SchichtenverzeichnisForm({
                           ...prev[idx],
                           proben_tiefen: Array.isArray(prev[idx].proben_tiefen)
                             ? [...prev[idx].proben_tiefen]
-                            : ["", "", ""],
+                            : [""],
+                          proben_arten: Array.isArray(prev[idx].proben_arten)
+                            ? [...prev[idx].proben_arten]
+                            : ["GP"],
                         };
                         return [...prev.slice(0, idx + 1), clone, ...prev.slice(idx + 1)];
                       })
@@ -2007,14 +2941,15 @@ export default function SchichtenverzeichnisForm({
                 </div>
               </div>
               <div
-                className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr_0.4fr]"
+                className="grid gap-4 2xl:grid-cols-[1.4fr_0.9fr_0.4fr]"
                 style={{
                   minHeight: `${Number(schichtRowHeight) || 200}px`,
                 }}
               >
+              <div>
               <div className="rounded-xl border border-slate-200 h-full bg-white">
-                <div className="grid h-full grid-cols-[0.35fr_1fr]">
-                  <div className="border-r border-slate-200 px-3 py-2 text-xs text-slate-600">
+                <div className="grid h-full xl:grid-cols-[0.35fr_1fr]">
+                  <div className="border-b border-slate-200 px-3 py-2 text-xs text-slate-600 xl:border-b-0 xl:border-r">
                     <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                       Ansatzpunkt
                     </div>
@@ -2033,12 +2968,12 @@ export default function SchichtenverzeichnisForm({
                       }
                     />
                   </div>
-                  <div className="grid grid-cols-[1fr_1fr_1fr_0.6fr] text-xs text-slate-600">
-                    <div className="col-span-4 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-[1fr_1fr_1fr_0.6fr] text-xs text-slate-600">
+                    <div className="col-span-full 2xl:col-span-4 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                       Schichtbeschreibung
                     </div>
-                    <label className="col-span-4 border-b border-slate-200 px-3 py-2">
-                      a1
+                    <label className="col-span-full 2xl:col-span-4 border-b border-slate-200 px-3 py-2">
+                      a1 Benennung
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.a1}
@@ -2051,8 +2986,8 @@ export default function SchichtenverzeichnisForm({
                         }
                       />
                     </label>
-                    <label className="col-span-4 border-b border-slate-200 px-3 py-2">
-                      a2
+                    <label className="col-span-full 2xl:col-span-4 border-b border-slate-200 px-3 py-2">
+                      a2 Bemerkung
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.a2}
@@ -2066,7 +3001,7 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="border-b border-r border-slate-200 px-3 py-2">
-                      b
+                      b Bohrgut
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.b}
@@ -2080,8 +3015,8 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="border-b border-r border-slate-200 px-3 py-2">
-                      c
-                      <input
+                      c Bohrvorgang
+                      <select
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.c}
                         onChange={(e) =>
@@ -2091,10 +3026,17 @@ export default function SchichtenverzeichnisForm({
                             return next;
                           })
                         }
-                      />
+                      >
+                        <option value="">Bitte wählen…</option>
+                        {SCHICHT_C_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label className="border-b border-r border-slate-200 px-3 py-2">
-                      d
+                      d Farbe
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.d}
@@ -2105,11 +3047,12 @@ export default function SchichtenverzeichnisForm({
                             return next;
                           })
                         }
+                        placeholder="Farbe eingeben"
                       />
                     </label>
-                    <div className="border-b border-slate-200 px-3 py-2" />
+                    <div className="hidden 2xl:block border-b border-slate-200 px-3 py-2" />
                     <label className="border-r border-slate-200 px-3 py-2">
-                      f
+                      f Ortsüblich
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.f}
@@ -2123,7 +3066,7 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="border-r border-slate-200 px-3 py-2">
-                      g
+                      g Geologisch
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.g}
@@ -2137,7 +3080,7 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="border-r border-slate-200 px-3 py-2">
-                      h
+                      h Gruppe
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.h}
@@ -2151,8 +3094,8 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="px-3 py-2">
-                      e
-                      <input
+                      e Kalkgehalt
+                      <select
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.e}
                         onChange={(e) =>
@@ -2162,15 +3105,23 @@ export default function SchichtenverzeichnisForm({
                             return next;
                           })
                         }
-                      />
+                      >
+                        <option value="">Bitte wählen…</option>
+                        {SCHICHT_E_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                   </div>
                 </div>
               </div>
-              <div className="rounded-xl border border-slate-200 p-3 h-full">
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3 h-full flex flex-col">
                 <div className="text-xs font-semibold text-slate-600">Feststellungen</div>
                 <textarea
-                  className="mt-2 h-full min-h-[160px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  className="mt-2 h-28 min-h-[96px] max-h-40 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   value={row.feststellungen}
                   maxLength={MAX_FESTSTELLUNGEN_CHARS}
                   onChange={(e) =>
@@ -2187,32 +3138,206 @@ export default function SchichtenverzeichnisForm({
                 <div className="mt-1 text-[10px] text-slate-400">
                   {row.feststellungen.length}/{MAX_FESTSTELLUNGEN_CHARS}
                 </div>
+                <label className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={(row.spt_eintraege?.length ?? 0) > 0}
+                    onChange={(e) =>
+                      setSchichtRows((prev) => {
+                        const next = [...prev];
+                        if (e.target.checked) {
+                          const entries = Array.isArray(next[idx].spt_eintraege)
+                            ? [...next[idx].spt_eintraege]
+                            : [];
+                          const normalizedEntries = entries.length > 0 ? entries : [emptySptEntry()];
+                          const first = normalizedEntries[0] ?? emptySptEntry();
+                          next[idx] = {
+                            ...next[idx],
+                            spt_gemacht: true,
+                            spt_eintraege: normalizedEntries,
+                            spt_schlag_1: first.schlag_1,
+                            spt_schlag_2: first.schlag_2,
+                            spt_schlag_3: first.schlag_3,
+                          };
+                        } else {
+                          next[idx] = {
+                            ...next[idx],
+                            spt_gemacht: false,
+                            spt_eintraege: [],
+                            spt_schlag_1: "",
+                            spt_schlag_2: "",
+                            spt_schlag_3: "",
+                          };
+                        }
+                        return next;
+                      })
+                    }
+                  />
+                  SPT durchgeführt
+                </label>
+                {(row.spt_eintraege?.length ?? 0) > 0 ? (
+                  <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        Schlagzahlen
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] hover:bg-slate-50 disabled:opacity-50"
+                          onClick={() =>
+                            setSchichtRows((prev) => {
+                              const next = [...prev];
+                              const entries = Array.isArray(next[idx].spt_eintraege)
+                                ? [...next[idx].spt_eintraege]
+                                : [];
+                              if (entries.length >= 6) return prev;
+                              entries.push(emptySptEntry());
+                              const first = entries[0] ?? emptySptEntry();
+                              next[idx] = {
+                                ...next[idx],
+                                spt_gemacht: true,
+                                spt_eintraege: entries,
+                                spt_schlag_1: first.schlag_1,
+                                spt_schlag_2: first.schlag_2,
+                                spt_schlag_3: first.schlag_3,
+                              };
+                              return next;
+                            })
+                          }
+                          disabled={(row.spt_eintraege?.length ?? 0) >= 6}
+                        >
+                          + SPT
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] hover:bg-slate-50 disabled:opacity-50"
+                          onClick={() =>
+                            setSchichtRows((prev) => {
+                              const next = [...prev];
+                              const entries = Array.isArray(next[idx].spt_eintraege)
+                                ? [...next[idx].spt_eintraege]
+                                : [];
+                              if (entries.length <= 1) return prev;
+                              entries.pop();
+                              const first = entries[0] ?? emptySptEntry();
+                              next[idx] = {
+                                ...next[idx],
+                                spt_gemacht: true,
+                                spt_eintraege: entries,
+                                spt_schlag_1: first.schlag_1,
+                                spt_schlag_2: first.schlag_2,
+                                spt_schlag_3: first.schlag_3,
+                              };
+                              return next;
+                            })
+                          }
+                          disabled={(row.spt_eintraege?.length ?? 0) <= 1}
+                        >
+                          - SPT
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {(Array.isArray(row.spt_eintraege) ? row.spt_eintraege : [])
+                        .slice(0, 6)
+                        .map((entry, sptIndex) => (
+                          <div
+                            key={sptIndex}
+                            className="rounded-md border border-slate-200 bg-white p-2"
+                          >
+                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              SPT {sptIndex + 1}
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                              <input
+                                className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                                placeholder="Schlag 1"
+                                value={entry?.schlag_1 ?? ""}
+                                onChange={(e) =>
+                                  setSchichtRows((prev) => {
+                                    const next = [...prev];
+                                    const entries = Array.isArray(next[idx].spt_eintraege)
+                                      ? [...next[idx].spt_eintraege]
+                                      : [emptySptEntry()];
+                                    const current = entries[sptIndex] ?? emptySptEntry();
+                                    entries[sptIndex] = { ...current, schlag_1: e.target.value };
+                                    const first = entries[0] ?? emptySptEntry();
+                                    next[idx] = {
+                                      ...next[idx],
+                                      spt_gemacht: entries.length > 0,
+                                      spt_eintraege: entries,
+                                      spt_schlag_1: first.schlag_1,
+                                      spt_schlag_2: first.schlag_2,
+                                      spt_schlag_3: first.schlag_3,
+                                    };
+                                    return next;
+                                  })
+                                }
+                              />
+                              <input
+                                className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                                placeholder="Schlag 2"
+                                value={entry?.schlag_2 ?? ""}
+                                onChange={(e) =>
+                                  setSchichtRows((prev) => {
+                                    const next = [...prev];
+                                    const entries = Array.isArray(next[idx].spt_eintraege)
+                                      ? [...next[idx].spt_eintraege]
+                                      : [emptySptEntry()];
+                                    const current = entries[sptIndex] ?? emptySptEntry();
+                                    entries[sptIndex] = { ...current, schlag_2: e.target.value };
+                                    const first = entries[0] ?? emptySptEntry();
+                                    next[idx] = {
+                                      ...next[idx],
+                                      spt_gemacht: entries.length > 0,
+                                      spt_eintraege: entries,
+                                      spt_schlag_1: first.schlag_1,
+                                      spt_schlag_2: first.schlag_2,
+                                      spt_schlag_3: first.schlag_3,
+                                    };
+                                    return next;
+                                  })
+                                }
+                              />
+                              <input
+                                className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                                placeholder="Schlag 3"
+                                value={entry?.schlag_3 ?? ""}
+                                onChange={(e) =>
+                                  setSchichtRows((prev) => {
+                                    const next = [...prev];
+                                    const entries = Array.isArray(next[idx].spt_eintraege)
+                                      ? [...next[idx].spt_eintraege]
+                                      : [emptySptEntry()];
+                                    const current = entries[sptIndex] ?? emptySptEntry();
+                                    entries[sptIndex] = { ...current, schlag_3: e.target.value };
+                                    const first = entries[0] ?? emptySptEntry();
+                                    next[idx] = {
+                                      ...next[idx],
+                                      spt_gemacht: entries.length > 0,
+                                      spt_eintraege: entries,
+                                      spt_schlag_1: first.schlag_1,
+                                      spt_schlag_2: first.schlag_2,
+                                      spt_schlag_3: first.schlag_3,
+                                    };
+                                    return next;
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <div className="rounded-xl border border-slate-200 p-3 h-full">
                 <div className="text-xs font-semibold text-slate-600">Entnommene Proben</div>
                 <div className="mt-3 grid gap-3">
-                  <Field
-                    label="Art"
-                    value={row.proben_art}
-                    onChange={(v) =>
-                      setSchichtRows((prev) => {
-                        const next = [...prev];
-                        next[idx] = { ...next[idx], proben_art: v };
-                        return next;
-                      })
-                    }
-                  />
-                  <Field
-                    label="Nr."
-                    value={row.proben_nr}
-                    onChange={(v) =>
-                      setSchichtRows((prev) => {
-                        const next = [...prev];
-                        next[idx] = { ...next[idx], proben_nr: v };
-                        return next;
-                      })
-                    }
-                  />
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    Nummerierung: automatisch 1, 2, 3 ... pro Probe/Tiefe
+                  </div>
                   <Field
                     label="Tiefe (kurz)"
                     value={row.proben_tiefe}
@@ -2239,16 +3364,21 @@ export default function SchichtenverzeichnisForm({
                             const next = [...prev];
                             const current = Array.isArray(next[idx].proben_tiefen)
                               ? [...next[idx].proben_tiefen]
-                              : ["", "", ""];
+                              : [""];
+                            const currentTypes = Array.isArray(next[idx].proben_arten)
+                              ? [...next[idx].proben_arten]
+                              : current.map(() => normalizeProbeType(next[idx].proben_art));
                             if (current.length >= 10) return prev;
+                            const defaultType = normalizeProbeType(currentTypes[0] ?? next[idx].proben_art);
                             current.push("");
-                            next[idx] = { ...next[idx], proben_tiefen: current };
+                            currentTypes.push(defaultType);
+                            next[idx] = { ...next[idx], proben_tiefen: current, proben_arten: currentTypes };
                             return next;
                           })
                         }
-                        disabled={(row.proben_tiefen?.length ?? 3) >= 10}
+                        disabled={(row.proben_tiefen?.length ?? 1) >= 10}
                       >
-                        + Zeile
+                        + Probe
                       </button>
                       <button
                         type="button"
@@ -2258,39 +3388,69 @@ export default function SchichtenverzeichnisForm({
                             const next = [...prev];
                             const current = Array.isArray(next[idx].proben_tiefen)
                               ? [...next[idx].proben_tiefen]
-                              : ["", "", ""];
-                            if (current.length <= 3) return prev;
+                              : [""];
+                            const currentTypes = Array.isArray(next[idx].proben_arten)
+                              ? [...next[idx].proben_arten]
+                              : current.map(() => normalizeProbeType(next[idx].proben_art));
+                            if (current.length <= 1) return prev;
                             current.pop();
-                            next[idx] = { ...next[idx], proben_tiefen: current };
+                            currentTypes.pop();
+                            next[idx] = { ...next[idx], proben_tiefen: current, proben_arten: currentTypes };
                             return next;
                           })
                         }
-                        disabled={(row.proben_tiefen?.length ?? 3) <= 3}
+                        disabled={(row.proben_tiefen?.length ?? 1) <= 1}
                       >
-                        – Zeile
+                        – Probe
                       </button>
                     </div>
                   </div>
-                  {(Array.isArray(row.proben_tiefen) ? row.proben_tiefen : ["", "", ""])
+                  {(Array.isArray(row.proben_tiefen) ? row.proben_tiefen : [""])
                     .slice(0, 10)
                     .map((_, i) => (
-                      <input
-                        key={i}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                        placeholder={`Tiefe ${i + 1}`}
-                        value={row.proben_tiefen?.[i] ?? ""}
-                        onChange={(e) =>
-                          setSchichtRows((prev) => {
-                            const next = [...prev];
-                            const current = Array.isArray(next[idx].proben_tiefen)
-                              ? [...next[idx].proben_tiefen]
-                              : ["", "", ""];
-                            current[i] = e.target.value;
-                            next[idx] = { ...next[idx], proben_tiefen: current };
-                            return next;
-                          })
-                        }
-                      />
+                      <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[92px_1fr]">
+                        <select
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                          value={normalizeProbeType(row.proben_arten?.[i] ?? row.proben_art)}
+                          onChange={(e) =>
+                            setSchichtRows((prev) => {
+                              const next = [...prev];
+                              const currentTypes = Array.isArray(next[idx].proben_arten)
+                                ? [...next[idx].proben_arten]
+                                : (Array.isArray(next[idx].proben_tiefen)
+                                    ? next[idx].proben_tiefen
+                                    : [""]).map(() => normalizeProbeType(next[idx].proben_art));
+                              currentTypes[i] = normalizeProbeType(e.target.value);
+                              next[idx] = {
+                                ...next[idx],
+                                proben_arten: currentTypes,
+                                proben_art: currentTypes[0] ?? normalizeProbeType(next[idx].proben_art),
+                              };
+                              return next;
+                            })
+                          }
+                        >
+                          <option value="GP">GP</option>
+                          <option value="EP">EP</option>
+                          <option value="UP">UP</option>
+                        </select>
+                        <input
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                          placeholder={`Tiefe ${i + 1}`}
+                          value={row.proben_tiefen?.[i] ?? ""}
+                          onChange={(e) =>
+                            setSchichtRows((prev) => {
+                              const next = [...prev];
+                              const current = Array.isArray(next[idx].proben_tiefen)
+                                ? [...next[idx].proben_tiefen]
+                                : [""];
+                              current[i] = e.target.value;
+                              next[idx] = { ...next[idx], proben_tiefen: current };
+                              return next;
+                            })
+                          }
+                        />
+                      </div>
                     ))}
                 </div>
               </div>
@@ -2305,14 +3465,8 @@ export default function SchichtenverzeichnisForm({
       {showStep(6)
         ? renderStep(
             <Card title="Proben / Übergabe">
-              <div className="grid gap-4 md:grid-cols-4">
-                <Field label="GP" value={data.probe_gp} onChange={(v) => update("probe_gp", v)} />
-                <Field label="KP" value={data.probe_kp} onChange={(v) => update("probe_kp", v)} />
-                <Field label="SP" value={data.probe_sp} onChange={(v) => update("probe_sp", v)} />
-                <Field label="WP" value={data.probe_wp} onChange={(v) => update("probe_wp", v)} />
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <Field label="Ki/m" value={data.probe_ki} onChange={(v) => update("probe_ki", v)} />
-                <Field label="BKB" value={data.probe_bkb} onChange={(v) => update("probe_bkb", v)} />
-                <Field label="SPT" value={data.probe_spt} onChange={(v) => update("probe_spt", v)} />
                 <Field label="Probenart" value={data.proben_art} onChange={(v) => update("proben_art", v)} />
                 <Field label="Proben‑Nr." value={data.proben_nr} onChange={(v) => update("proben_nr", v)} />
                 <Field label="Probentiefe" value={data.proben_tiefe} onChange={(v) => update("proben_tiefe", v)} />
@@ -2409,7 +3563,7 @@ function Field({
       </span>
       <input
         className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-        value={value}
+        value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
       />
     </label>

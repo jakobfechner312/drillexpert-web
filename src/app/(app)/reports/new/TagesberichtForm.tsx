@@ -2645,6 +2645,15 @@ if (mode === "edit") {
       </GroupCard> : null}
 
       {showStep(6) ? <GroupCard title="Verfüllung" badge="Kernbereich">
+        <RowActions
+          addLabel="+ Verfüllung"
+          removeLabel="– Verfüllung"
+          onAdd={addRow}
+          onRemove={removeLastRow}
+          countLabel={`Verfüllung: ${safeTableRows.length} / ${MAX_TABLE_ROWS}`}
+          disableAdd={safeTableRows.length >= MAX_TABLE_ROWS}
+          className="mt-3"
+        />
         <div className="mt-3 space-y-4">
           {safeTableRows.map((row, i) => (
             <div key={i} className="rounded-xl border p-4">
@@ -2717,7 +2726,7 @@ if (mode === "edit") {
                       })
                     }
                   >
-                    {expandedLines[`ton-${i}`] ? "– Zeile" : "+ Zeile"}
+                    {expandedLines[`ton-${i}`] ? "– Verfüllung" : "+ Verfüllung"}
                   </button>
                 </div>
 
@@ -2788,17 +2797,151 @@ if (mode === "edit") {
                       })
                     }
                   >
-                    {expandedLines[`bohrgut-${i}`] ? "– Zeile" : "+ Zeile"}
+                    {expandedLines[`bohrgut-${i}`] ? "– Verfüllung" : "+ Verfüllung"}
                   </button>
                 </div>
 
                 <div className="lg:col-span-2 text-sm text-slate-600 self-center">Zement-Bent.</div>
-                <input className="rounded-lg border px-3 py-2 text-sm lg:col-span-3" value={row.verfuellung?.zementBentVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentVon: e.target.value } })} placeholder="Zement-Bent. von" />
-                <input className="rounded-lg border px-3 py-2 text-sm lg:col-span-3" value={row.verfuellung?.zementBentBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentBis: e.target.value } })} placeholder="Zement-Bent. bis" />
+                <div className="lg:col-span-6 space-y-2">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input
+                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                      value={(row.verfuellung?.zementBentVon ?? "").split("\n")[0] ?? ""}
+                      onChange={(e) => {
+                        const lines = String(row.verfuellung?.zementBentVon ?? "").split("\n");
+                        lines[0] = e.target.value;
+                        const next = lines.filter(Boolean).join("\n");
+                        setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentVon: next } });
+                      }}
+                      placeholder="Zement-Bent. von"
+                    />
+                    <input
+                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                      value={(row.verfuellung?.zementBentBis ?? "").split("\n")[0] ?? ""}
+                      onChange={(e) => {
+                        const lines = String(row.verfuellung?.zementBentBis ?? "").split("\n");
+                        lines[0] = e.target.value;
+                        const next = lines.filter(Boolean).join("\n");
+                        setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentBis: next } });
+                      }}
+                      placeholder="Zement-Bent. bis"
+                    />
+                  </div>
+                  {expandedLines[`zement-${i}`] ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <input
+                        className="w-full rounded-lg border px-3 py-2 text-xs"
+                        value={(row.verfuellung?.zementBentVon ?? "").split("\n")[1] ?? ""}
+                        onChange={(e) => {
+                          const lines = String(row.verfuellung?.zementBentVon ?? "").split("\n");
+                          lines[1] = e.target.value;
+                          const next = lines.filter(Boolean).slice(0, 2).join("\n");
+                          setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentVon: next } });
+                        }}
+                        placeholder="Zement-Bent. von (2. Zeile)"
+                      />
+                      <input
+                        className="w-full rounded-lg border px-3 py-2 text-xs"
+                        value={(row.verfuellung?.zementBentBis ?? "").split("\n")[1] ?? ""}
+                        onChange={(e) => {
+                          const lines = String(row.verfuellung?.zementBentBis ?? "").split("\n");
+                          lines[1] = e.target.value;
+                          const next = lines.filter(Boolean).slice(0, 2).join("\n");
+                          setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentBis: next } });
+                        }}
+                        placeholder="Zement-Bent. bis (2. Zeile)"
+                      />
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() =>
+                      setExpandedLines((p) => {
+                        const next = !p[`zement-${i}`];
+                        if (!next) {
+                          const v = String(row.verfuellung?.zementBentVon ?? "").split("\n")[0] ?? "";
+                          const b = String(row.verfuellung?.zementBentBis ?? "").split("\n")[0] ?? "";
+                          setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), zementBentVon: v, zementBentBis: b } });
+                        }
+                        return { ...p, [`zement-${i}`]: next };
+                      })
+                    }
+                  >
+                    {expandedLines[`zement-${i}`] ? "– Verfüllung" : "+ Verfüllung"}
+                  </button>
+                </div>
 
                 <div className="lg:col-span-2 text-sm text-slate-600 self-center">Beton</div>
-                <input className="rounded-lg border px-3 py-2 text-sm lg:col-span-3" value={row.verfuellung?.betonVon ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonVon: e.target.value } })} placeholder="Beton von" />
-                <input className="rounded-lg border px-3 py-2 text-sm lg:col-span-3" value={row.verfuellung?.betonBis ?? ""} onChange={(e) => setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonBis: e.target.value } })} placeholder="Beton bis" />
+                <div className="lg:col-span-6 space-y-2">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input
+                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                      value={(row.verfuellung?.betonVon ?? "").split("\n")[0] ?? ""}
+                      onChange={(e) => {
+                        const lines = String(row.verfuellung?.betonVon ?? "").split("\n");
+                        lines[0] = e.target.value;
+                        const next = lines.filter(Boolean).join("\n");
+                        setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonVon: next } });
+                      }}
+                      placeholder="Beton von"
+                    />
+                    <input
+                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                      value={(row.verfuellung?.betonBis ?? "").split("\n")[0] ?? ""}
+                      onChange={(e) => {
+                        const lines = String(row.verfuellung?.betonBis ?? "").split("\n");
+                        lines[0] = e.target.value;
+                        const next = lines.filter(Boolean).join("\n");
+                        setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonBis: next } });
+                      }}
+                      placeholder="Beton bis"
+                    />
+                  </div>
+                  {expandedLines[`beton-${i}`] ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <input
+                        className="w-full rounded-lg border px-3 py-2 text-xs"
+                        value={(row.verfuellung?.betonVon ?? "").split("\n")[1] ?? ""}
+                        onChange={(e) => {
+                          const lines = String(row.verfuellung?.betonVon ?? "").split("\n");
+                          lines[1] = e.target.value;
+                          const next = lines.filter(Boolean).slice(0, 2).join("\n");
+                          setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonVon: next } });
+                        }}
+                        placeholder="Beton von (2. Zeile)"
+                      />
+                      <input
+                        className="w-full rounded-lg border px-3 py-2 text-xs"
+                        value={(row.verfuellung?.betonBis ?? "").split("\n")[1] ?? ""}
+                        onChange={(e) => {
+                          const lines = String(row.verfuellung?.betonBis ?? "").split("\n");
+                          lines[1] = e.target.value;
+                          const next = lines.filter(Boolean).slice(0, 2).join("\n");
+                          setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonBis: next } });
+                        }}
+                        placeholder="Beton bis (2. Zeile)"
+                      />
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() =>
+                      setExpandedLines((p) => {
+                        const next = !p[`beton-${i}`];
+                        if (!next) {
+                          const v = String(row.verfuellung?.betonVon ?? "").split("\n")[0] ?? "";
+                          const b = String(row.verfuellung?.betonBis ?? "").split("\n")[0] ?? "";
+                          setRow(i, { verfuellung: { ...(row.verfuellung ?? {}), betonVon: v, betonBis: b } });
+                        }
+                        return { ...p, [`beton-${i}`]: next };
+                      })
+                    }
+                  >
+                    {expandedLines[`beton-${i}`] ? "– Verfüllung" : "+ Verfüllung"}
+                  </button>
+                </div>
               </div>
             </div>
           ))}
