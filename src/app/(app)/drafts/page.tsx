@@ -66,8 +66,8 @@ export default function DraftsPage() {
   }, [drafts, query]);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-start">
         <div>
           <h1 className="text-xl font-semibold">Meine Entwürfe</h1>
           <p className="mt-1 text-sm text-gray-600">Alle Entwürfe (lokal & cloud)</p>
@@ -80,7 +80,7 @@ export default function DraftsPage() {
       {!loading && !err && (
         <div className="mt-6 rounded-2xl border border-slate-200/70 bg-white">
           <div className="border-b p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-col items-stretch justify-between gap-3 lg:flex-row lg:items-center">
               <div>
                 <h2 className="font-medium">Entwürfe</h2>
                 <p className="mt-1 text-sm text-gray-600">
@@ -88,7 +88,7 @@ export default function DraftsPage() {
                 </p>
               </div>
               <input
-                className="rounded-xl border px-3 py-1.5 text-xs"
+                className="w-full rounded-xl border px-3 py-2 text-sm lg:w-56"
                 placeholder="Suchen…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -101,7 +101,7 @@ export default function DraftsPage() {
               Keine passenden Entwürfe gefunden.
             </div>
           ) : (
-            <div className="grid gap-3 p-4 sm:grid-cols-2">
+            <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
               {filteredDrafts.map((d) => (
                 <div key={d.id} className="rounded-2xl border border-slate-200/70 p-4 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
@@ -116,16 +116,16 @@ export default function DraftsPage() {
                     </span>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
                     <Link
                       href={`/reports/new?draftId=${d.id}`}
-                      className="btn btn-secondary btn-xs"
+                      className="btn btn-secondary btn-xs w-full sm:w-auto"
                     >
                       Öffnen
                     </Link>
                     <button
                       type="button"
-                      className="btn btn-danger btn-xs"
+                      className="btn btn-danger btn-xs w-full sm:w-auto"
                       onClick={() => deleteDraft(d.id)}
                     >
                       Löschen

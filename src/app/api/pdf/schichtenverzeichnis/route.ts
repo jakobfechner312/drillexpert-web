@@ -6,6 +6,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const debugGrid = url.searchParams.get("debug") === "1";
     const debugGridStep = Number(url.searchParams.get("grid") ?? "") || undefined;
+    const debugGridPage = Number(url.searchParams.get("gridPage") ?? "") || undefined;
     const markerPage = Number(url.searchParams.get("page") ?? "") || undefined;
     const markerX = Number(url.searchParams.get("x") ?? "") || undefined;
     const markerY = Number(url.searchParams.get("y") ?? "") || undefined;
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
 
     const pdfBytes = await generateSchichtenverzeichnisPdf(
       {},
-      { debugGrid, debugGridStep, markers }
+      { debugGrid, debugGridStep, debugGridPage, markers }
     );
     const body = Buffer.from(pdfBytes);
 
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
     const url = new URL(req.url);
     const debugGrid = url.searchParams.get("debug") === "1";
     const debugGridStep = Number(url.searchParams.get("grid") ?? "") || undefined;
+    const debugGridPage = Number(url.searchParams.get("gridPage") ?? "") || undefined;
     const markerPage = Number(url.searchParams.get("page") ?? "") || undefined;
     const markerX = Number(url.searchParams.get("x") ?? "") || undefined;
     const markerY = Number(url.searchParams.get("y") ?? "") || undefined;
@@ -73,7 +75,7 @@ export async function POST(req: Request) {
 
     const pdfBytes = await generateSchichtenverzeichnisPdf(
       data,
-      { debugGrid, debugGridStep, markers }
+      { debugGrid, debugGridStep, debugGridPage, markers }
     );
     const body = Buffer.from(pdfBytes);
 

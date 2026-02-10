@@ -82,8 +82,8 @@ export default function MyReportsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-start">
         <div>
           <h1 className="text-xl font-semibold">Meine Berichte</h1>
           <p className="mt-1 text-sm text-gray-600">
@@ -93,7 +93,7 @@ export default function MyReportsPage() {
 
         <button
           type="button"
-          className="btn btn-secondary"
+          className="btn btn-secondary w-full sm:w-auto"
           onClick={() => setCreateOpen(true)}
         >
           + Bericht erstellen
@@ -106,46 +106,50 @@ export default function MyReportsPage() {
       {!loading && !err && (
         <div className="mt-6 rounded-2xl border border-slate-200/70 bg-white">
           <div className="border-b p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-col items-stretch justify-between gap-3 lg:flex-row lg:items-center">
               <div>
                 <h2 className="font-medium">Berichte</h2>
                 <p className="mt-1 text-sm text-gray-600">
                   {filteredReports.length} Einträge
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className={[
-                    "rounded-full border px-3 py-1 text-xs",
-                    typeFilter === "all" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
-                  ].join(" ")}
-                  onClick={() => setTypeFilter("all")}
-                >
-                  Alle
-                </button>
-                <button
-                  type="button"
-                  className={[
-                    "rounded-full border px-3 py-1 text-xs",
-                    typeFilter === "tagesbericht" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
-                  ].join(" ")}
-                  onClick={() => setTypeFilter("tagesbericht")}
-                >
-                  Tagesbericht
-                </button>
-                <button
-                  type="button"
-                  className={[
-                    "rounded-full border px-3 py-1 text-xs",
-                    typeFilter === "schichtenverzeichnis" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
-                  ].join(" ")}
-                  onClick={() => setTypeFilter("schichtenverzeichnis")}
-                >
-                  Schichtenverzeichnis
-                </button>
+              <div className="w-full space-y-2 lg:w-auto">
+                <div className="overflow-x-auto pb-1">
+                  <div className="flex min-w-max items-center gap-2">
+                  <button
+                    type="button"
+                    className={[
+                      "rounded-full border px-3 py-1.5 text-xs",
+                      typeFilter === "all" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
+                    ].join(" ")}
+                    onClick={() => setTypeFilter("all")}
+                  >
+                    Alle
+                  </button>
+                  <button
+                    type="button"
+                    className={[
+                      "rounded-full border px-3 py-1.5 text-xs",
+                      typeFilter === "tagesbericht" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
+                    ].join(" ")}
+                    onClick={() => setTypeFilter("tagesbericht")}
+                  >
+                    Tagesbericht
+                  </button>
+                  <button
+                    type="button"
+                    className={[
+                      "rounded-full border px-3 py-1.5 text-xs",
+                      typeFilter === "schichtenverzeichnis" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
+                    ].join(" ")}
+                    onClick={() => setTypeFilter("schichtenverzeichnis")}
+                  >
+                    Schichtenverzeichnis
+                  </button>
+                </div>
+                </div>
                 <input
-                  className="ml-1 rounded-xl border px-3 py-1.5 text-xs"
+                  className="w-full rounded-xl border px-3 py-2 text-sm lg:w-72"
                   placeholder="Suchen…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -159,7 +163,7 @@ export default function MyReportsPage() {
               Keine passenden Berichte gefunden.
             </div>
           ) : (
-            <div className="grid gap-3 p-4 sm:grid-cols-2">
+            <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
               {filteredReports.map((r) => {
                 const type = typeBadge(r.report_type);
                 return (
@@ -183,7 +187,7 @@ export default function MyReportsPage() {
                       </span>
                     </div>
 
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
                       <Link
                         href={
                           r.report_type === "schichtenverzeichnis"
@@ -191,7 +195,7 @@ export default function MyReportsPage() {
                             : `/api/pdf/tagesbericht/${r.id}`
                         }
                         target="_blank"
-                        className="btn btn-secondary btn-xs"
+                        className="btn btn-secondary btn-xs w-full sm:w-auto"
                       >
                         Öffnen
                       </Link>
@@ -201,14 +205,14 @@ export default function MyReportsPage() {
                             ? `/reports/schichtenverzeichnis/step/${r.id}/edit`
                             : `/reports/${r.id}/edit`
                         }
-                        className="btn btn-secondary btn-xs"
+                        className="btn btn-secondary btn-xs w-full sm:w-auto"
                         title="Bearbeiten"
                       >
                         Bearbeiten
                       </Link>
                       <button
                         type="button"
-                        className="btn btn-danger btn-xs"
+                        className="btn btn-danger btn-xs w-full sm:w-auto"
                         onClick={() => deleteReport(r.id)}
                       >
                         Löschen
@@ -225,11 +229,11 @@ export default function MyReportsPage() {
       {createOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">Bericht erstellen</h3>
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn btn-secondary w-full sm:w-auto"
                 onClick={() => setCreateOpen(false)}
               >
                 Schließen

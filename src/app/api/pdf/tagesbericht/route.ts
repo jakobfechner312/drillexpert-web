@@ -131,7 +131,7 @@ export async function POST(req: Request) {
       lines.forEach((ln, i) => draw(ln, x, y - i * lineHeight, size));
     };
 
-    const drawMultilineAuto = (text: string, x: number, y: number, opts?: { maxLines?: number; maxCharsPerLine?: number; size?: number; lineHeight?: number; smallSize?: number; smallLineHeight?: number }) => {
+    const drawMultilineAuto = (text: string, x: number, y: number, opts?: { maxLines?: number; maxCharsPerLine?: number; size?: number; lineHeight?: number; smallSize?: number; smallLineHeight?: number; divider?: { width: number; yOffset?: number; height?: number } }) => {
       const hasSecondLine = (text ?? "").toString().includes("\n");
       const size = hasSecondLine ? (opts?.smallSize ?? 6) : (opts?.size ?? 8);
       const lineHeight = hasSecondLine ? (opts?.smallLineHeight ?? 6) : (opts?.lineHeight ?? 8);
@@ -141,6 +141,18 @@ export async function POST(req: Request) {
         maxLines: opts?.maxLines ?? 2,
         maxCharsPerLine: opts?.maxCharsPerLine ?? 6,
       });
+      if (hasSecondLine && opts?.divider?.width) {
+        const dy = opts?.divider?.yOffset ?? 5.5;
+        const height = opts?.divider?.height ?? 0.6;
+        page.drawRectangle({
+          x,
+          y: y - dy,
+          width: opts.divider.width,
+          height,
+          color: rgb(0.12, 0.12, 0.12),
+          opacity: 0.35,
+        });
+      }
     };
 
     // Helfer für sichere Strings
@@ -527,10 +539,10 @@ export async function POST(req: Request) {
       drawMultilineAuto(String(vf.tonBis ?? ""), COL.tonBis, y + 3);
       drawMultilineAuto(String(vf.bohrgutVon ?? ""), COL.bohrgutVon, y + 3);
       drawMultilineAuto(String(vf.bohrgutBis ?? ""), COL.bohrgutBis, y + 3);
-      draw(t(vf.zementBentVon, 6), COL.zementBentVon, y, 8);
-      draw(t(vf.zementBentBis, 6), COL.zementBentBis, y, 8);
-      draw(t(vf.betonVon, 6), COL.betonVon, y, 8);
-      draw(t(vf.betonBis, 6), COL.betonBis, y, 8);
+      drawMultilineAuto(String(vf.zementBentVon ?? ""), COL.zementBentVon, y + 3);
+      drawMultilineAuto(String(vf.zementBentBis ?? ""), COL.zementBentBis, y + 3);
+      drawMultilineAuto(String(vf.betonVon ?? ""), COL.betonVon, y + 3);
+      drawMultilineAuto(String(vf.betonBis ?? ""), COL.betonBis, y + 3);
     });
 
     // ===== UMSETZEN =====
