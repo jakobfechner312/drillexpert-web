@@ -405,6 +405,12 @@ export async function generateSchichtenverzeichnisPdf(
     "schicht_g",
     "schicht_h",
   ]);
+  const LOCKED_PAGE1_Y_OFFSET_FIELDS = new Set([
+    "probe_gp",
+    "probe_kp",
+    "probe_sp",
+    "probe_spt",
+  ]);
   const fieldOffsetsPage1 =
     (data?.field_offsets_page_1 as Record<string, { x?: number | string; y?: number | string }>) ||
     {};
@@ -414,6 +420,11 @@ export async function generateSchichtenverzeichnisPdf(
       Record<string, { x?: number | string; y?: number | string }>
     >) || {};
   const getPage1FieldOffset = (fieldKey: string, axis: "x" | "y") => {
+    // Keep probe counters pinned to the calibrated baseline.
+    // Older saved reports may carry legacy negative y-offsets that push them out of place.
+    if (axis === "y" && LOCKED_PAGE1_Y_OFFSET_FIELDS.has(fieldKey)) {
+      return DEFAULT_FIELD_OFFSETS_PAGE_1[fieldKey]?.[axis] ?? 0;
+    }
     const hasCustom = fieldOffsetsPage1?.[fieldKey]?.[axis] != null;
     if (hasCustom) {
       return Number(fieldOffsetsPage1[fieldKey][axis]) || 0;

@@ -574,6 +574,45 @@ const isFilled = (value: string | undefined | null) => Boolean(value?.trim());
 const countFilled = (values: Array<string | undefined | null>) =>
   values.reduce((acc, value) => (isFilled(value) ? acc + 1 : acc), 0);
 
+const extractDepthEndValue = (value: string | undefined | null) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const normalized = raw.replace(/[–—]/g, "-");
+  const dashParts = normalized
+    .split("-")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const tail = dashParts.length > 1 ? dashParts[dashParts.length - 1] : normalized;
+
+  const numberMatches =
+    tail.match(/\d+(?:[.,]\d+)?/g) ?? normalized.match(/\d+(?:[.,]\d+)?/g);
+  if (!numberMatches?.length) return "";
+  return numberMatches[numberMatches.length - 1];
+};
+
+const splitDepthRange = (value: string | undefined | null) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return { from: "", to: "" };
+  const normalized = raw.replace(/[–—]/g, "-");
+  const parts = normalized.split("-").map((part) => part.trim());
+  if (parts.length >= 2) {
+    return {
+      from: parts[0] ?? "",
+      to: parts.slice(1).join(" ").trim(),
+    };
+  }
+  return { from: raw, to: "" };
+};
+
+const joinDepthRange = (from: string | undefined | null, to: string | undefined | null) => {
+  const fromText = String(from ?? "").trim();
+  const toText = String(to ?? "").trim();
+  if (!fromText && !toText) return "";
+  if (fromText && toText) return `${fromText} - ${toText}`;
+  return fromText || toText;
+};
+
 type SchichtenverzeichnisFormProps = {
   projectId?: string;
   reportId?: string;
@@ -853,19 +892,26 @@ export default function SchichtenverzeichnisForm({
   const stepProgress = useMemo(() => {
     const progress = [
       {
-        filled: countFilled([data.auftrag_nr, data.bohrmeister, data.blatt_nr, data.projekt_name]),
-        total: 4,
+        filled: countFilled([
+          data.auftrag_nr,
+          data.bohrmeister,
+          data.blatt_nr,
+          data.projekt_name,
+          data.durchfuehrungszeit_von,
+          data.durchfuehrungszeit_bis,
+        ]),
+        total: 6,
       },
       {
         filled:
-          countFilled([data.bohrung_nr, data.durchfuehrungszeit_von, data.durchfuehrungszeit_bis]) +
+          countFilled([data.bohrung_nr]) +
           bohrungen.reduce(
             (acc, entry) =>
               acc +
               countFilled([entry.bohrung_bis, entry.verrohrt_bis, entry.verrohr_durchmesser]),
             0
           ),
-        total: 3 + Math.max(1, bohrungen.length) * 3,
+        total: 1 + Math.max(1, bohrungen.length) * 3,
       },
       {
         filled: grundwasserRows.reduce(
@@ -2076,174 +2122,6 @@ export default function SchichtenverzeichnisForm({
           </label>
         </div>
       </header>
-      <details className="rounded-2xl border border-slate-200/70 bg-white shadow-sm">
-        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-slate-700">
-          Seite 1 Feld-Feinjustierung (X / Y)
-        </summary>
-        <div className="border-t border-slate-200/70 px-4 py-4">
-          <div className="mb-3 text-xs text-slate-500">
-            Pro Feld kannst du X und Y direkt mit ±10 verschieben.
-          </div>
-          <div className="overflow-x-auto">
-            <div className="grid min-w-[980px] gap-2">
-              {page1PdfFields.map((field) => {
-                const value = fieldOffsetsPage1[field.key] ?? { x: "0", y: "0" };
-                return (
-                  <div
-                    key={field.key}
-                    className="grid items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/40 p-2 lg:grid-cols-[1.3fr_auto_auto_auto_auto_auto_auto_auto_auto]"
-                  >
-                    <div className="min-w-0 text-xs font-semibold text-slate-700">
-                      <span className="truncate">{field.label}</span>
-                      <span className="ml-2 text-[10px] text-slate-400">{field.key}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                      onClick={() => adjustFieldOffset(field.key, "x", -10)}
-                    >
-                      X -10
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                      onClick={() => adjustFieldOffset(field.key, "x", 10)}
-                    >
-                      X +10
-                    </button>
-                    <input
-                      className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
-                      value={value.x}
-                      onChange={(e) => setFieldOffsetValue(field.key, "x", e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                      onClick={() => adjustFieldOffset(field.key, "y", -10)}
-                    >
-                      Y -10
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                      onClick={() => adjustFieldOffset(field.key, "y", 10)}
-                    >
-                      Y +10
-                    </button>
-                    <input
-                      className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
-                      value={value.y}
-                      onChange={(e) => setFieldOffsetValue(field.key, "y", e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                      onClick={() => resetFieldOffset(field.key)}
-                    >
-                      Reset
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="mt-5 rounded-xl border border-slate-200/80 bg-slate-50/40 p-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-              Schicht-Zeilen individuell (Seite 1)
-            </div>
-            <div className="mt-2 text-xs text-slate-500">
-              Hier kannst du dieselben Felder je Zeile separat feinjustieren.
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {Array.from({ length: Math.max(1, Number(schichtRowsPerPage1) || 4) }, (_, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                    selectedFineTuneRow === idx
-                      ? "border-sky-200 bg-sky-50 text-sky-800"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  }`}
-                  onClick={() => setSelectedFineTuneRow(idx)}
-                >
-                  Zeile {idx + 1}
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 overflow-x-auto">
-              <div className="grid min-w-[980px] gap-2">
-                {schichtFineTuneFields.map((field) => {
-                  const value = rowFieldOffsetsPage1[String(selectedFineTuneRow)]?.[field.key] ?? {
-                    x: "0",
-                    y: "0",
-                  };
-                  return (
-                    <div
-                      key={`${selectedFineTuneRow}-${field.key}`}
-                      className="grid items-center gap-2 rounded-xl border border-slate-200/80 bg-white p-2 lg:grid-cols-[1.3fr_auto_auto_auto_auto_auto_auto_auto_auto]"
-                    >
-                      <div className="min-w-0 text-xs font-semibold text-slate-700">
-                        <span className="truncate">{field.label}</span>
-                        <span className="ml-2 text-[10px] text-slate-400">{field.key}</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                        onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "x", -10)}
-                      >
-                        X -10
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                        onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "x", 10)}
-                      >
-                        X +10
-                      </button>
-                      <input
-                        className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
-                        value={value.x}
-                        onChange={(e) =>
-                          setRowFieldOffsetValue(selectedFineTuneRow, field.key, "x", e.target.value)
-                        }
-                      />
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                        onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "y", -10)}
-                      >
-                        Y -10
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                        onClick={() => adjustRowFieldOffset(selectedFineTuneRow, field.key, "y", 10)}
-                      >
-                        Y +10
-                      </button>
-                      <input
-                        className="h-8 w-16 rounded-md border border-slate-300 bg-white px-2 text-xs"
-                        value={value.y}
-                        onChange={(e) =>
-                          setRowFieldOffsetValue(selectedFineTuneRow, field.key, "y", e.target.value)
-                        }
-                      />
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                        onClick={() => resetRowFieldOffset(selectedFineTuneRow, field.key)}
-                      >
-                        Reset
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      </details>
-
       {showStep(0)
         ? renderStep(
             <Card title="Kopf & Projekt">
@@ -2334,17 +2212,7 @@ export default function SchichtenverzeichnisForm({
                     ) : null}
                   </div>
                 </div>
-              </div>
-            </Card>
-          )
-        : null}
-
-      {showStep(1)
-        ? renderStep(
-            <Card title="Bohrung / Verrohrung">
-              <div className="grid gap-4">
-                <div className="grid gap-3 lg:grid-cols-[180px_1fr_1fr]">
-                  <Field label="Bohrung Nr." value={data.bohrung_nr} onChange={(v) => update("bohrung_nr", v)} />
+                <div className="md:col-span-3 grid gap-3 lg:grid-cols-2">
                   <label className="space-y-1">
                     <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                       Durchführung von
@@ -2367,6 +2235,18 @@ export default function SchichtenverzeichnisForm({
                       onChange={(e) => update("durchfuehrungszeit_bis", e.target.value)}
                     />
                   </label>
+                </div>
+              </div>
+            </Card>
+          )
+        : null}
+
+      {showStep(1)
+        ? renderStep(
+            <Card title="Bohrung / Verrohrung">
+              <div className="grid gap-4">
+                <div className="grid gap-3 lg:grid-cols-[180px]">
+                  <Field label="Bohrung Nr." value={data.bohrung_nr} onChange={(v) => update("bohrung_nr", v)} />
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-xs text-slate-500">Eine Zeile pro Bohrung</div>
@@ -3370,7 +3250,10 @@ export default function SchichtenverzeichnisForm({
                               : current.map(() => normalizeProbeType(next[idx].proben_art));
                             if (current.length >= 10) return prev;
                             const defaultType = normalizeProbeType(currentTypes[0] ?? next[idx].proben_art);
-                            current.push("");
+                            const previousDepth = String(current[current.length - 1] ?? "");
+                            const previousEnd = extractDepthEndValue(previousDepth);
+                            const nextDepthSuggestion = previousEnd ? previousEnd : "";
+                            current.push(nextDepthSuggestion);
                             currentTypes.push(defaultType);
                             next[idx] = { ...next[idx], proben_tiefen: current, proben_arten: currentTypes };
                             return next;
@@ -3407,7 +3290,10 @@ export default function SchichtenverzeichnisForm({
                   </div>
                   {(Array.isArray(row.proben_tiefen) ? row.proben_tiefen : [""])
                     .slice(0, 10)
-                    .map((_, i) => (
+                    .map((_, i) => {
+                      const depthValue = row.proben_tiefen?.[i] ?? "";
+                      const splitDepth = splitDepthRange(depthValue);
+                      return (
                       <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[92px_1fr]">
                         <select
                           className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
@@ -3434,24 +3320,48 @@ export default function SchichtenverzeichnisForm({
                           <option value="EP">EP</option>
                           <option value="UP">UP</option>
                         </select>
-                        <input
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                          placeholder={`Tiefe ${i + 1}`}
-                          value={row.proben_tiefen?.[i] ?? ""}
-                          onChange={(e) =>
-                            setSchichtRows((prev) => {
-                              const next = [...prev];
-                              const current = Array.isArray(next[idx].proben_tiefen)
-                                ? [...next[idx].proben_tiefen]
-                                : [""];
-                              current[i] = e.target.value;
-                              next[idx] = { ...next[idx], proben_tiefen: current };
-                              return next;
-                            })
-                          }
-                        />
+                        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                          <input
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                            placeholder={`Von ${i + 1}`}
+                            value={splitDepth.from}
+                            onChange={(e) =>
+                              setSchichtRows((prev) => {
+                                const next = [...prev];
+                                const current = Array.isArray(next[idx].proben_tiefen)
+                                  ? [...next[idx].proben_tiefen]
+                                  : [""];
+                                current[i] = joinDepthRange(e.target.value, splitDepth.to);
+                                next[idx] = { ...next[idx], proben_tiefen: current };
+                                return next;
+                              })
+                            }
+                          />
+                          <span className="text-sm font-semibold text-slate-500">-</span>
+                          <input
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                            placeholder={`Bis ${i + 1}`}
+                            value={splitDepth.to}
+                            onChange={(e) =>
+                              setSchichtRows((prev) => {
+                                const next = [...prev];
+                                const current = Array.isArray(next[idx].proben_tiefen)
+                                  ? [...next[idx].proben_tiefen]
+                                  : [""];
+                                const newTo = e.target.value;
+                                current[i] = joinDepthRange(splitDepth.from, newTo);
+                                if (i + 1 < current.length) {
+                                  const nextSplit = splitDepthRange(current[i + 1] ?? "");
+                                  current[i + 1] = joinDepthRange(newTo, nextSplit.to);
+                                }
+                                next[idx] = { ...next[idx], proben_tiefen: current };
+                                return next;
+                              })
+                            }
+                          />
+                        </div>
                       </div>
-                    ))}
+                    )})}
                 </div>
               </div>
             </div>
