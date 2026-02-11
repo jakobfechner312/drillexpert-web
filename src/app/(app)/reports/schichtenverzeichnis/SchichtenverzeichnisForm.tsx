@@ -87,6 +87,7 @@ type GroundwaterRow = {
 
 type FieldOffsetXY = { x: string; y: string };
 type RowFieldOffsetMap = Record<string, Record<string, FieldOffsetXY>>;
+const SV_FORM_STATE_KEY = "sv_form_state_v1";
 
 const SCHICHT_FINE_TUNE_FIELD_KEYS = [
   "schicht_ansatzpunkt_bis",
@@ -645,6 +646,7 @@ export default function SchichtenverzeichnisForm({
   const savingRef = useRef(false);
   const reportSaveKeyRef = useRef<string | null>(null);
   const payloadDebugRef = useRef<{ save?: string; preview?: string }>({});
+  const formStateHydratedRef = useRef(false);
 
   const [saveScope, setSaveScope] = useState<SaveScope>(projectId ? "project" : "unset");
   const [localProjectId, setLocalProjectId] = useState<string | null>(null);
@@ -1259,6 +1261,82 @@ export default function SchichtenverzeichnisForm({
     load();
   }, [mode, reportId, supabase]);
 
+  // Draft-like state restore for create mode (helps iPhone back navigation).
+  useEffect(() => {
+    if (mode === "edit") {
+      formStateHydratedRef.current = true;
+      return;
+    }
+    try {
+      const raw = sessionStorage.getItem(SV_FORM_STATE_KEY);
+      if (!raw) {
+        formStateHydratedRef.current = true;
+        return;
+      }
+      const saved = JSON.parse(raw) as {
+        data?: Record<string, unknown>;
+        bohrungen?: unknown;
+        filterRows?: unknown;
+        grundwasserRows?: unknown;
+        schichtRows?: unknown;
+        stepIndex?: number;
+      };
+      if (saved.data && typeof saved.data === "object") {
+        setData((prev) => ({ ...prev, ...(saved.data as Record<string, string>) }));
+      }
+      if (Array.isArray(saved.bohrungen)) {
+        setBohrungen(normalizeBohrungen(saved.bohrungen, initialData));
+      }
+      if (Array.isArray(saved.filterRows)) {
+        const normalizedFilter = normalizeFilterRows(saved.filterRows, initialData);
+        setFilterRows(normalizedFilter);
+        setFilterPairRowCounts(buildFilterPairRowCounts(normalizedFilter));
+      }
+      if (Array.isArray(saved.grundwasserRows)) {
+        setGrundwasserRows(saved.grundwasserRows as GroundwaterRow[]);
+      }
+      if (Array.isArray(saved.schichtRows)) {
+        setSchichtRows(
+          saved.schichtRows.length
+            ? (saved.schichtRows as Partial<SchichtRow>[]).map((row) => normalizeSchichtRow(row))
+            : [emptySchichtRow()]
+        );
+      }
+      if (typeof saved.stepIndex === "number" && Number.isFinite(saved.stepIndex)) {
+        setStepIndex(Math.max(0, Math.min(saved.stepIndex, steps.length - 1)));
+      }
+    } catch {
+      // ignore broken session state
+    } finally {
+      formStateHydratedRef.current = true;
+    }
+  }, [mode, steps.length]);
+
+  useEffect(() => {
+    if (mode === "edit" || !formStateHydratedRef.current) return;
+    try {
+      sessionStorage.setItem(
+        SV_FORM_STATE_KEY,
+        JSON.stringify({
+          data,
+          bohrungen,
+          filterRows,
+          grundwasserRows,
+          schichtRows,
+          stepIndex,
+        })
+      );
+    } catch {
+      // ignore quota/private mode issues
+    }
+  }, [mode, data, bohrungen, filterRows, grundwasserRows, schichtRows, stepIndex]);
+
+  useEffect(() => {
+    const onPageShow = () => setLoading(false);
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
   useEffect(() => {
     const loadAuftragOptions = async () => {
       const { data: rows, error } = await supabase
@@ -1777,6 +1855,8 @@ export default function SchichtenverzeichnisForm({
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
+      // iOS may navigate current tab; clear loading before handing over navigation.
+      setLoading(false);
       if (previewWindow) {
         previewWindow.location.href = url;
       } else {
@@ -2005,6 +2085,11 @@ export default function SchichtenverzeichnisForm({
     setFilterPairRowCounts(buildFilterPairRowCounts([emptyFilterRow()]));
     setSchichtRows([emptySchichtRow()]);
     setGrundwasserRows([emptyGroundwaterRow()]);
+    try {
+      sessionStorage.removeItem(SV_FORM_STATE_KEY);
+    } catch {
+      // ignore
+    }
   };
 
   const showStep = (index: number) => !useStepper || stepIndex === index;
