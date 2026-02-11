@@ -192,14 +192,14 @@ function AppTopbar({
                   console.log("[Entwurf] click");
                   triggerSaveDraft();
                 }}
-                className="btn btn-secondary"
+                className="btn btn-secondary hidden sm:inline-flex"
               >
                 Entwurf
               </button>
 
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn btn-primary hidden sm:inline-flex"
                 onClick={triggerSaveReport}
               >
                 Speichern
@@ -208,6 +208,29 @@ function AppTopbar({
           )}
         </div>
       </div>
+      {isReportEditor ? (
+        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-base-border bg-white/95 px-3 py-2 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur sm:hidden">
+          <div className="mx-auto flex max-w-[2200px] items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                console.log("[Entwurf] click");
+                triggerSaveDraft();
+              }}
+              className="btn btn-secondary flex-1 justify-center"
+            >
+              Entwurf
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary flex-1 justify-center"
+              onClick={triggerSaveReport}
+            >
+              Speichern
+            </button>
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }
@@ -251,7 +274,7 @@ function AppLayout({
       )}
 
       <main className="min-w-0">
-        <div className="bg-transparent p-4 sm:rounded-2xl sm:border sm:border-base-border sm:bg-white sm:p-6 sm:shadow-soft">
+        <div className="bg-transparent p-4 pb-24 sm:rounded-2xl sm:border sm:border-base-border sm:bg-white sm:p-6 sm:pb-6 sm:shadow-soft">
           {children}
         </div>
       </main>
