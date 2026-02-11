@@ -1802,9 +1802,28 @@ export default function SchichtenverzeichnisForm({
     }
   };
   const openPdfInPreviewWindow = (previewWindow: Window | null, objectUrl: string) => {
+    const ua = navigator.userAgent;
+    const isIPhoneLike = /iPhone|iPod/i.test(ua);
+    const isIPadLike =
+      /iPad/i.test(ua) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1 && !isIPhoneLike);
+    const isAndroidTablet = /Android/i.test(ua) && !/Mobile/i.test(ua);
+    const isTabletLike = isIPadLike || isAndroidTablet;
     if (!previewWindow) {
       window.location.href = objectUrl;
       return;
+    }
+    if (isTabletLike) {
+      try {
+        previewWindow.document.open();
+        previewWindow.document.write(
+          `<!doctype html><html><head><meta charset="utf-8"><title>PDF Vorschau</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#111;"><embed src="${objectUrl}" type="application/pdf" style="width:100vw;height:100vh;" /><div style="position:fixed;right:12px;bottom:12px;padding:8px 12px;background:#fff;border-radius:10px;font:12px sans-serif;">Falls leer: kurz tippen oder Seite neu laden.</div></body></html>`
+        );
+        previewWindow.document.close();
+        return;
+      } catch {
+        // fallback below
+      }
     }
     previewWindow.location.href = objectUrl;
   };
