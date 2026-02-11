@@ -82,10 +82,10 @@ export default function MyReportsPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
+    <div className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 py-5 sm:px-6 lg:px-8">
       <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-start">
         <div>
-          <h1 className="text-xl font-semibold">Meine Berichte</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Meine Berichte</h1>
           <p className="mt-1 text-sm text-gray-600">
             Berichte ohne Projektzuordnung (project_id = NULL)
           </p>
@@ -104,8 +104,8 @@ export default function MyReportsPage() {
       {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
 
       {!loading && !err && (
-        <div className="mt-6 rounded-2xl border border-slate-200/70 bg-white">
-          <div className="border-b p-4">
+        <div className="mt-5 rounded-2xl border border-slate-200/70 bg-white shadow-sm">
+          <div className="border-b p-4 sm:p-5">
             <div className="flex flex-col items-stretch justify-between gap-3 lg:flex-row lg:items-center">
               <div>
                 <h2 className="font-medium">Berichte</h2>
@@ -114,12 +114,11 @@ export default function MyReportsPage() {
                 </p>
               </div>
               <div className="w-full space-y-2 lg:w-auto">
-                <div className="overflow-x-auto pb-1">
-                  <div className="flex min-w-max items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     className={[
-                      "rounded-full border px-3 py-1.5 text-xs",
+                      "rounded-full border px-3.5 py-2 text-xs font-medium",
                       typeFilter === "all" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
                     ].join(" ")}
                     onClick={() => setTypeFilter("all")}
@@ -129,7 +128,7 @@ export default function MyReportsPage() {
                   <button
                     type="button"
                     className={[
-                      "rounded-full border px-3 py-1.5 text-xs",
+                      "rounded-full border px-3.5 py-2 text-xs font-medium",
                       typeFilter === "tagesbericht" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
                     ].join(" ")}
                     onClick={() => setTypeFilter("tagesbericht")}
@@ -139,7 +138,7 @@ export default function MyReportsPage() {
                   <button
                     type="button"
                     className={[
-                      "rounded-full border px-3 py-1.5 text-xs",
+                      "rounded-full border px-3.5 py-2 text-xs font-medium",
                       typeFilter === "schichtenverzeichnis" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
                     ].join(" ")}
                     onClick={() => setTypeFilter("schichtenverzeichnis")}
@@ -147,9 +146,8 @@ export default function MyReportsPage() {
                     Schichtenverzeichnis
                   </button>
                 </div>
-                </div>
                 <input
-                  className="w-full rounded-xl border px-3 py-2 text-sm lg:w-72"
+                  className="w-full rounded-xl border px-3 py-2.5 text-sm lg:w-72"
                   placeholder="Suchen…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -163,14 +161,14 @@ export default function MyReportsPage() {
               Keine passenden Berichte gefunden.
             </div>
           ) : (
-            <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-3">
               {filteredReports.map((r) => {
                 const type = typeBadge(r.report_type);
                 return (
                   <div key={r.id} className="rounded-2xl border border-slate-200/70 p-4 shadow-sm">
                     <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div className="min-w-0">
-                        <div className="text-sm font-semibold break-words">{r.title}</div>
+                        <div className="text-base font-semibold leading-snug break-words">{r.title}</div>
                         <div className="mt-1 text-xs text-gray-500">
                           {new Date(r.created_at).toLocaleDateString()}
                         </div>
@@ -227,8 +225,8 @@ export default function MyReportsPage() {
       )}
 
       {createOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">Bericht erstellen</h3>
               <button
