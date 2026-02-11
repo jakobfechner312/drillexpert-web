@@ -18,6 +18,14 @@ export default function SettingsPage() {
 
   const [fullName, setFullName] = useState<string>("");
   const [phone, setPhone] = useState<string>("");
+  const [newEmail, setNewEmail] = useState<string>("");
+  const [currentPassword, setCurrentPassword] = useState<string>("");
+  const [currentPasswordState, setCurrentPasswordState] = useState<
+    "idle" | "checking" | "valid" | "invalid"
+  >("idle");
+  const [newPassword, setNewPassword] = useState<string>("");
+  const [confirmPassword, setConfirmPassword] = useState<string>("");
+  const [savingAccount, setSavingAccount] = useState(false);
 
   const [autoLoadDraft, setAutoLoadDraft] = useState<boolean>(true);
   const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
@@ -37,6 +45,7 @@ export default function SettingsPage() {
       }
 
       setEmail(user.email ?? "");
+      setNewEmail(user.email ?? "");
       setUserId(user.id);
       setCreatedAt(user.created_at ?? "");
       setLastSignIn(user.last_sign_in_at ?? "");
@@ -64,6 +73,32 @@ export default function SettingsPage() {
 
     run();
   }, [supabase]);
+
+  useEffect(() => {
+    const currentEmail = String(email ?? "").trim().toLowerCase();
+    const pw = currentPassword;
+
+    if (!currentEmail || !pw) {
+      setCurrentPasswordState("idle");
+      return;
+    }
+
+    setCurrentPasswordState("checking");
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const { error: reAuthErr } = await supabase.auth.signInWithPassword({
+        email: currentEmail,
+        password: pw,
+      });
+      if (cancelled) return;
+      setCurrentPasswordState(reAuthErr ? "invalid" : "valid");
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [email, currentPassword, supabase]);
 
   const saveProfile = async () => {
     setSaving(true);
@@ -93,6 +128,92 @@ export default function SettingsPage() {
     } catch {
       setError("Einstellungen konnten nicht gespeichert werden.");
     }
+  };
+
+  const updateEmail = async () => {
+    const normalized = newEmail.trim().toLowerCase();
+    if (!normalized) {
+      setError("Bitte eine gültige E‑Mail eingeben.");
+      setSuccess(null);
+      return;
+    }
+    if (normalized === (email ?? "").trim().toLowerCase()) {
+      setError("Die neue E‑Mail ist identisch zur aktuellen.");
+      setSuccess(null);
+      return;
+    }
+
+    setSavingAccount(true);
+    setError(null);
+    setSuccess(null);
+    const { error: updErr } = await supabase.auth.updateUser({ email: normalized });
+    if (updErr) {
+      setError("E‑Mail ändern fehlgeschlagen: " + updErr.message);
+      setSavingAccount(false);
+      return;
+    }
+
+    setSuccess("E‑Mail-Änderung gestartet. Bitte Bestätigungslink in der neuen Mail prüfen.");
+    setSavingAccount(false);
+  };
+
+  const updatePassword = async () => {
+    const currentEmail = String(email ?? "").trim().toLowerCase();
+    if (!currentEmail) {
+      setError("Aktuelle E‑Mail konnte nicht ermittelt werden.");
+      setSuccess(null);
+      return;
+    }
+    if (!currentPassword) {
+      setError("Bitte aktuelles Passwort eingeben.");
+      setSuccess(null);
+      return;
+    }
+    if (currentPasswordState === "invalid") {
+      setError("Aktuelles Passwort ist falsch.");
+      setSuccess(null);
+      return;
+    }
+    if (!newPassword.trim()) {
+      setError("Bitte ein neues Passwort eingeben.");
+      setSuccess(null);
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError("Passwort muss mindestens 8 Zeichen haben.");
+      setSuccess(null);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwörter stimmen nicht überein.");
+      setSuccess(null);
+      return;
+    }
+
+    setSavingAccount(true);
+    setError(null);
+    setSuccess(null);
+    const { error: reAuthErr } = await supabase.auth.signInWithPassword({
+      email: currentEmail,
+      password: currentPassword,
+    });
+    if (reAuthErr) {
+      setError("Aktuelles Passwort ist falsch.");
+      setSavingAccount(false);
+      return;
+    }
+    const { error: updErr } = await supabase.auth.updateUser({ password: newPassword });
+    if (updErr) {
+      setError("Passwort ändern fehlgeschlagen: " + updErr.message);
+      setSavingAccount(false);
+      return;
+    }
+
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setSuccess("Passwort erfolgreich geändert ✅");
+    setSavingAccount(false);
   };
 
   const saveCustomCycles = async (next: string[]) => {
@@ -204,6 +325,83 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between rounded-xl border p-3">
                 <span className="text-slate-500">Letzter Login</span>
                 <span>{lastSignIn ? new Date(lastSignIn).toLocaleString() : "—"}</span>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/40 p-5 sm:p-6">
+              <div className="text-base font-semibold text-slate-900">E‑Mail ändern</div>
+              <label className="space-y-1">
+                <span className="text-sm text-slate-600">Neue E‑Mail</span>
+                <input
+                  type="email"
+                  className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-base"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="neue@email.de"
+                />
+              </label>
+              <button
+                type="button"
+                className="mt-4 rounded-xl border border-sky-200 bg-white px-5 py-2.5 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-60"
+                onClick={updateEmail}
+                disabled={savingAccount}
+              >
+                {savingAccount ? "Speichere…" : "E‑Mail aktualisieren"}
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/40 p-5 sm:p-6">
+              <div className="text-base font-semibold text-slate-900">Passwort ändern</div>
+              <div className="mt-4 grid gap-4">
+              <label className="space-y-1">
+                <span className="text-sm text-slate-600">Aktuelles Passwort</span>
+                <input
+                  type="password"
+                  className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-base"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Aktuelles Passwort"
+                />
+                {currentPasswordState === "checking" ? (
+                  <p className="text-xs text-slate-500">Prüfe aktuelles Passwort…</p>
+                ) : null}
+                {currentPasswordState === "valid" ? (
+                  <p className="text-xs text-emerald-700">Aktuelles Passwort korrekt ✅</p>
+                ) : null}
+                {currentPasswordState === "invalid" ? (
+                  <p className="text-xs text-red-600">Aktuelles Passwort ist falsch.</p>
+                ) : null}
+              </label>
+              <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-sm text-slate-600">Neues Passwort</span>
+                <input
+                  type="password"
+                  className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-base"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Mind. 8 Zeichen"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-sm text-slate-600">Passwort bestätigen</span>
+                <input
+                  type="password"
+                  className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-base"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Neues Passwort wiederholen"
+                />
+              </label>
+              </div>
+              <button
+                type="button"
+                className="mt-2 rounded-xl border border-sky-200 bg-white px-5 py-2.5 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-60"
+                onClick={updatePassword}
+                disabled={savingAccount || currentPasswordState === "checking"}
+              >
+                {savingAccount ? "Speichere…" : "Passwort aktualisieren"}
+              </button>
               </div>
             </div>
           </section>

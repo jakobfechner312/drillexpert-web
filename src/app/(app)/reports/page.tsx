@@ -82,7 +82,7 @@ export default function MyReportsPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
       <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-start">
         <div>
           <h1 className="text-xl font-semibold">Meine Berichte</h1>
@@ -168,14 +168,14 @@ export default function MyReportsPage() {
                 const type = typeBadge(r.report_type);
                 return (
                   <div key={r.id} className="rounded-2xl border border-slate-200/70 p-4 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold">{r.title}</div>
+                        <div className="text-sm font-semibold break-words">{r.title}</div>
                         <div className="mt-1 text-xs text-gray-500">
                           {new Date(r.created_at).toLocaleDateString()}
                         </div>
                       </div>
-                      <span className={`rounded-full border border-slate-200/70 px-2 py-0.5 text-[11px] font-semibold ${type.cls}`}>
+                      <span className={`max-w-full rounded-full border border-slate-200/70 px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${type.cls}`}>
                         {type.label}
                       </span>
                     </div>
@@ -187,7 +187,7 @@ export default function MyReportsPage() {
                       </span>
                     </div>
 
-                    <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                       <Link
                         href={
                           r.report_type === "schichtenverzeichnis"
@@ -195,7 +195,7 @@ export default function MyReportsPage() {
                             : `/api/pdf/tagesbericht/${r.id}`
                         }
                         target="_blank"
-                        className="btn btn-secondary btn-xs w-full sm:w-auto"
+                        className="btn btn-secondary btn-xs w-full"
                       >
                         Öffnen
                       </Link>
@@ -205,14 +205,14 @@ export default function MyReportsPage() {
                             ? `/reports/schichtenverzeichnis/step/${r.id}/edit`
                             : `/reports/${r.id}/edit`
                         }
-                        className="btn btn-secondary btn-xs w-full sm:w-auto"
+                        className="btn btn-secondary btn-xs w-full"
                         title="Bearbeiten"
                       >
                         Bearbeiten
                       </Link>
                       <button
                         type="button"
-                        className="btn btn-danger btn-xs w-full sm:w-auto"
+                        className="btn btn-danger btn-xs w-full"
                         onClick={() => deleteReport(r.id)}
                       >
                         Löschen

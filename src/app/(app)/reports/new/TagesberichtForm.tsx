@@ -395,14 +395,12 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
    }, [effectiveProjectId, loadMyProjects]);
 
   const ensureSaveTarget = useCallback(async (): Promise<{ scope: SaveScope; projectId: string | null } | null> => {
-    if (saveScope === "my_reports") {
-      return { scope: "my_reports", projectId: null };
+    // If this form is opened inside a concrete project route, keep that project fixed.
+    if (projectId) {
+      return { scope: "project", projectId };
     }
 
-    if (effectiveProjectId) {
-      return { scope: "project", projectId: effectiveProjectId };
-    }
-
+    // Outside a project route: always ask again where to save.
     await loadMyProjects();
     setProjectModalOpen(true);
 
@@ -412,7 +410,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
 
     pendingSaveResolveRef.current = null;
     return result ?? null;
-  }, [saveScope, effectiveProjectId, loadMyProjects]);
+  }, [projectId, loadMyProjects]);
 
     const createProject = useCallback(async () => {
     const supabase = createClient();

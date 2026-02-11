@@ -512,6 +512,20 @@ const normalizeFilterRows = (raw: unknown, fallback: FormData): FilterRow[] => {
   };
   return countFilled(Object.values(legacyFirst)) > 0 ? [legacyFirst] : [emptyFilterRow()];
 };
+const buildFilterPairRowCounts = (rows: FilterRow[]) => {
+  const source = rows.length > 0 ? rows : [emptyFilterRow()];
+  return Object.fromEntries(
+    FILTER_PAIR_CONFIG.map((cfg) => {
+      let lastFilledIndex = -1;
+      source.forEach((row, idx) => {
+        if (countFilled([row?.[cfg.vonKey], row?.[cfg.bisKey]]) > 0) {
+          lastFilledIndex = idx;
+        }
+      });
+      return [cfg.id, Math.max(1, lastFilledIndex + 1)];
+    })
+  ) as Record<string, number>;
+};
 const emptyBohrungEntry = (): BohrungEntry => ({
   verfahren: "ramm",
   bohrung_bis: "",
@@ -657,6 +671,9 @@ export default function SchichtenverzeichnisForm({
   ]);
   const [bohrungen, setBohrungen] = useState<BohrungEntry[]>([emptyBohrungEntry()]);
   const [filterRows, setFilterRows] = useState<FilterRow[]>([emptyFilterRow()]);
+  const [filterPairRowCounts, setFilterPairRowCounts] = useState<Record<string, number>>(() =>
+    buildFilterPairRowCounts([emptyFilterRow()])
+  );
   const [grundwasserRows, setGrundwasserRows] = useState<GroundwaterRow[]>([
     emptyGroundwaterRow(),
   ]);
@@ -857,20 +874,24 @@ export default function SchichtenverzeichnisForm({
     });
   }, []);
   const getFilterPairEntries = useCallback(
-    (vonKey: FilterPairFieldKey, bisKey: FilterPairFieldKey) => {
-      const entries = filterRows
-        .map((row) => ({ von: row[vonKey] ?? "", bis: row[bisKey] ?? "" }))
-        .filter((entry) => countFilled([entry.von, entry.bis]) > 0);
-      return entries.length > 0 ? entries : [{ von: "", bis: "" }];
+    (pairId: string, vonKey: FilterPairFieldKey, bisKey: FilterPairFieldKey) => {
+      const visibleRows = Math.max(1, Math.min(10, Number(filterPairRowCounts[pairId]) || 1));
+      return Array.from({ length: visibleRows }, (_, idx) => ({
+        von: filterRows[idx]?.[vonKey] ?? "",
+        bis: filterRows[idx]?.[bisKey] ?? "",
+      }));
     },
-    [filterRows]
+    [filterRows, filterPairRowCounts]
   );
   const setFilterPairEntries = useCallback(
     (
+      pairId: string,
       vonKey: FilterPairFieldKey,
       bisKey: FilterPairFieldKey,
       entries: Array<{ von: string; bis: string }>
     ) => {
+      const nextVisibleRows = Math.max(1, Math.min(10, entries.length));
+      setFilterPairRowCounts((prev) => ({ ...prev, [pairId]: nextVisibleRows }));
       setFilterRows((prev) => {
         const nextLength = Math.max(prev.length, entries.length, 1);
         const next = Array.from({ length: nextLength }, (_, idx) => ({
@@ -880,9 +901,6 @@ export default function SchichtenverzeichnisForm({
         for (let i = 0; i < nextLength; i += 1) {
           next[i][vonKey] = entries[i]?.von ?? "";
           next[i][bisKey] = entries[i]?.bis ?? "";
-        }
-        while (next.length > 1 && countFilled(Object.values(next[next.length - 1])) === 0) {
-          next.pop();
         }
         return next;
       });
@@ -1098,14 +1116,12 @@ export default function SchichtenverzeichnisForm({
   }, [supabase]);
 
   const ensureSaveTarget = useCallback(async (): Promise<{ scope: SaveScope; projectId: string | null } | null> => {
-    if (saveScope === "my_reports") {
-      return { scope: "my_reports", projectId: null };
+    // If this form is opened inside a concrete project route, keep that project fixed.
+    if (projectId) {
+      return { scope: "project", projectId };
     }
 
-    if (effectiveProjectId) {
-      return { scope: "project", projectId: effectiveProjectId };
-    }
-
+    // Outside a project route: always ask again where to save.
     await loadMyProjects();
     setProjectModalOpen(true);
 
@@ -1115,7 +1131,7 @@ export default function SchichtenverzeichnisForm({
 
     pendingSaveResolveRef.current = null;
     return result ?? null;
-  }, [saveScope, effectiveProjectId, loadMyProjects]);
+  }, [projectId, loadMyProjects]);
 
   const createProject = useCallback(async () => {
     const name = newProjectName.trim();
@@ -1193,7 +1209,11 @@ export default function SchichtenverzeichnisForm({
       const db = row.data as Record<string, any>;
       setData((prev) => ({ ...prev, ...(db ?? {}) }));
       setBohrungen(normalizeBohrungen(db?.bohrungen, { ...initialData, ...(db ?? {}) }));
-      setFilterRows(normalizeFilterRows(db?.filter_rows, { ...initialData, ...(db ?? {}) }));
+      {
+        const normalizedFilter = normalizeFilterRows(db?.filter_rows, { ...initialData, ...(db ?? {}) });
+        setFilterRows(normalizedFilter);
+        setFilterPairRowCounts(buildFilterPairRowCounts(normalizedFilter));
+      }
       setSchichtRows(
         Array.isArray(db?.schicht_rows) && db.schicht_rows.length
           ? db.schicht_rows.map((row: Partial<SchichtRow>) => normalizeSchichtRow(row))
@@ -1301,7 +1321,60 @@ export default function SchichtenverzeichnisForm({
   }, [data.sw]);
 
   useEffect(() => {
-    setSaveDraftHandler(null);
+    setSaveDraftHandler(async () => {
+      const { data: userRes } = await supabase.auth.getUser();
+      const user = userRes.user;
+      if (!user) return alert("Nicht eingeloggt.");
+
+      const draftData = {
+        ...data,
+        ...legacyBohrungsFields,
+        ...legacyFilterFields,
+        durchfuehrungszeit: effectiveDurchfuehrungszeit,
+        bohrungen: normalizedBohrungenForPayload,
+        filter_rows: normalizedFilterRowsForPayload,
+        grundwasser_rows: grundwasserRows,
+        schicht_rows: schichtRows,
+        schicht_row_height: Number(schichtRowHeight) || 200,
+        schicht_start_offset_page_1: Number(schichtStartOffsetPage1) || 0,
+        schicht_start_offset_page_2: Number(schichtStartOffsetPage2) || 0,
+        schicht_x_offset_page_1: Number(schichtXOffsetPage1) || 0,
+        schicht_x_offset_page_2: Number(schichtXOffsetPage2) || 0,
+        schicht_rows_per_page: Number(schichtRowsPerPage1) || 4,
+        schicht_rows_per_page_1: Number(schichtRowsPerPage1) || 4,
+        schicht_rows_per_page_2: Number(schichtRowsPerPage2) || 8,
+        schicht_x_offsets_page_1: Object.fromEntries(
+          Object.entries(schichtXOffsetsPage1).map(([k, v]) => [k, Number(v) || 0])
+        ),
+        schicht_x_offsets_page_2: Object.fromEntries(
+          Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
+        ),
+        field_offsets_page_1: fieldOffsetsPage1Payload,
+        schicht_row_field_offsets_page_1: rowFieldOffsetsPage1Payload,
+        schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
+      };
+
+      const title =
+        data.projekt_name?.trim()
+          ? `Schichtenverzeichnis – ${data.projekt_name}${data.datum ? ` (${data.datum})` : ""}`
+          : `Schichtenverzeichnis Entwurf (${data.datum ?? ""})`;
+
+      const { error } = await supabase.from("drafts").insert({
+        user_id: user.id,
+        project_id: effectiveProjectId ?? null,
+        report_type: "schichtenverzeichnis",
+        title,
+        data: draftData,
+      });
+
+      if (error) {
+        console.error(error);
+        return alert("Entwurf speichern fehlgeschlagen: " + error.message);
+      }
+
+      alert("Entwurf gespeichert ✅");
+    });
+
     setSaveReportHandler(async () => {
       if (savingRef.current) return;
       savingRef.current = true;
@@ -1434,6 +1507,7 @@ export default function SchichtenverzeichnisForm({
     fieldOffsetsPage1Payload,
     rowFieldOffsetsPage1Payload,
     schichtRowOffsetsPage2,
+    effectiveProjectId,
     ensureSaveTarget,
     setSaveDraftHandler,
     setSaveReportHandler,
@@ -1841,7 +1915,7 @@ export default function SchichtenverzeichnisForm({
       { verfahren: "ek_dks", bohrung_bis: "DN80", verrohrt_bis: "30,0", verrohr_durchmesser: "220" },
       { verfahren: "voll", bohrung_bis: "46,0", verrohrt_bis: "40,0", verrohr_durchmesser: "273" },
     ]);
-    setFilterRows([
+    const testFilterRows: FilterRow[] = [
       {
         filterkies_von: "9,50",
         filterkies_bis: "12,00",
@@ -1870,7 +1944,9 @@ export default function SchichtenverzeichnisForm({
         bohrgut_von: "42,00",
         bohrgut_bis: "44,00",
       },
-    ]);
+    ];
+    setFilterRows(testFilterRows);
+    setFilterPairRowCounts(buildFilterPairRowCounts(testFilterRows));
 
     const maxRows = Math.max(1, Number(schichtRowsPerPage1) + Number(schichtRowsPerPage2));
     setGrundwasserRows(
@@ -1940,6 +2016,7 @@ export default function SchichtenverzeichnisForm({
     setSchlitzweiteMode("list");
     setBohrungen([emptyBohrungEntry()]);
     setFilterRows([emptyFilterRow()]);
+    setFilterPairRowCounts(buildFilterPairRowCounts([emptyFilterRow()]));
     setSchichtRows([emptySchichtRow()]);
     setGrundwasserRows([emptyGroundwaterRow()]);
   };
@@ -2625,7 +2702,7 @@ export default function SchichtenverzeichnisForm({
                 </div>
                 <div className="space-y-3">
                   {FILTER_PAIR_CONFIG.map((cfg) => {
-                    const entries = getFilterPairEntries(cfg.vonKey, cfg.bisKey);
+                    const entries = getFilterPairEntries(cfg.id, cfg.vonKey, cfg.bisKey);
                     return (
                       <div key={cfg.id} className="rounded-xl border border-slate-200/80 bg-slate-50/30 p-3">
                         <div className="mb-3 flex items-center justify-between gap-2">
@@ -2637,7 +2714,7 @@ export default function SchichtenverzeichnisForm({
                               type="button"
                               className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50"
                               onClick={() =>
-                                setFilterPairEntries(cfg.vonKey, cfg.bisKey, [
+                                setFilterPairEntries(cfg.id, cfg.vonKey, cfg.bisKey, [
                                   ...entries,
                                   { von: "", bis: "" },
                                 ])
@@ -2649,7 +2726,12 @@ export default function SchichtenverzeichnisForm({
                               type="button"
                               className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
                               onClick={() =>
-                                setFilterPairEntries(cfg.vonKey, cfg.bisKey, entries.slice(0, -1))
+                                setFilterPairEntries(
+                                  cfg.id,
+                                  cfg.vonKey,
+                                  cfg.bisKey,
+                                  entries.slice(0, -1)
+                                )
                               }
                               disabled={entries.length <= 1}
                             >
@@ -2666,7 +2748,7 @@ export default function SchichtenverzeichnisForm({
                                 onChange={(v) => {
                                   const next = [...entries];
                                   next[idx] = { ...next[idx], von: v };
-                                  setFilterPairEntries(cfg.vonKey, cfg.bisKey, next);
+                                  setFilterPairEntries(cfg.id, cfg.vonKey, cfg.bisKey, next);
                                 }}
                               />
                               <Field
@@ -2675,7 +2757,7 @@ export default function SchichtenverzeichnisForm({
                                 onChange={(v) => {
                                   const next = [...entries];
                                   next[idx] = { ...next[idx], bis: v };
-                                  setFilterPairEntries(cfg.vonKey, cfg.bisKey, next);
+                                  setFilterPairEntries(cfg.id, cfg.vonKey, cfg.bisKey, next);
                                 }}
                               />
                             </div>

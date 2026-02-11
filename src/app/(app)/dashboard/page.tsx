@@ -448,7 +448,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="mx-auto max-w-[1800px] px-4 py-6">
+    <div className="mx-auto max-w-[1800px] overflow-x-hidden px-4 py-6">
       <div className="rounded-3xl border border-slate-200/70 bg-gradient-to-b from-white via-white to-slate-50 p-6 shadow-soft">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -505,7 +505,7 @@ export default function DashboardPage() {
 
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-medium">Zuletzt bearbeitete Berichte</h2>
                 <Link href="/reports" className="text-xs text-slate-500 hover:text-slate-700">
                   Alle anzeigen
@@ -516,16 +516,18 @@ export default function DashboardPage() {
               ) : (
                 <div className="mt-3 space-y-2">
                   {reports.slice(0, 3).map((r) => (
-                    <div key={r.id} className="flex items-center justify-between rounded-xl border border-slate-200/70 px-3 py-2">
+                    <div key={r.id} className="rounded-xl border border-slate-200/70 px-3 py-2">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{r.title}</div>
+                        <div className="text-sm font-medium break-words">{r.title}</div>
                         <div className="mt-0.5 text-xs text-slate-500">
                           {new Date(r.created_at).toLocaleDateString()}
                         </div>
                       </div>
-                      <span className={`rounded-full border border-slate-200/70 px-2 py-0.5 text-[11px] font-semibold ${typeBadge(r.report_type)}`}>
-                        {r.report_type === "schichtenverzeichnis" ? "Schichtenverzeichnis" : "Tagesbericht"}
-                      </span>
+                      <div className="mt-2">
+                        <span className={`inline-flex max-w-full rounded-full border border-slate-200/70 px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${typeBadge(r.report_type)}`}>
+                          {r.report_type === "schichtenverzeichnis" ? "Schichtenverzeichnis" : "Tagesbericht"}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -533,7 +535,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-medium">Zuletzt gespeicherte Entwürfe</h2>
                 <Link href="/drafts" className="text-xs text-slate-500 hover:text-slate-700">
                   Alle anzeigen
@@ -544,16 +546,18 @@ export default function DashboardPage() {
               ) : (
                 <div className="mt-3 space-y-2">
                   {drafts.slice(0, 3).map((d) => (
-                    <div key={d.id} className="flex items-center justify-between rounded-xl border border-slate-200/70 px-3 py-2">
+                    <div key={d.id} className="rounded-xl border border-slate-200/70 px-3 py-2">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{d.title}</div>
+                        <div className="text-sm font-medium break-words">{d.title}</div>
                         <div className="mt-0.5 text-xs text-slate-500">
                           {new Date(d.created_at).toLocaleDateString()}
                         </div>
                       </div>
-                      <Link href={`/reports/new?draftId=${d.id}`} className="btn btn-secondary btn-xs">
-                        Öffnen
-                      </Link>
+                      <div className="mt-2">
+                        <Link href={`/reports/new?draftId=${d.id}`} className="btn btn-secondary btn-xs w-full sm:w-auto">
+                          Öffnen
+                        </Link>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -576,7 +580,7 @@ export default function DashboardPage() {
               </p>
             ) : (
               <>
-                <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <div className="mt-4 grid gap-2 md:grid-cols-[1fr_auto]">
                   <input
                     className="w-full rounded-xl border px-3 py-2 text-sm"
                     placeholder={mySuggestion ? "Dein Vorschlag ist bereits gesetzt" : "z. B. drill-expert.de"}
@@ -588,7 +592,7 @@ export default function DashboardPage() {
                     }}
                     disabled={Boolean(mySuggestion) || domainLoading}
                   />
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:flex">
                     <button
                       type="button"
                       className="btn btn-secondary"
@@ -734,7 +738,7 @@ export default function DashboardPage() {
                             <p className="mt-2 text-xs text-rose-600">{check.error}</p>
                           ) : null}
                           {checkData ? (
-                            <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                               <div className={`rounded-lg border px-2 py-1 text-xs font-semibold ${statusCls}`}>
                                 {checkData.availability.status}
                               </div>
