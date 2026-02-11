@@ -1731,6 +1731,8 @@ export default function SchichtenverzeichnisForm({
   };
 
   const openPdf = async () => {
+    const previewWindow =
+      typeof window !== "undefined" ? window.open("about:blank", "_blank", "noopener,noreferrer") : null;
     setLoading(true);
     try {
       saveOffsetsSnapshot();
@@ -1770,11 +1772,22 @@ export default function SchichtenverzeichnisForm({
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
+        if (previewWindow) previewWindow.close();
         alert("PDF-API Fehler");
         return;
       }
       const blob = await res.blob();
-      window.open(URL.createObjectURL(blob), "_blank");
+      const url = URL.createObjectURL(blob);
+      if (previewWindow) {
+        previewWindow.location.href = url;
+      } else {
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.click();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 120000);
     } finally {
       setLoading(false);
     }

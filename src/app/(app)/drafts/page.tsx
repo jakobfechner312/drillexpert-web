@@ -66,7 +66,7 @@ export default function DraftsPage() {
   }, [drafts, query]);
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
       <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-start">
         <div>
           <h1 className="text-xl font-semibold">Meine Entwürfe</h1>
@@ -104,28 +104,28 @@ export default function DraftsPage() {
             <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
               {filteredDrafts.map((d) => (
                 <div key={d.id} className="rounded-2xl border border-slate-200/70 p-4 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold">{d.title}</div>
+                      <div className="text-sm font-semibold break-words">{d.title}</div>
                       <div className="mt-1 text-xs text-gray-500">
                         {new Date(d.created_at).toLocaleString()}
                       </div>
                     </div>
-                    <span className="rounded-full border border-slate-200/70 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                    <span className="max-w-full rounded-full border border-slate-200/70 px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-slate-600">
                       Entwurf
                     </span>
                   </div>
 
-                  <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+                  <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <Link
                       href={`/reports/new?draftId=${d.id}`}
-                      className="btn btn-secondary btn-xs w-full sm:w-auto"
+                      className="btn btn-secondary btn-xs w-full"
                     >
                       Öffnen
                     </Link>
                     <button
                       type="button"
-                      className="btn btn-danger btn-xs w-full sm:w-auto"
+                      className="btn btn-danger btn-xs w-full"
                       onClick={() => deleteDraft(d.id)}
                     >
                       Löschen
