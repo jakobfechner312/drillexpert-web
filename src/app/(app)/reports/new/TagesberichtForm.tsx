@@ -1319,6 +1319,9 @@ if (mode === "edit") {
   };
 
   async function openTestPdf() {
+    const isIOSLike =
+      /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     const previewWindow = window.open("", "_blank");
     try {
       const payload = buildPdfPayload(report);
@@ -1335,13 +1338,17 @@ if (mode === "edit") {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       if (previewWindow) {
-        try {
-          previewWindow.document.open();
-          previewWindow.document.write(
-            `<!doctype html><html><head><meta charset="utf-8"><title>PDF Vorschau</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#111;"><iframe src="${url}" style="border:0;width:100vw;height:100vh;" title="PDF Vorschau"></iframe></body></html>`
-          );
-          previewWindow.document.close();
-        } catch {
+        if (isIOSLike) {
+          try {
+            previewWindow.document.open();
+            previewWindow.document.write(
+              `<!doctype html><html><head><meta charset="utf-8"><title>PDF Vorschau</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#111;"><iframe src="${url}" style="border:0;width:100vw;height:100vh;" title="PDF Vorschau"></iframe></body></html>`
+            );
+            previewWindow.document.close();
+          } catch {
+            previewWindow.location.href = url;
+          }
+        } else {
           previewWindow.location.href = url;
         }
       } else {

@@ -1802,8 +1802,15 @@ export default function SchichtenverzeichnisForm({
     }
   };
   const openPdfInPreviewWindow = (previewWindow: Window | null, objectUrl: string) => {
+    const isIOSLike =
+      /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     if (!previewWindow) {
       window.location.href = objectUrl;
+      return;
+    }
+    if (!isIOSLike) {
+      previewWindow.location.href = objectUrl;
       return;
     }
     try {
