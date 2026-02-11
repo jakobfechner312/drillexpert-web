@@ -285,7 +285,7 @@ function AppLayout({
       )}
 
       <main className="min-w-0">
-        <div className="bg-transparent p-4 pt-5 pb-24 sm:rounded-2xl sm:border sm:border-base-border sm:bg-white sm:p-6 sm:pb-6 sm:shadow-soft">
+        <div className="mt-2 bg-transparent p-4 pt-6 pb-24 sm:mt-0 sm:rounded-2xl sm:border sm:border-base-border sm:bg-white sm:p-6 sm:pb-6 sm:shadow-soft">
           {children}
         </div>
       </main>
