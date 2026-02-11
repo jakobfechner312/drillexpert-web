@@ -1751,7 +1751,7 @@ if (mode === "edit") {
     : "grid gap-5 md:grid-cols-2 xl:grid-cols-[1.35fr_1.35fr_1.2fr]";
 
   return (
-    <div className="mt-6 space-y-6 max-w-[2000px] mx-auto w-full px-4 sm:px-6 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
+    <div className="mt-6 space-y-6 max-w-[2000px] mx-auto w-full px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
       {useStepper ? (
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">

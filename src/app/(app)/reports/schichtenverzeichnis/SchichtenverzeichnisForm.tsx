@@ -2135,7 +2135,7 @@ export default function SchichtenverzeichnisForm({
 
   const showStep = (index: number) => !useStepper || stepIndex === index;
   const containerClass = useStepper
-    ? "mt-6 space-y-6 max-w-[2000px] mx-auto w-full px-4 sm:px-6 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]"
+    ? "mt-6 space-y-6 max-w-[2000px] mx-auto w-full px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]"
     : "space-y-6";
   const renderStep = (content: React.ReactNode) => content;
 
