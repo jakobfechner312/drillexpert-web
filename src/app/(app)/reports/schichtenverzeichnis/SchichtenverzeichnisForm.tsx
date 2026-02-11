@@ -644,6 +644,7 @@ export default function SchichtenverzeichnisForm({
 
   const savingRef = useRef(false);
   const reportSaveKeyRef = useRef<string | null>(null);
+  const payloadDebugRef = useRef<{ save?: string; preview?: string }>({});
 
   const [saveScope, setSaveScope] = useState<SaveScope>(projectId ? "project" : "unset");
   const [localProjectId, setLocalProjectId] = useState<string | null>(null);
@@ -1397,33 +1398,8 @@ export default function SchichtenverzeichnisForm({
             ? `Schichtenverzeichnis – ${data.projekt_name}${data.datum ? ` (${data.datum})` : ""}`
             : `Schichtenverzeichnis (${data.datum ?? ""})`;
 
-        const reportData = {
-          ...data,
-          ...legacyBohrungsFields,
-          ...legacyFilterFields,
-          durchfuehrungszeit: effectiveDurchfuehrungszeit,
-          bohrungen: normalizedBohrungenForPayload,
-          filter_rows: normalizedFilterRowsForPayload,
-          grundwasser_rows: grundwasserRows,
-          schicht_rows: schichtRows,
-          schicht_row_height: Number(schichtRowHeight) || 200,
-          schicht_start_offset_page_1: Number(schichtStartOffsetPage1) || 0,
-          schicht_start_offset_page_2: Number(schichtStartOffsetPage2) || 0,
-          schicht_x_offset_page_1: Number(schichtXOffsetPage1) || 0,
-          schicht_x_offset_page_2: Number(schichtXOffsetPage2) || 0,
-          schicht_rows_per_page: Number(schichtRowsPerPage1) || 4,
-          schicht_rows_per_page_1: Number(schichtRowsPerPage1) || 4,
-          schicht_rows_per_page_2: Number(schichtRowsPerPage2) || 8,
-          schicht_x_offsets_page_1: Object.fromEntries(
-            Object.entries(schichtXOffsetsPage1).map(([k, v]) => [k, Number(v) || 0])
-          ),
-          schicht_x_offsets_page_2: Object.fromEntries(
-            Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
-          ),
-          field_offsets_page_1: fieldOffsetsPage1Payload,
-          schicht_row_field_offsets_page_1: rowFieldOffsetsPage1Payload,
-          schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
-        };
+        const reportData = buildReportDataPayload();
+        debugPayloadParity("save", reportData);
 
         if (mode === "edit") {
           if (!reportId) {
@@ -1730,51 +1706,87 @@ export default function SchichtenverzeichnisForm({
     setData((prev) => ({ ...prev, [key]: checked ? "x" : "" }));
   };
 
+  const buildReportDataPayload = () => ({
+    ...data,
+    ...legacyBohrungsFields,
+    ...legacyFilterFields,
+    durchfuehrungszeit: effectiveDurchfuehrungszeit,
+    bohrungen: normalizedBohrungenForPayload,
+    filter_rows: normalizedFilterRowsForPayload,
+    grundwasser_rows: grundwasserRows,
+    schicht_rows: schichtRows,
+    schicht_row_height: Number(schichtRowHeight) || 200,
+    schicht_start_offset_page_1: Number(schichtStartOffsetPage1) || 0,
+    schicht_start_offset_page_2: Number(schichtStartOffsetPage2) || 0,
+    schicht_x_offset_page_1: Number(schichtXOffsetPage1) || 0,
+    schicht_x_offset_page_2: Number(schichtXOffsetPage2) || 0,
+    schicht_rows_per_page: Number(schichtRowsPerPage1) || 4,
+    schicht_rows_per_page_1: Number(schichtRowsPerPage1) || 4,
+    schicht_rows_per_page_2: Number(schichtRowsPerPage2) || 8,
+    schicht_x_offsets_page_1: Object.fromEntries(
+      Object.entries(schichtXOffsetsPage1).map(([k, v]) => [k, Number(v) || 0])
+    ),
+    schicht_x_offsets_page_2: Object.fromEntries(
+      Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
+    ),
+    field_offsets_page_1: fieldOffsetsPage1Payload,
+    schicht_row_field_offsets_page_1: rowFieldOffsetsPage1Payload,
+    schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
+  });
+
+  const debugPayloadParity = (kind: "save" | "preview", payload: Record<string, unknown>) => {
+    if (process.env.NODE_ENV !== "development") return;
+    try {
+      const serialized = JSON.stringify(payload);
+      const otherKind: "save" | "preview" = kind === "save" ? "preview" : "save";
+      const otherSerialized = payloadDebugRef.current[otherKind];
+      const matchesOther = typeof otherSerialized === "string" ? otherSerialized === serialized : null;
+      payloadDebugRef.current[kind] = serialized;
+      console.groupCollapsed(`[SV payload debug] ${kind}`);
+      console.log("chars:", serialized.length);
+      if (matchesOther == null) {
+        console.log(`no previous ${otherKind} payload to compare yet`);
+      } else {
+        console.log(`matches previous ${otherKind}:`, matchesOther);
+      }
+      console.groupEnd();
+    } catch (error) {
+      console.warn("[SV payload debug] compare failed", error);
+    }
+  };
+
   const openPdf = async () => {
+    const previewWindow = window.open("", "_blank");
     setLoading(true);
     try {
       saveOffsetsSnapshot();
       const params = new URLSearchParams();
       params.set("debug", "1");
       if (Number(gridStep)) params.set("grid", String(Number(gridStep)));
-      const payload = {
-        ...data,
-        ...legacyBohrungsFields,
-        ...legacyFilterFields,
-        durchfuehrungszeit: effectiveDurchfuehrungszeit,
-        bohrungen: normalizedBohrungenForPayload,
-        filter_rows: normalizedFilterRowsForPayload,
-        grundwasser_rows: grundwasserRows,
-        schicht_rows: schichtRows,
-        schicht_row_height: Number(schichtRowHeight) || 200,
-        schicht_start_offset_page_1: Number(schichtStartOffsetPage1) || 0,
-        schicht_start_offset_page_2: Number(schichtStartOffsetPage2) || 0,
-        schicht_x_offset_page_1: Number(schichtXOffsetPage1) || 0,
-        schicht_x_offset_page_2: Number(schichtXOffsetPage2) || 0,
-        schicht_rows_per_page: Number(schichtRowsPerPage1) || 4,
-        schicht_rows_per_page_1: Number(schichtRowsPerPage1) || 4,
-        schicht_rows_per_page_2: Number(schichtRowsPerPage2) || 8,
-        schicht_x_offsets_page_1: Object.fromEntries(
-          Object.entries(schichtXOffsetsPage1).map(([k, v]) => [k, Number(v) || 0])
-        ),
-        schicht_x_offsets_page_2: Object.fromEntries(
-          Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
-        ),
-        field_offsets_page_1: fieldOffsetsPage1Payload,
-        schicht_row_field_offsets_page_1: rowFieldOffsetsPage1Payload,
-        schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
-      };
+      const payload = buildReportDataPayload();
+      debugPayloadParity("preview", payload);
       const res = await fetch(`/api/pdf/schichtenverzeichnis?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
+        if (previewWindow) previewWindow.close();
         alert("PDF-API Fehler");
         return;
       }
       const blob = await res.blob();
-      window.open(URL.createObjectURL(blob), "_blank");
+      const url = URL.createObjectURL(blob);
+      if (previewWindow) {
+        previewWindow.location.href = url;
+      } else {
+        window.open(url, "_blank");
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      if (previewWindow) previewWindow.close();
+      console.error("Schichtenverzeichnis preview failed", e);
+      alert("PDF-Vorschau fehlgeschlagen.");
     } finally {
       setLoading(false);
     }
@@ -1787,33 +1799,7 @@ export default function SchichtenverzeichnisForm({
       const params = new URLSearchParams();
       if (showGrid) params.set("debug", "1");
       if (Number(gridStep)) params.set("grid", String(Number(gridStep)));
-      const payload = {
-        ...data,
-        ...legacyBohrungsFields,
-        ...legacyFilterFields,
-        durchfuehrungszeit: effectiveDurchfuehrungszeit,
-        bohrungen: normalizedBohrungenForPayload,
-        filter_rows: normalizedFilterRowsForPayload,
-        grundwasser_rows: grundwasserRows,
-        schicht_rows: schichtRows,
-        schicht_row_height: Number(schichtRowHeight) || 200,
-        schicht_start_offset_page_1: Number(schichtStartOffsetPage1) || 0,
-        schicht_start_offset_page_2: Number(schichtStartOffsetPage2) || 0,
-        schicht_x_offset_page_1: Number(schichtXOffsetPage1) || 0,
-        schicht_x_offset_page_2: Number(schichtXOffsetPage2) || 0,
-        schicht_rows_per_page: Number(schichtRowsPerPage1) || 4,
-        schicht_rows_per_page_1: Number(schichtRowsPerPage1) || 4,
-        schicht_rows_per_page_2: Number(schichtRowsPerPage2) || 8,
-        schicht_x_offsets_page_1: Object.fromEntries(
-          Object.entries(schichtXOffsetsPage1).map(([k, v]) => [k, Number(v) || 0])
-        ),
-        schicht_x_offsets_page_2: Object.fromEntries(
-          Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
-        ),
-        field_offsets_page_1: fieldOffsetsPage1Payload,
-        schicht_row_field_offsets_page_1: rowFieldOffsetsPage1Payload,
-        schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
-      };
+      const payload = buildReportDataPayload();
 
       const res = await fetch(`/api/pdf/schichtenverzeichnis?${params.toString()}`, {
         method: "POST",

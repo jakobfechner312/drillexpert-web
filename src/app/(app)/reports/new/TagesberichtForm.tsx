@@ -1319,15 +1319,32 @@ if (mode === "edit") {
   };
 
   async function openTestPdf() {
-    const payload = buildPdfPayload(report);
-    const res = await fetch("/api/pdf/tagesbericht", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) return alert("PDF-API Fehler");
-    const blob = await res.blob();
-    window.open(URL.createObjectURL(blob), "_blank");
+    const previewWindow = window.open("", "_blank");
+    try {
+      const payload = buildPdfPayload(report);
+      const res = await fetch("/api/pdf/tagesbericht", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        if (previewWindow) previewWindow.close();
+        alert("PDF-API Fehler");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (previewWindow) {
+        previewWindow.location.href = url;
+      } else {
+        window.open(url, "_blank");
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      if (previewWindow) previewWindow.close();
+      console.error("PDF preview failed", e);
+      alert("PDF-Vorschau fehlgeschlagen.");
+    }
   }
 
   /** ---------- Tabelle ---------- */

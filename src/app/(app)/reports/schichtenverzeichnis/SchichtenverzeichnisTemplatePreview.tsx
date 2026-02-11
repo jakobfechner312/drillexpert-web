@@ -48,6 +48,7 @@ export default function SchichtenverzeichnisTemplatePreview({ projectId }: Props
   }, []);
 
   const openPdf = async (withGrid: boolean) => {
+    const previewWindow = window.open("", "_blank");
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -58,11 +59,22 @@ export default function SchichtenverzeichnisTemplatePreview({ projectId }: Props
       const url = `/api/pdf/schichtenverzeichnis${params.toString() ? `?${params.toString()}` : ""}`;
       const res = await fetch(url);
       if (!res.ok) {
+        if (previewWindow) previewWindow.close();
         alert("PDF-API Fehler");
         return;
       }
       const blob = await res.blob();
-      window.open(URL.createObjectURL(blob), "_blank");
+      const objectUrl = URL.createObjectURL(blob);
+      if (previewWindow) {
+        previewWindow.location.href = objectUrl;
+      } else {
+        window.open(objectUrl, "_blank");
+      }
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (e) {
+      if (previewWindow) previewWindow.close();
+      console.error("Template preview failed", e);
+      alert("PDF-Vorschau fehlgeschlagen.");
     } finally {
       setLoading(false);
     }
@@ -111,6 +123,7 @@ export default function SchichtenverzeichnisTemplatePreview({ projectId }: Props
 
     const { x, y } = resolved;
 
+    const previewWindow = window.open("", "_blank");
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -126,11 +139,22 @@ export default function SchichtenverzeichnisTemplatePreview({ projectId }: Props
       const url = `/api/pdf/schichtenverzeichnis?${params.toString()}`;
       const res = await fetch(url);
       if (!res.ok) {
+        if (previewWindow) previewWindow.close();
         alert("PDF-API Fehler");
         return;
       }
       const blob = await res.blob();
-      window.open(URL.createObjectURL(blob), "_blank");
+      const objectUrl = URL.createObjectURL(blob);
+      if (previewWindow) {
+        previewWindow.location.href = objectUrl;
+      } else {
+        window.open(objectUrl, "_blank");
+      }
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (e) {
+      if (previewWindow) previewWindow.close();
+      console.error("Template marker preview failed", e);
+      alert("PDF-Vorschau fehlgeschlagen.");
     } finally {
       setLoading(false);
     }
