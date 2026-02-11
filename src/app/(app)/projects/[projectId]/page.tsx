@@ -110,6 +110,7 @@ export default function ProjectDetailPage() {
   const [mymapsUrlInput, setMymapsUrlInput] = useState("");
   const [mymapsSaving, setMymapsSaving] = useState(false);
   const [mymapsError, setMymapsError] = useState<string | null>(null);
+  const [deletingProject, setDeletingProject] = useState(false);
 
   const SectionCard = ({
     title,
@@ -577,6 +578,77 @@ export default function ProjectDetailPage() {
     setFiles((prev) => prev.filter((x) => x.name !== name));
   };
 
+  const deleteProject = async () => {
+    if (!isOwner || !project) return;
+    const name = (project.name ?? "").trim();
+    if (!name) {
+      alert("Projektname fehlt. Löschen abgebrochen.");
+      return;
+    }
+    const typed = prompt(`Zum Löschen bitte den Projektnamen eingeben:\n${name}`);
+    if (typed == null) return;
+    if (typed.trim() !== name) {
+      alert("Projektname stimmt nicht. Löschen abgebrochen.");
+      return;
+    }
+    if (!confirm("Projekt wirklich löschen? Zugehörige Mitglieder und Dateien werden entfernt.")) return;
+
+    setDeletingProject(true);
+    try {
+      // Reports bleiben erhalten, werden aber aus dem Projekt gelöst.
+      const { error: reportErr } = await supabase
+        .from("reports")
+        .update({ project_id: null })
+        .eq("project_id", projectId);
+      if (reportErr) {
+        alert("Reports konnten nicht aus dem Projekt gelöst werden: " + reportErr.message);
+        return;
+      }
+
+      const { error: memberErr } = await supabase
+        .from("project_members")
+        .delete()
+        .eq("project_id", projectId);
+      if (memberErr) {
+        alert("Projektmitglieder konnten nicht entfernt werden: " + memberErr.message);
+        return;
+      }
+
+      const { data: fileList, error: listErr } = await supabase.storage
+        .from("dropData")
+        .list(`${projectId}/`, { limit: 1000, offset: 0 });
+      if (listErr) {
+        alert("Projektdateien konnten nicht geladen werden: " + listErr.message);
+        return;
+      }
+      const filePaths = (fileList ?? [])
+        .map((f) => f.name)
+        .filter(Boolean)
+        .map((name) => `${projectId}/${name}`);
+      if (filePaths.length) {
+        const { error: removeErr } = await supabase.storage.from("dropData").remove(filePaths);
+        if (removeErr) {
+          alert("Projektdateien konnten nicht gelöscht werden: " + removeErr.message);
+          return;
+        }
+      }
+
+      const { error: projectErr } = await supabase
+        .from("projects")
+        .delete()
+        .eq("id", projectId);
+      if (projectErr) {
+        alert("Projekt löschen fehlgeschlagen: " + projectErr.message);
+        return;
+      }
+
+      alert("Projekt gelöscht ✅");
+      window.location.href = "/projects";
+    } finally {
+      setDeletingProject(false);
+    }
+  };
+
   const addMemberByEmail = async () => {
     const email = memberEmail.trim().toLowerCase();
     if (!email) {
@@ -808,6 +880,17 @@ export default function ProjectDetailPage() {
             >
               + Schichtenverzeichnis
             </Link>
+            {isOwner ? (
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={deleteProject}
+                disabled={deletingProject}
+                title="Projekt dauerhaft löschen"
+              >
+                {deletingProject ? "Lösche…" : "Projekt löschen"}
+              </button>
+            ) : null}
           </div>
         </div>
       </section>
