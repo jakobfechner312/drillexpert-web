@@ -19,6 +19,7 @@ export default function AppShell({
 }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const showFloatingNavToggle = pathname.startsWith("/reports");
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -35,6 +36,16 @@ export default function AppShell({
       <AppLayout sidebarOpen={sidebarOpen} onCloseSidebar={() => setSidebarOpen(false)}>
         {children}
       </AppLayout>
+      {showFloatingNavToggle && !sidebarOpen ? (
+        <button
+          type="button"
+          className="fixed left-3 top-1/2 z-30 -translate-y-1/2 rounded-full border border-base-border bg-white/95 p-2.5 text-slate-700 shadow-lg backdrop-blur transition hover:bg-white lg:hidden"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Navigation öffnen"
+        >
+          <Menu className="h-5 w-5" aria-hidden="true" />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -274,7 +285,7 @@ function AppLayout({
       )}
 
       <main className="min-w-0">
-        <div className="bg-transparent p-4 pb-24 sm:rounded-2xl sm:border sm:border-base-border sm:bg-white sm:p-6 sm:pb-6 sm:shadow-soft">
+        <div className="bg-transparent p-4 pt-5 pb-24 sm:rounded-2xl sm:border sm:border-base-border sm:bg-white sm:p-6 sm:pb-6 sm:shadow-soft">
           {children}
         </div>
       </main>
