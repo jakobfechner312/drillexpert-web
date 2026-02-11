@@ -1783,6 +1783,39 @@ export default function SchichtenverzeichnisForm({
   const toggleMark = (key: keyof FormData, checked: boolean) => {
     setData((prev) => ({ ...prev, [key]: checked ? "x" : "" }));
   };
+  const persistFormStateSnapshot = () => {
+    if (mode === "edit") return;
+    try {
+      sessionStorage.setItem(
+        SV_FORM_STATE_KEY,
+        JSON.stringify({
+          data,
+          bohrungen,
+          filterRows,
+          grundwasserRows,
+          schichtRows,
+          stepIndex,
+        })
+      );
+    } catch {
+      // ignore
+    }
+  };
+  const openPdfInPreviewWindow = (previewWindow: Window | null, objectUrl: string) => {
+    if (!previewWindow) {
+      window.location.href = objectUrl;
+      return;
+    }
+    try {
+      previewWindow.document.open();
+      previewWindow.document.write(
+        `<!doctype html><html><head><meta charset="utf-8"><title>PDF Vorschau</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#111;"><iframe src="${objectUrl}" style="border:0;width:100vw;height:100vh;" title="PDF Vorschau"></iframe></body></html>`
+      );
+      previewWindow.document.close();
+    } catch {
+      previewWindow.location.href = objectUrl;
+    }
+  };
 
   const buildReportDataPayload = () => ({
     ...data,
@@ -1837,6 +1870,7 @@ export default function SchichtenverzeichnisForm({
     const previewWindow = window.open("", "_blank");
     setLoading(true);
     try {
+      persistFormStateSnapshot();
       saveOffsetsSnapshot();
       const params = new URLSearchParams();
       params.set("debug", "1");
@@ -1857,11 +1891,7 @@ export default function SchichtenverzeichnisForm({
       const url = URL.createObjectURL(blob);
       // iOS may navigate current tab; clear loading before handing over navigation.
       setLoading(false);
-      if (previewWindow) {
-        previewWindow.location.href = url;
-      } else {
-        window.open(url, "_blank");
-      }
+      openPdfInPreviewWindow(previewWindow, url);
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
       if (previewWindow) previewWindow.close();
@@ -3551,9 +3581,8 @@ export default function SchichtenverzeichnisForm({
           </button>
           <button
             type="button"
-            className="btn btn-primary disabled:opacity-60"
+            className="btn btn-primary"
             onClick={openPdf}
-            disabled={loading}
           >
             {loading ? "Erzeuge PDF…" : "PDF Vorschau"}
           </button>

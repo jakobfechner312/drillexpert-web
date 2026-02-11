@@ -1335,9 +1335,17 @@ if (mode === "edit") {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       if (previewWindow) {
-        previewWindow.location.href = url;
+        try {
+          previewWindow.document.open();
+          previewWindow.document.write(
+            `<!doctype html><html><head><meta charset="utf-8"><title>PDF Vorschau</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#111;"><iframe src="${url}" style="border:0;width:100vw;height:100vh;" title="PDF Vorschau"></iframe></body></html>`
+          );
+          previewWindow.document.close();
+        } catch {
+          previewWindow.location.href = url;
+        }
       } else {
-        window.open(url, "_blank");
+        window.location.href = url;
       }
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
