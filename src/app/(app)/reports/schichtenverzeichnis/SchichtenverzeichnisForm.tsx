@@ -2135,7 +2135,7 @@ export default function SchichtenverzeichnisForm({
 
   const showStep = (index: number) => !useStepper || stepIndex === index;
   const containerClass = useStepper
-    ? "mt-6 space-y-6 max-w-[2000px] mx-auto w-full px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]"
+    ? "mt-6 space-y-6 max-w-[2000px] mx-auto w-full overflow-x-hidden px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]"
     : "space-y-6";
   const renderStep = (content: React.ReactNode) => content;
 
@@ -3639,13 +3639,13 @@ export default function SchichtenverzeichnisForm({
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm overflow-hidden">
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-sm">
       <div className="flex items-center justify-between gap-3 bg-sky-50/60 px-4 py-2 border-b border-slate-200/70">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
           {title}
         </h3>
       </div>
-      <div className="p-4">{children}</div>
+      <div className="min-w-0 overflow-x-hidden p-4">{children}</div>
     </section>
   );
 }
@@ -3663,12 +3663,12 @@ function Field({
   className?: string;
 }) {
   return (
-    <label className={`space-y-1 ${className ?? ""}`}>
+    <label className={`min-w-0 space-y-1 ${className ?? ""}`}>
       <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
         {label}
       </span>
       <input
-        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+        className="w-full max-w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
       />

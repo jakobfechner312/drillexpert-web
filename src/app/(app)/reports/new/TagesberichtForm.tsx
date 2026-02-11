@@ -141,7 +141,7 @@ const GroupCard = ({
   badge?: string;
   children: React.ReactNode;
 }) => (
-  <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm overflow-hidden">
+  <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-sm">
     <div className="flex items-center justify-between gap-3 bg-sky-50/60 px-4 py-2 border-b border-slate-200/70">
       <h2 className="text-sm font-semibold text-sky-900 tracking-wide">{title}</h2>
       {badge ? (
@@ -150,16 +150,16 @@ const GroupCard = ({
         </span>
       ) : null}
     </div>
-    <div className="p-4">{children}</div>
+    <div className="min-w-0 overflow-x-hidden p-4">{children}</div>
   </section>
 );
 
 const SubGroup = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div className="rounded-xl border border-slate-200/70 bg-white">
+  <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200/60 bg-white">
     <div className="border-b border-slate-200/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
       {title}
     </div>
-    <div className="p-3">{children}</div>
+    <div className="min-w-0 p-3">{children}</div>
   </div>
 );
 
@@ -182,8 +182,8 @@ const RowActions = ({
   disableRemove?: boolean;
   className?: string;
 }) => (
-  <div className={["flex flex-wrap items-center justify-between gap-3", className].filter(Boolean).join(" ")}>
-    <span className="text-sm text-slate-500">{countLabel ?? ""}</span>
+  <div className={["flex flex-wrap items-start gap-2 sm:items-center sm:justify-between", className].filter(Boolean).join(" ")}>
+    {countLabel ? <span className="text-sm text-slate-500">{countLabel}</span> : null}
     <div className="flex flex-wrap gap-2">
       <button
         type="button"
@@ -1751,7 +1751,7 @@ if (mode === "edit") {
     : "grid gap-5 md:grid-cols-2 xl:grid-cols-[1.35fr_1.35fr_1.2fr]";
 
   return (
-    <div className="mt-6 space-y-6 max-w-[2000px] mx-auto w-full px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
+    <div className="mt-6 space-y-6 max-w-[2000px] mx-auto w-full overflow-x-hidden px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
       {useStepper ? (
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1931,8 +1931,8 @@ if (mode === "edit") {
                 ) : null}
 
                 {showStep(3) ? (
-                  <div className="mt-4 rounded-xl border border-slate-200/70 p-3 bg-slate-50/60">
-                    <div className="flex items-center justify-between">
+                  <div className="mt-4 min-w-0 rounded-xl border border-slate-200/60 bg-slate-50/50 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
                       <h4 className="font-medium">Arbeitszeit & Pausen</h4>
                       <RowActions
                         addLabel="+ Zeit"
@@ -1946,49 +1946,49 @@ if (mode === "edit") {
                       {safeWorkTimes.slice(0, 3).map((r, i) => {
                         const b = safeBreaks[i] ?? { from: "", to: "" };
                         return (
-                          <div key={i} className="rounded-xl border border-slate-200/70 bg-white p-3">
-                            <div className="grid gap-3 lg:grid-cols-[1.1fr_1fr_1fr_1fr_1fr]">
-                              <label className="space-y-1">
+                          <div key={i} className="min-w-0 rounded-xl border border-slate-200/70 bg-white p-3">
+                            <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[1.1fr_1fr_1fr_1fr_1fr]">
+                              <label className="min-w-0 space-y-1">
                                 <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Name</span>
                                 <input
-                                  className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                  className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
                                   value={r.name ?? ""}
                                   onChange={(e) => setTimeRowName(i, e.target.value)}
                                   placeholder="Name"
                                 />
                               </label>
-                              <label className="space-y-1">
+                              <label className="min-w-0 space-y-1">
                                 <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Arbeitszeit von</span>
                                 <input
                                   type="time"
-                                  className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                  className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
                                   value={r.from ?? ""}
                                   onChange={(e) => setWorkTimeRow(i, { from: e.target.value })}
                                 />
                               </label>
-                              <label className="space-y-1">
+                              <label className="min-w-0 space-y-1">
                                 <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Arbeitszeit bis</span>
                                 <input
                                   type="time"
-                                  className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                  className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
                                   value={r.to ?? ""}
                                   onChange={(e) => setWorkTimeRow(i, { to: e.target.value })}
                                 />
                               </label>
-                              <label className="space-y-1">
+                              <label className="min-w-0 space-y-1">
                                 <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pause von</span>
                                 <input
                                   type="time"
-                                  className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                  className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
                                   value={b.from ?? ""}
                                   onChange={(e) => setBreakRow(i, { from: e.target.value })}
                                 />
                               </label>
-                              <label className="space-y-1">
+                              <label className="min-w-0 space-y-1">
                                 <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pause bis</span>
                                 <input
                                   type="time"
-                                  className="w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                  className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
                                   value={b.to ?? ""}
                                   onChange={(e) => setBreakRow(i, { to: e.target.value })}
                                 />
