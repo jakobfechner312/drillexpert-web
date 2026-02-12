@@ -249,13 +249,6 @@ export default function DashboardPage() {
     load();
   }, [supabase]);
 
-  const typeBadge = (type: string | null | undefined) => {
-    if (type === "schichtenverzeichnis") {
-      return "bg-amber-50 text-amber-800 border-amber-200";
-    }
-    return "bg-sky-50 text-sky-800 border-sky-200";
-  };
-
   const sanitizeDomain = (raw: string) => {
     const stripped = raw
       .trim()
@@ -485,86 +478,6 @@ export default function DashboardPage() {
 
       {!loading && !err && (
         <>
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-              <div className="text-xs text-slate-500">Projekte</div>
-              <div className="mt-2 text-2xl font-semibold">{projects.length}</div>
-              <div className="mt-2 text-xs text-slate-500">Mitgliedschaften</div>
-            </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-              <div className="text-xs text-slate-500">Berichte</div>
-              <div className="mt-2 text-2xl font-semibold">{reports.length}</div>
-              <div className="mt-2 text-xs text-slate-500">Zuletzt bearbeitet</div>
-            </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-              <div className="text-xs text-slate-500">Entwürfe</div>
-              <div className="mt-2 text-2xl font-semibold">{drafts.length}</div>
-              <div className="mt-2 text-xs text-slate-500">Lokale & Cloud</div>
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="font-medium">Zuletzt bearbeitete Berichte</h2>
-                <Link href="/reports" className="text-xs text-slate-500 hover:text-slate-700">
-                  Alle anzeigen
-                </Link>
-              </div>
-              {reports.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">Noch keine Berichte vorhanden.</p>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {reports.slice(0, 3).map((r) => (
-                    <div key={r.id} className="rounded-xl border border-slate-200/70 px-3 py-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium break-words">{r.title}</div>
-                        <div className="mt-0.5 text-xs text-slate-500">
-                          {new Date(r.created_at).toLocaleDateString()}
-                        </div>
-                      </div>
-                      <div className="mt-2">
-                        <span className={`inline-flex max-w-full rounded-full border border-slate-200/70 px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${typeBadge(r.report_type)}`}>
-                          {r.report_type === "schichtenverzeichnis" ? "Schichtenverzeichnis" : "Tagesbericht"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="font-medium">Zuletzt gespeicherte Entwürfe</h2>
-                <Link href="/drafts" className="text-xs text-slate-500 hover:text-slate-700">
-                  Alle anzeigen
-                </Link>
-              </div>
-              {drafts.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">Noch keine Entwürfe vorhanden.</p>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {drafts.slice(0, 3).map((d) => (
-                    <div key={d.id} className="rounded-xl border border-slate-200/70 px-3 py-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium break-words">{d.title}</div>
-                        <div className="mt-0.5 text-xs text-slate-500">
-                          {new Date(d.created_at).toLocaleDateString()}
-                        </div>
-                      </div>
-                      <div className="mt-2">
-                        <Link href={`/reports/new?draftId=${d.id}`} className="btn btn-secondary btn-xs w-full sm:w-auto">
-                          Öffnen
-                        </Link>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
           <div className="mt-6 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>

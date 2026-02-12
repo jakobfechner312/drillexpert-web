@@ -327,6 +327,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveReadyRef = useRef(false);
   const localDraftLoadedRef = useRef(false);
+  const weatherPrefillProjectRef = useRef<string | null>(null);
   const isAutoSaveBlocked = () => {
     try {
       return localStorage.getItem("tagesbericht_draft_block") === "1";
@@ -637,6 +638,94 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
 
     loadDraft();
   }, [mode, draftId, hasDraftId]);
+
+  useEffect(() => {
+    if (mode !== "create" || hasDraftId) return;
+    if (!effectiveProjectId) return;
+    if (weatherPrefillProjectRef.current === effectiveProjectId) return;
+
+    const supabase = createClient();
+    let cancelled = false;
+
+    const deriveWeatherConditions = (args: {
+      weatherCode: number | null;
+      precipitationMm: number | null;
+      tempMinC: number | null;
+    }): ("trocken" | "regen" | "frost")[] => {
+      const set = new Set<"trocken" | "regen" | "frost">();
+      const rainCodes = new Set([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99]);
+      const snowOrFrostCodes = new Set([71, 73, 75, 77, 85, 86, 45, 48]);
+
+      if ((args.precipitationMm ?? 0) > 0 || (args.weatherCode != null && rainCodes.has(args.weatherCode))) {
+        set.add("regen");
+      }
+      if ((args.tempMinC ?? 999) <= 0 || (args.weatherCode != null && snowOrFrostCodes.has(args.weatherCode))) {
+        set.add("frost");
+      }
+      if (!set.has("regen")) {
+        set.add("trocken");
+      }
+      return Array.from(set);
+    };
+
+    const hydrateWeatherFromProject = async () => {
+      const { data: projectRow, error: projectErr } = await supabase
+        .from("projects")
+        .select("mymaps_url")
+        .eq("id", effectiveProjectId)
+        .single();
+
+      if (cancelled) return;
+      if (projectErr || !projectRow?.mymaps_url) return;
+
+      try {
+        const res = await fetch(
+          `/api/project-weather?mymapsUrl=${encodeURIComponent(projectRow.mymaps_url)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) return;
+        const payload = (await res.json()) as {
+          current?: { weatherCode?: number | null; weather_code?: number | null };
+          today?: { tempMinC?: number | null; tempMaxC?: number | null; precipitationMm?: number | null };
+        };
+        if (cancelled) return;
+
+        const weatherCode =
+          typeof payload.current?.weatherCode === "number"
+            ? payload.current.weatherCode
+            : typeof payload.current?.weather_code === "number"
+              ? payload.current.weather_code
+              : null;
+        const tempMinC =
+          typeof payload.today?.tempMinC === "number" ? payload.today.tempMinC : null;
+        const tempMaxC =
+          typeof payload.today?.tempMaxC === "number" ? payload.today.tempMaxC : null;
+        const precipitationMm =
+          typeof payload.today?.precipitationMm === "number" ? payload.today.precipitationMm : null;
+
+        const conditions = deriveWeatherConditions({ weatherCode, precipitationMm, tempMinC });
+
+        setReport((prev) => ({
+          ...prev,
+          weather: {
+            ...(prev.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
+            conditions,
+            tempMaxC,
+            tempMinC,
+          },
+        }));
+
+        weatherPrefillProjectRef.current = effectiveProjectId;
+      } catch {
+        // silent fallback: user can still fill weather manually
+      }
+    };
+
+    hydrateWeatherFromProject();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveProjectId, mode, hasDraftId]);
 
   // ================== DRAFT + REPORT SAVE HANDLERS ==================
   const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();

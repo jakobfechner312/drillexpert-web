@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Briefcase, Calendar, ClipboardList, Crown, ExternalLink, FileText, Hash, Link2, List, MapPin, Settings, Upload, User, Users } from "lucide-react";
+import { Briefcase, Calendar, ClipboardList, CloudSun, Crown, ExternalLink, FileText, Hash, Link2, List, MapPin, RefreshCcw, Settings, Upload, User, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -63,6 +63,23 @@ type ProjectNoteEntry = {
   done?: boolean;
   author_id?: string | null;
   author_email?: string | null;
+};
+
+type ProjectWeather = {
+  latitude: number;
+  longitude: number;
+  locationName: string | null;
+  current: {
+    temperatureC: number | null;
+    windKmh: number | null;
+    weatherCode: number | null;
+    time: string | null;
+  };
+  today: {
+    tempMaxC: number | null;
+    tempMinC: number | null;
+    precipitationMm: number | null;
+  };
 };
 
 function parseProjectNotes(raw: string | null | undefined): ProjectNoteEntry[] {
@@ -167,6 +184,9 @@ export default function ProjectDetailPage() {
   const [mymapsUrlInput, setMymapsUrlInput] = useState("");
   const [mymapsSaving, setMymapsSaving] = useState(false);
   const [mymapsError, setMymapsError] = useState<string | null>(null);
+  const [projectWeather, setProjectWeather] = useState<ProjectWeather | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
   const [notesInput, setNotesInput] = useState("");
   const notesInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [projectNotes, setProjectNotes] = useState<ProjectNoteEntry[]>([]);
@@ -405,6 +425,48 @@ export default function ProjectDetailPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  const loadProjectWeather = async (mymapsUrl: string) => {
+    if (!mymapsUrl) {
+      setProjectWeather(null);
+      setWeatherError(null);
+      return;
+    }
+    setWeatherLoading(true);
+    setWeatherError(null);
+    try {
+      const res = await fetch(`/api/project-weather?mymapsUrl=${encodeURIComponent(mymapsUrl)}`, {
+        cache: "no-store",
+      });
+      const payload = (await res.json()) as ProjectWeather | { error?: string };
+      if (!res.ok || !("current" in payload)) {
+        setProjectWeather(null);
+        setWeatherError(
+          "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "Wetterdaten konnten nicht geladen werden."
+        );
+        return;
+      }
+      setProjectWeather(payload);
+    } catch {
+      setProjectWeather(null);
+      setWeatherError("Wetterdaten konnten nicht geladen werden.");
+    } finally {
+      setWeatherLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const url = project?.mymaps_url?.trim();
+    if (!url) {
+      setProjectWeather(null);
+      setWeatherError(null);
+      return;
+    }
+    loadProjectWeather(url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.mymaps_url]);
 
   const saveSettings = async () => {
     const name = settingsForm.name?.trim();
@@ -964,6 +1026,18 @@ export default function ProjectDetailPage() {
 
   const myMapsEmbedUrl = useMemo(() => getMymapsEmbedUrl(project?.mymaps_url), [project?.mymaps_url]);
 
+  const weatherCodeLabel = (code: number | null | undefined) => {
+    if (code == null) return "Unbekannt";
+    if (code === 0) return "Klar";
+    if ([1, 2, 3].includes(code)) return "Bewölkt";
+    if ([45, 48].includes(code)) return "Nebel";
+    if ([51, 53, 55, 56, 57].includes(code)) return "Niesel";
+    if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return "Regen";
+    if ([71, 73, 75, 77, 85, 86].includes(code)) return "Schnee";
+    if ([95, 96, 99].includes(code)) return "Gewitter";
+    return `Code ${code}`;
+  };
+
   const uploadFiles = async (fileList: FileList | File[]) => {
     if (!fileList || fileList.length === 0) return;
     setUploading(true);
@@ -1428,6 +1502,62 @@ export default function ProjectDetailPage() {
               </div>
             )}
             {mymapsError && <div className="mt-2 text-xs text-red-600">{mymapsError}</div>}
+
+            {project?.mymaps_url && (
+              <div className="mt-4 rounded-xl border border-slate-200/70 bg-slate-50 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <CloudSun className="h-4 w-4 text-sky-600" aria-hidden="true" />
+                    {`Wetter in ${projectWeather?.locationName?.trim() || project.mymaps_title?.trim() || project.name || "Projekt"}`}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => loadProjectWeather(project.mymaps_url ?? "")}
+                    disabled={weatherLoading}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      <RefreshCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                      {weatherLoading ? "Lädt…" : "Aktualisieren"}
+                    </span>
+                  </button>
+                </div>
+
+                {weatherError ? <div className="text-xs text-amber-700">{weatherError}</div> : null}
+
+                {!weatherError && projectWeather ? (
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                      <div className="text-slate-500">Jetzt</div>
+                      <div className="mt-0.5 font-semibold text-slate-800">
+                        {projectWeather.current.temperatureC != null ? `${projectWeather.current.temperatureC} °C` : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                      <div className="text-slate-500">Heute Min/Max</div>
+                      <div className="mt-0.5 font-semibold text-slate-800">
+                        {projectWeather.today.tempMinC != null && projectWeather.today.tempMaxC != null
+                          ? `${projectWeather.today.tempMinC} / ${projectWeather.today.tempMaxC} °C`
+                          : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                      <div className="text-slate-500">Niederschlag</div>
+                      <div className="mt-0.5 font-semibold text-slate-800">
+                        {projectWeather.today.precipitationMm != null ? `${projectWeather.today.precipitationMm} mm` : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                      <div className="text-slate-500">Wetter / Wind</div>
+                      <div className="mt-0.5 font-semibold text-slate-800">
+                        {weatherCodeLabel(projectWeather.current.weatherCode)}
+                        {projectWeather.current.windKmh != null ? ` · ${projectWeather.current.windKmh} km/h` : ""}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
 
             {project?.mymaps_url && (
               <div className="mt-4 rounded-xl border border-slate-200/70 bg-white p-3 shadow-sm">
