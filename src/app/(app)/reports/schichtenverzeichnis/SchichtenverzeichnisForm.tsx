@@ -2291,27 +2291,6 @@ export default function SchichtenverzeichnisForm({
           <h1 className="text-2xl font-semibold text-slate-900">
             Schichtenverzeichnis
           </h1>
-          <p className="text-sm text-slate-600">
-            Professionelles Formular, layoutnah zum Original – Seite 1.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-slate-600">
-            <input
-              type="checkbox"
-              checked={showGrid}
-              onChange={(e) => setShowGrid(e.target.checked)}
-            />
-            Raster
-          </label>
-          <label className="flex items-center gap-2 text-xs text-slate-600">
-            Schritt
-            <input
-              className="w-14 rounded-md border border-slate-200 px-2 py-1 text-xs"
-              value={gridStep}
-              onChange={(e) => setGridStep(e.target.value)}
-            />
-          </label>
         </div>
       </header>
       {showStep(0)

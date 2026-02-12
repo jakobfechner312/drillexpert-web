@@ -143,7 +143,7 @@ const GroupCard = ({
 }) => (
   <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-sm">
     <div className="flex items-center justify-between gap-3 bg-sky-50/60 px-4 py-2 border-b border-slate-200/70">
-      <h2 className="text-sm font-semibold text-sky-900 tracking-wide">{title}</h2>
+      <h2 className="text-base font-semibold text-sky-900 tracking-wide sm:text-lg">{title}</h2>
       {badge ? (
         <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
           {badge}
