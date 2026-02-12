@@ -540,6 +540,8 @@ export async function generateSchichtenverzeichnisPdf(
     const explicit = Array.isArray(row?.spt_eintraege)
       ? row.spt_eintraege
           .map((entry: any) => ({
+            von_m: String(entry?.von_m ?? "").trim(),
+            bis_m: String(entry?.bis_m ?? "").trim(),
             schlag_1: String(entry?.schlag_1 ?? "").trim(),
             schlag_2: String(entry?.schlag_2 ?? "").trim(),
             schlag_3: String(entry?.schlag_3 ?? "").trim(),
@@ -550,6 +552,8 @@ export async function generateSchichtenverzeichnisPdf(
     if (!row?.spt_gemacht) return [];
     return [
       {
+        von_m: "",
+        bis_m: "",
         schlag_1: String(row?.spt_schlag_1 ?? "").trim(),
         schlag_2: String(row?.spt_schlag_2 ?? "").trim(),
         schlag_3: String(row?.spt_schlag_3 ?? "").trim(),
@@ -563,11 +567,12 @@ export async function generateSchichtenverzeichnisPdf(
       return { text: baseText, count: 0 };
     }
     const sptLines = sptEntries
-      .map((entry: { schlag_1: string; schlag_2: string; schlag_3: string }, idx: number) => {
+      .map((entry: { von_m?: string; bis_m?: string; schlag_1: string; schlag_2: string; schlag_3: string }, idx: number) => {
         const values = [entry.schlag_1, entry.schlag_2, entry.schlag_3].filter(Boolean);
-        const header = `SPT ${startIndex + idx}`;
+        const range = entry.von_m || entry.bis_m ? ` von ${entry.von_m ?? ""} bis ${entry.bis_m ?? ""} m` : "";
+        const header = `SPT ${startIndex + idx}${range}`.trim();
         if (!values.length) return header;
-        return `${header}: ${values.join(" / ")}`;
+        return `${header}\n${values.join(" / ")}`;
       })
       .join("\n");
     return {

@@ -11,6 +11,8 @@ import {
 
 type FormData = Record<string, string>;
 type SptEntry = {
+  von_m: string;
+  bis_m: string;
   schlag_1: string;
   schlag_2: string;
   schlag_3: string;
@@ -162,6 +164,7 @@ const buildRowFieldOffsetState = (
 const MAX_FESTSTELLUNGEN_CHARS = 200;
 const BOHR_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
 const SCHLITZWEITE_OPTIONS = ["0,5", "0,75", "1", "1,5", "1,75", "2", "2,25", "2,5"] as const;
+const KIES_KOERNUNG_OPTIONS = ["0,0-0,71", "0,71-1,25", "1,0-2,0", "2,0-3,15", "3,15-5,6", "5,6-8", "8,0-16"] as const;
 const SCHICHT_E_OPTIONS = ["--", "-", "0", "+", "++"] as const;
 const SCHICHT_C_OPTIONS = ["leicht", "mittel", "schwer", "individuell"] as const;
 const SCHICHT_D_COLOR_DEFAULT = "#8b5a2b";
@@ -182,7 +185,7 @@ const PEGEL_DURCHMESSER_OPTIONS = [
   "DN700",
   "DN800",
 ] as const;
-const GRUNDWASSERSTAND_OPTIONS = ["ungebohrt", "eingespiegelt", "Bohrende", "im Pegel"] as const;
+const GRUNDWASSERSTAND_OPTIONS = ["angebohrt", "eingespiegelt", "Bohrende", "im Pegel"] as const;
 const FILTER_PAIR_CONFIG: Array<{
   id: string;
   title: string;
@@ -283,6 +286,20 @@ const toTimeInputValue = (value: string | undefined | null) => {
   if (hhmmss) return hhmmss[1];
   return "";
 };
+const parseDepthNumeric = (value: string | undefined | null): number | null => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (/[a-zA-Z]/.test(raw)) return null;
+  const normalized = raw.replace(",", ".");
+  const match = normalized.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const formatDepthNumeric = (value: number): string => {
+  const fixed = Number.isInteger(value) ? value.toString() : value.toFixed(2).replace(/\.?0+$/, "");
+  return fixed.replace(".", ",");
+};
 
 const initialData: FormData = {
   auftrag_nr: "",
@@ -325,6 +342,7 @@ const initialData: FormData = {
   filter_rohr: "",
   sw: "",
   vollrohr_pvc: "",
+  vollrohr_stahl_lage: "unterflur",
   vollrohr_stahl: "",
   betonsockel: "",
   kies_koernung: "",
@@ -398,7 +416,17 @@ const normalizeProbeType = (value: string | undefined | null) => {
   if (normalized === "UP") return "UP";
   return "GP";
 };
+const computeProbeKiFromBohrungen = (rows: Array<Pick<BohrungEntry, "bohrung_bis">>) => {
+  const values = rows
+    .map((entry) => parseDepthNumeric(entry.bohrung_bis))
+    .filter((n): n is number => n != null);
+  if (!values.length) return "";
+  const deepest = Math.max(...values);
+  return formatDepthNumeric(deepest / 2);
+};
 const emptySptEntry = (): SptEntry => ({
+  von_m: "",
+  bis_m: "",
   schlag_1: "",
   schlag_2: "",
   schlag_3: "",
@@ -407,6 +435,8 @@ const emptySptEntry = (): SptEntry => ({
 const normalizeSptEntries = (row: Partial<SchichtRow> | null | undefined): SptEntry[] => {
   const explicit = Array.isArray(row?.spt_eintraege)
     ? row.spt_eintraege.map((entry) => ({
+        von_m: String(entry?.von_m ?? ""),
+        bis_m: String(entry?.bis_m ?? ""),
         schlag_1: String(entry?.schlag_1 ?? ""),
         schlag_2: String(entry?.schlag_2 ?? ""),
         schlag_3: String(entry?.schlag_3 ?? ""),
@@ -418,6 +448,8 @@ const normalizeSptEntries = (row: Partial<SchichtRow> | null | undefined): SptEn
 
   return [
     {
+      von_m: "",
+      bis_m: "",
       schlag_1: String(row?.spt_schlag_1 ?? ""),
       schlag_2: String(row?.spt_schlag_2 ?? ""),
       schlag_3: String(row?.spt_schlag_3 ?? ""),
@@ -651,6 +683,7 @@ export default function SchichtenverzeichnisForm({
   const [saveScope, setSaveScope] = useState<SaveScope>(projectId ? "project" : "unset");
   const [localProjectId, setLocalProjectId] = useState<string | null>(null);
   const effectiveProjectId = projectId ?? localProjectId;
+  const [initialProjectChoiceDone, setInitialProjectChoiceDone] = useState<boolean>(Boolean(projectId) || mode === "edit");
 
   const pendingSaveResolveRef = useRef<
     ((v: { scope: SaveScope; projectId: string | null } | undefined) => void) | null
@@ -911,6 +944,7 @@ export default function SchichtenverzeichnisForm({
     []
   );
   const stepProgress = useMemo(() => {
+    const computedProbeKi = computeProbeKiFromBohrungen(bohrungen);
     const progress = [
       {
         filled: countFilled([
@@ -997,7 +1031,7 @@ export default function SchichtenverzeichnisForm({
       },
       {
         filled: countFilled([
-          data.probe_ki,
+          computedProbeKi,
           data.proben_art,
           data.proben_nr,
           data.proben_tiefe,
@@ -1029,6 +1063,10 @@ export default function SchichtenverzeichnisForm({
         data.durchfuehrungszeit
       ),
     [data.durchfuehrungszeit_von, data.durchfuehrungszeit_bis, data.durchfuehrungszeit]
+  );
+  const effectiveProbeKi = useMemo(
+    () => computeProbeKiFromBohrungen(bohrungen),
+    [bohrungen]
   );
   const normalizedBohrungenForPayload = useMemo(() => {
     const rows = bohrungen
@@ -1090,6 +1128,48 @@ export default function SchichtenverzeichnisForm({
   const supabase = useMemo(() => createClient(), []);
   const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
 
+  const applyProjectPrefill = useCallback(
+    async (targetProjectId: string, force = false) => {
+      const { data: proj, error } = await supabase
+        .from("projects")
+        .select("name,project_number,start_date,end_date")
+        .eq("id", targetProjectId)
+        .single();
+
+      if (error || !proj) return;
+
+      const p = proj as {
+        name?: string | null;
+        project_number?: string | null;
+        start_date?: string | null;
+        end_date?: string | null;
+      };
+
+      const nextVon = fromDateInputValue(p.start_date ?? "");
+      const nextBis = fromDateInputValue(p.end_date ?? "");
+
+      setData((prev) => {
+        const next = { ...prev };
+        if (force || !String(prev.projekt_name ?? "").trim()) next.projekt_name = String(p.name ?? "").trim();
+        if (force || !String(prev.auftrag_nr ?? "").trim()) next.auftrag_nr = String(p.project_number ?? "").trim();
+        if (force || !String(prev.durchfuehrungszeit_von ?? "").trim()) next.durchfuehrungszeit_von = nextVon;
+        if (force || !String(prev.durchfuehrungszeit_bis ?? "").trim()) next.durchfuehrungszeit_bis = nextBis;
+
+        const hadManualRange = String(prev.durchfuehrungszeit ?? "").trim().length > 0;
+        if (force || !hadManualRange) {
+          next.durchfuehrungszeit = composeDurchfuehrungszeit(
+            next.durchfuehrungszeit_von,
+            next.durchfuehrungszeit_bis,
+            prev.durchfuehrungszeit
+          );
+        }
+
+        return next;
+      });
+    },
+    [supabase]
+  );
+
   const loadMyProjects = useCallback(async () => {
     setProjectUiLoading(true);
 
@@ -1124,6 +1204,14 @@ export default function SchichtenverzeichnisForm({
       return { scope: "project", projectId };
     }
 
+    // If user already chose at form start, keep that target.
+    if (saveScope === "project" && localProjectId) {
+      return { scope: "project", projectId: localProjectId };
+    }
+    if (saveScope === "my_reports") {
+      return { scope: "my_reports", projectId: null };
+    }
+
     // Outside a project route: always ask again where to save.
     await loadMyProjects();
     setProjectModalOpen(true);
@@ -1134,7 +1222,7 @@ export default function SchichtenverzeichnisForm({
 
     pendingSaveResolveRef.current = null;
     return result ?? null;
-  }, [projectId, loadMyProjects]);
+  }, [projectId, saveScope, localProjectId, loadMyProjects]);
 
   const createProject = useCallback(async () => {
     const name = newProjectName.trim();
@@ -1183,12 +1271,32 @@ export default function SchichtenverzeichnisForm({
     setLocalProjectId(proj.id);
     setNewProjectName("");
     setProjectModalOpen(false);
+    setInitialProjectChoiceDone(true);
+    await applyProjectPrefill(proj.id, true);
 
     pendingSaveResolveRef.current?.({ scope: "project", projectId: proj.id });
     pendingSaveResolveRef.current = null;
 
     setCreatingProject(false);
-  }, [newProjectName, supabase]);
+  }, [newProjectName, supabase, applyProjectPrefill]);
+
+  useEffect(() => {
+    if (mode !== "create") return;
+    if (projectId) return;
+    if (initialProjectChoiceDone) return;
+
+    const boot = async () => {
+      await loadMyProjects();
+      setProjectModalOpen(true);
+    };
+    boot();
+  }, [mode, projectId, initialProjectChoiceDone, loadMyProjects]);
+
+  useEffect(() => {
+    if (mode !== "create") return;
+    if (!effectiveProjectId) return;
+    applyProjectPrefill(effectiveProjectId, false);
+  }, [mode, effectiveProjectId, applyProjectPrefill]);
 
   // ======================
   // LOAD REPORT (EDIT MODE)
@@ -1407,6 +1515,7 @@ export default function SchichtenverzeichnisForm({
 
       const draftData = {
         ...data,
+        probe_ki: effectiveProbeKi,
         ...legacyBohrungsFields,
         ...legacyFilterFields,
         durchfuehrungszeit: effectiveDurchfuehrungszeit,
@@ -1780,6 +1889,7 @@ export default function SchichtenverzeichnisForm({
   const update = (key: keyof FormData, value: string) => {
     setData((prev) => ({ ...prev, [key]: value }));
   };
+  const vollrohrStahlLage = data.vollrohr_stahl_lage === "ueberflur" ? "ueberflur" : "unterflur";
   const toggleMark = (key: keyof FormData, checked: boolean) => {
     setData((prev) => ({ ...prev, [key]: checked ? "x" : "" }));
   };
@@ -1830,6 +1940,7 @@ export default function SchichtenverzeichnisForm({
 
   const buildReportDataPayload = () => ({
     ...data,
+    probe_ki: effectiveProbeKi,
     ...legacyBohrungsFields,
     ...legacyFilterFields,
     durchfuehrungszeit: effectiveDurchfuehrungszeit,
@@ -1991,9 +2102,10 @@ export default function SchichtenverzeichnisForm({
       filter_rohr: "9,80",
       sw: "0,5",
       vollrohr_pvc: "6,00",
+      vollrohr_stahl_lage: "ueberflur",
       vollrohr_stahl: "4,00",
       betonsockel: "x",
-      kies_koernung: "2/8",
+      kies_koernung: "2,0-3,15",
       filterkies_von: "9,50",
       filterkies_bis: "12,00",
       tondichtung_von: "2,00",
@@ -2061,7 +2173,7 @@ export default function SchichtenverzeichnisForm({
         ...emptyGroundwaterRow(),
         grundwasserstand:
           idx === 0
-            ? "ungebohrt"
+            ? "angebohrt"
             : idx === 1
               ? "eingespiegelt"
               : idx === 2
@@ -2101,11 +2213,11 @@ export default function SchichtenverzeichnisForm({
         spt_eintraege:
           idx === 0
             ? [
-                { schlag_1: "54", schlag_2: "40", schlag_3: "15" },
-                { schlag_1: "15", schlag_2: "15", schlag_3: "15" },
+                { von_m: "50", bis_m: "75", schlag_1: "50", schlag_2: "45", schlag_3: "40" },
+                { von_m: "75", bis_m: "100", schlag_1: "15", schlag_2: "15", schlag_3: "15" },
               ]
             : idx === 1
-              ? [{ schlag_1: "20", schlag_2: "18", schlag_3: "12" }]
+              ? [{ von_m: "100", bis_m: "125", schlag_1: "20", schlag_2: "18", schlag_3: "12" }]
               : [],
         spt_gemacht: idx <= 1,
         spt_schlag_1: idx === 0 ? "54" : idx === 1 ? "20" : "",
@@ -2209,6 +2321,9 @@ export default function SchichtenverzeichnisForm({
                 type="button"
                 className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
                 onClick={() => {
+                  setSaveScope("my_reports");
+                  setLocalProjectId(null);
+                  setInitialProjectChoiceDone(true);
                   setProjectModalOpen(false);
                   pendingSaveResolveRef.current?.(undefined);
                   pendingSaveResolveRef.current = null;
@@ -2223,6 +2338,8 @@ export default function SchichtenverzeichnisForm({
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-sky-200 hover:bg-sky-50/50"
                 onClick={() => {
                   setSaveScope("my_reports");
+                  setLocalProjectId(null);
+                  setInitialProjectChoiceDone(true);
                   setProjectModalOpen(false);
                   pendingSaveResolveRef.current?.({ scope: "my_reports", projectId: null });
                   pendingSaveResolveRef.current = null;
@@ -2271,6 +2388,8 @@ export default function SchichtenverzeichnisForm({
                       onClick={() => {
                         setSaveScope("project");
                         setLocalProjectId(p.id);
+                        setInitialProjectChoiceDone(true);
+                        void applyProjectPrefill(p.id, true);
                         setProjectModalOpen(false);
                         pendingSaveResolveRef.current?.({ scope: "project", projectId: p.id });
                         pendingSaveResolveRef.current = null;
@@ -2420,14 +2539,14 @@ export default function SchichtenverzeichnisForm({
                   <Field label="Bohrung Nr." value={data.bohrung_nr} onChange={(v) => update("bohrung_nr", v)} />
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs text-slate-500">Eine Zeile pro Bohrung</div>
+                  <div className="text-xs text-slate-500">Eine Zeile pro Bohrverfahren</div>
                   <div className="flex gap-2">
                     <button
                       type="button"
                       className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50"
                       onClick={() => setBohrungen((prev) => [...prev, emptyBohrungEntry()])}
                     >
-                      + Bohrung
+                      + Bohrverfahren
                     </button>
                     <button
                       type="button"
@@ -2437,7 +2556,7 @@ export default function SchichtenverzeichnisForm({
                       }
                       disabled={bohrungen.length <= 1}
                     >
-                      - Bohrung
+                      - Bohrverfahren
                     </button>
                   </div>
                 </div>
@@ -2705,84 +2824,123 @@ export default function SchichtenverzeichnisForm({
                       ) : null}
                     </select>
                   </label>
-                  <Field label="ROK" value={data.rok} onChange={(v) => update("rok", v)} />
-                  <Field label="Sumpf (m)" value={data.sumpf} onChange={(v) => update("sumpf", v)} />
-                  <Field label="Filterrohr (m)" value={data.filter_rohr} onChange={(v) => update("filter_rohr", v)} />
-                  <label className="space-y-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                      Schlitzweite (SW)
-                    </span>
-                    <div className="grid gap-2">
-                      <select
-                        className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                        value={schlitzweiteMode === "custom" ? "__custom__" : data.sw || ""}
-                        onChange={(e) => {
-                          if (e.target.value === "__custom__") {
-                            setSchlitzweiteMode("custom");
-                            update("sw", "");
-                            return;
-                          }
-                          setSchlitzweiteMode("list");
-                          update("sw", e.target.value);
-                        }}
-                      >
-                        <option value="">Bitte wählen…</option>
-                        {SCHLITZWEITE_OPTIONS.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                        <option value="__custom__">Eigene Schlitzweite…</option>
-                      </select>
-                      {schlitzweiteMode === "custom" ? (
-                        <input
-                          className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                          placeholder="Eigene Schlitzweite"
-                          value={data.sw ?? ""}
-                          onChange={(e) => update("sw", e.target.value)}
+                  {data.pegel_durchmesser ? (
+                    <>
+                      <Field label="GOK" value={data.rok} onChange={(v) => update("rok", v)} />
+                      <Field label="Sumpf (m)" value={data.sumpf} onChange={(v) => update("sumpf", v)} />
+                      <Field label="Filterrohr (m)" value={data.filter_rohr} onChange={(v) => update("filter_rohr", v)} />
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Schlitzweite (SW)
+                        </span>
+                        <div className="grid gap-2">
+                          <select
+                            className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                            value={schlitzweiteMode === "custom" ? "__custom__" : data.sw || ""}
+                            onChange={(e) => {
+                              if (e.target.value === "__custom__") {
+                                setSchlitzweiteMode("custom");
+                                update("sw", "");
+                                return;
+                              }
+                              setSchlitzweiteMode("list");
+                              update("sw", e.target.value);
+                            }}
+                          >
+                            <option value="">Bitte wählen…</option>
+                            {SCHLITZWEITE_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                            <option value="__custom__">Eigene Schlitzweite…</option>
+                          </select>
+                          {schlitzweiteMode === "custom" ? (
+                            <input
+                              className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                              placeholder="Eigene Schlitzweite"
+                              value={data.sw ?? ""}
+                              onChange={(e) => update("sw", e.target.value)}
+                            />
+                          ) : null}
+                        </div>
+                      </label>
+                      <Field label="Vollrohr PVC (m)" value={data.vollrohr_pvc} onChange={(v) => update("vollrohr_pvc", v)} />
+                      <div className="space-y-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Stahlrohr Lage
+                        </span>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={vollrohrStahlLage === "ueberflur"}
+                              onChange={() => update("vollrohr_stahl_lage", "ueberflur")}
+                            />
+                            Überflur
+                          </label>
+                          <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={vollrohrStahlLage === "unterflur"}
+                              onChange={() => {
+                                setData((prev) => ({
+                                  ...prev,
+                                  vollrohr_stahl_lage: "unterflur",
+                                  vollrohr_stahl: "",
+                                }));
+                              }}
+                            />
+                            Unterflur
+                          </label>
+                        </div>
+                      </div>
+                      {vollrohrStahlLage === "ueberflur" ? (
+                        <Field
+                          label="Vollrohr Stahl (m)"
+                          value={data.vollrohr_stahl}
+                          onChange={(v) => update("vollrohr_stahl", v)}
                         />
-                      ) : null}
-                    </div>
-                  </label>
-                  <Field label="Vollrohr PVC (m)" value={data.vollrohr_pvc} onChange={(v) => update("vollrohr_pvc", v)} />
-                  <Field label="Vollrohr Stahl (m)" value={data.vollrohr_stahl} onChange={(v) => update("vollrohr_stahl", v)} />
+                      ) : (
+                        <div />
+                      )}
+                    </>
+                  ) : null}
                 </div>
               </Card>
 
-              <Card title="Passavant / Seba / Beton">
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(data.passavant?.trim())}
-                      onChange={(e) => toggleMark("passavant", e.target.checked)}
-                    />
-                    Passavant
-                  </label>
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(data.seba?.trim())}
-                      onChange={(e) => toggleMark("seba", e.target.checked)}
-                    />
-                    Seba
-                  </label>
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(data.betonsockel?.trim())}
-                      onChange={(e) => toggleMark("betonsockel", e.target.checked)}
-                    />
-                    Betonsockel
-                  </label>
-                  <Field
-                    label="Kies-Körnung"
-                    value={data.kies_koernung}
-                    onChange={(v) => update("kies_koernung", v)}
-                    className="lg:col-span-2"
-                  />
-                </div>
-              </Card>
+              {data.pegel_durchmesser ? (
+                <Card title="Passavant / Seba / Beton">
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(data.passavant?.trim())}
+                        onChange={(e) => toggleMark("passavant", e.target.checked)}
+                      />
+                      Passavant
+                    </label>
+                    <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(data.seba?.trim())}
+                        onChange={(e) => toggleMark("seba", e.target.checked)}
+                      />
+                      Seba
+                    </label>
+                    <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(data.betonsockel?.trim())}
+                        onChange={(e) => toggleMark("betonsockel", e.target.checked)}
+                      />
+                      Betonsockel
+                    </label>
+                  </div>
+                </Card>
+              ) : (
+                <div />
+              )}
             </section>
           )
         : null}
@@ -2857,6 +3015,33 @@ export default function SchichtenverzeichnisForm({
                             </div>
                           ))}
                         </div>
+                        {cfg.id === "filterkies" ? (
+                          <div className="mt-3">
+                            <label className="space-y-1">
+                              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                Kies-Körnung
+                              </span>
+                              <select
+                                className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                                value={data.kies_koernung ?? ""}
+                                onChange={(e) => update("kies_koernung", e.target.value)}
+                              >
+                                <option value="">Bitte wählen…</option>
+                                {KIES_KOERNUNG_OPTIONS.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                                {data.kies_koernung &&
+                                !KIES_KOERNUNG_OPTIONS.includes(
+                                  data.kies_koernung as (typeof KIES_KOERNUNG_OPTIONS)[number]
+                                ) ? (
+                                  <option value={data.kies_koernung}>{data.kies_koernung}</option>
+                                ) : null}
+                              </select>
+                            </label>
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -2916,43 +3101,6 @@ export default function SchichtenverzeichnisForm({
             </div>
           </div>
         </details>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-slate-500">
-            a1–e + Feststellungen + Proben als Zeilen, wie im Original.
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">
-              X‑Offset Ansatzpunkt (Seite 2)
-              <input
-                className="h-7 w-16 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                value={schichtXOffsetsPage2.ansatzpunkt_bis ?? "0"}
-                onChange={(e) =>
-                  setSchichtXOffsetsPage2((prev) => ({
-                    ...prev,
-                    ansatzpunkt_bis: e.target.value,
-                  }))
-                }
-              />
-            </label>
-            <button
-              type="button"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50"
-              onClick={() => setSchichtRows((prev) => [...prev, emptySchichtRow()])}
-            >
-              + Zeile
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50"
-              onClick={() =>
-                setSchichtRows((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev))
-              }
-            >
-              – Zeile
-            </button>
-          </div>
-        </div>
-
         <div className="mt-4 space-y-4">
           {schichtRows.map((row, idx) => (
             <div
@@ -3305,10 +3453,64 @@ export default function SchichtenverzeichnisForm({
                             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                               SPT {sptIndex + 1}
                             </div>
+                            <div className="mb-2 grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
+                              <input
+                                className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                                placeholder="von (m)"
+                                value={entry?.von_m ?? ""}
+                                onChange={(e) =>
+                                  setSchichtRows((prev) => {
+                                    const next = [...prev];
+                                    const entries = Array.isArray(next[idx].spt_eintraege)
+                                      ? [...next[idx].spt_eintraege]
+                                      : [emptySptEntry()];
+                                    const current = entries[sptIndex] ?? emptySptEntry();
+                                    entries[sptIndex] = { ...current, von_m: e.target.value };
+                                    const first = entries[0] ?? emptySptEntry();
+                                    next[idx] = {
+                                      ...next[idx],
+                                      spt_gemacht: entries.length > 0,
+                                      spt_eintraege: entries,
+                                      spt_schlag_1: first.schlag_1,
+                                      spt_schlag_2: first.schlag_2,
+                                      spt_schlag_3: first.schlag_3,
+                                    };
+                                    return next;
+                                  })
+                                }
+                              />
+                              <span className="text-[10px] font-semibold text-slate-500">bis</span>
+                              <input
+                                className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                                placeholder="bis (m)"
+                                value={entry?.bis_m ?? ""}
+                                onChange={(e) =>
+                                  setSchichtRows((prev) => {
+                                    const next = [...prev];
+                                    const entries = Array.isArray(next[idx].spt_eintraege)
+                                      ? [...next[idx].spt_eintraege]
+                                      : [emptySptEntry()];
+                                    const current = entries[sptIndex] ?? emptySptEntry();
+                                    entries[sptIndex] = { ...current, bis_m: e.target.value };
+                                    const first = entries[0] ?? emptySptEntry();
+                                    next[idx] = {
+                                      ...next[idx],
+                                      spt_gemacht: entries.length > 0,
+                                      spt_eintraege: entries,
+                                      spt_schlag_1: first.schlag_1,
+                                      spt_schlag_2: first.schlag_2,
+                                      spt_schlag_3: first.schlag_3,
+                                    };
+                                    return next;
+                                  })
+                                }
+                              />
+                              <span className="text-[10px] text-slate-500">m</span>
+                            </div>
                             <div className="grid grid-cols-3 gap-2">
                               <input
                                 className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                                placeholder="Schlag 1"
+                                placeholder="Schlagzahl max. 50"
                                 value={entry?.schlag_1 ?? ""}
                                 onChange={(e) =>
                                   setSchichtRows((prev) => {
@@ -3333,7 +3535,7 @@ export default function SchichtenverzeichnisForm({
                               />
                               <input
                                 className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                                placeholder="Schlag 2"
+                                placeholder="Schlagzahl max. 50"
                                 value={entry?.schlag_2 ?? ""}
                                 onChange={(e) =>
                                   setSchichtRows((prev) => {
@@ -3358,7 +3560,7 @@ export default function SchichtenverzeichnisForm({
                               />
                               <input
                                 className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                                placeholder="Schlag 3"
+                                placeholder="Schlagzahl max. 50"
                                 value={entry?.schlag_3 ?? ""}
                                 onChange={(e) =>
                                   setSchichtRows((prev) => {
@@ -3390,22 +3592,6 @@ export default function SchichtenverzeichnisForm({
               </div>
               <div className="rounded-xl border border-slate-200 p-3 h-full">
                 <div className="text-xs font-semibold text-slate-600">Entnommene Proben</div>
-                <div className="mt-3 grid gap-3">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                    Nummerierung: automatisch 1, 2, 3 ... pro Probe/Tiefe
-                  </div>
-                  <Field
-                    label="Tiefe (kurz)"
-                    value={row.proben_tiefe}
-                    onChange={(v) =>
-                      setSchichtRows((prev) => {
-                        const next = [...prev];
-                        next[idx] = { ...next[idx], proben_tiefe: v };
-                        return next;
-                      })
-                    }
-                  />
-                </div>
                 <div className="mt-3 grid gap-2">
                   <div className="flex items-center justify-between">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -3551,11 +3737,7 @@ export default function SchichtenverzeichnisForm({
       {showStep(6)
         ? renderStep(
             <Card title="Proben / Übergabe">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <Field label="Ki/m" value={data.probe_ki} onChange={(v) => update("probe_ki", v)} />
-                <Field label="Probenart" value={data.proben_art} onChange={(v) => update("proben_art", v)} />
-                <Field label="Proben‑Nr." value={data.proben_nr} onChange={(v) => update("proben_nr", v)} />
-                <Field label="Probentiefe" value={data.proben_tiefe} onChange={(v) => update("proben_tiefe", v)} />
+              <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Übergeben am" value={data.uebergeben_am} onChange={(v) => update("uebergeben_am", v)} />
                 <Field label="Übergeben an" value={data.uebergeben_an} onChange={(v) => update("uebergeben_an", v)} />
               </div>

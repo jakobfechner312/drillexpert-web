@@ -55,6 +55,53 @@ type UserOption = {
   id: string;
   email: string;
 };
+type SettingsFocus = "all" | "client" | "stakeholder" | "program" | "zeitraum" | "notes";
+type ProjectNoteEntry = {
+  id: string;
+  text: string;
+  created_at: string;
+  done?: boolean;
+  author_id?: string | null;
+  author_email?: string | null;
+};
+
+function parseProjectNotes(raw: string | null | undefined): ProjectNoteEntry[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry, index) => {
+        const row = entry as Record<string, unknown>;
+        const text = typeof row.text === "string" ? row.text.trim() : "";
+        if (!text) return null;
+        return {
+          id: typeof row.id === "string" ? row.id : `note-${index}`,
+          text,
+          created_at: typeof row.created_at === "string" ? row.created_at : new Date(0).toISOString(),
+          done: Boolean(row.done),
+          author_id: typeof row.author_id === "string" ? row.author_id : null,
+          author_email: typeof row.author_email === "string" ? row.author_email : null,
+        } as ProjectNoteEntry;
+      })
+      .filter((entry): entry is ProjectNoteEntry => Boolean(entry))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  } catch {
+    return [
+      {
+        id: "legacy-note",
+        text: trimmed,
+        created_at: new Date(0).toISOString(),
+        done: false,
+        author_id: null,
+        author_email: "Altbestand",
+      },
+    ];
+  }
+}
 
 export default function ProjectDetailPage() {
   const params = useParams<{ projectId: string }>();
@@ -63,7 +110,7 @@ export default function ProjectDetailPage() {
   const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading] = useState(true);
-  const [me, setMe] = useState<{ id: string } | null>(null);
+  const [me, setMe] = useState<{ id: string; email?: string | null } | null>(null);
 
   const [project, setProject] = useState<Project | null>(null);
   const [role, setRole] = useState<string | null>(null);
@@ -71,6 +118,7 @@ export default function ProjectDetailPage() {
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamError, setTeamError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsFocus, setSettingsFocus] = useState<SettingsFocus>("all");
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsForm, setSettingsForm] = useState<Project>({
@@ -119,6 +167,12 @@ export default function ProjectDetailPage() {
   const [mymapsUrlInput, setMymapsUrlInput] = useState("");
   const [mymapsSaving, setMymapsSaving] = useState(false);
   const [mymapsError, setMymapsError] = useState<string | null>(null);
+  const [notesInput, setNotesInput] = useState("");
+  const notesInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [projectNotes, setProjectNotes] = useState<ProjectNoteEntry[]>([]);
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesError, setNotesError] = useState<string | null>(null);
+  const [notesOk, setNotesOk] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
 
   const SectionCard = ({
@@ -155,7 +209,7 @@ export default function ProjectDetailPage() {
       setLoading(false);
       return;
     }
-    setMe({ id: user.id });
+    setMe({ id: user.id, email: user.email ?? null });
 
     // 1) Projekt laden
     const { data: proj, error: projErr } = await supabase
@@ -223,6 +277,10 @@ export default function ProjectDetailPage() {
       mymaps_title: projectRow.mymaps_title ?? "",
     }));
     setMymapsUrlInput(projectRow.mymaps_url ?? "");
+    setProjectNotes(parseProjectNotes(projectRow.notes));
+    setNotesInput("");
+    setNotesError(null);
+    setNotesOk(null);
 
     // 2) Rolle im Projekt laden (owner / member)
     const { data: mem, error: memErr } = await supabase
@@ -387,7 +445,6 @@ export default function ProjectDetailPage() {
       status: settingsForm.status || null,
       start_date: settingsForm.start_date || null,
       end_date: settingsForm.end_date || null,
-      notes: settingsForm.notes?.trim() || null,
       mymaps_url: settingsForm.mymaps_url?.trim() || null,
       mymaps_title: settingsForm.mymaps_title?.trim() || null,
     };
@@ -430,6 +487,125 @@ export default function ProjectDetailPage() {
     setProject(data as unknown as Project);
     setSettingsOpen(false);
     setSavingSettings(false);
+  };
+
+  const openSettingsFor = (focus: SettingsFocus) => {
+    setSettingsFocus(focus);
+    setSettingsOpen(true);
+  };
+  const isSettingsSectionVisible = (section: Exclude<SettingsFocus, "all">) =>
+    settingsFocus === "all" || settingsFocus === section;
+
+  const saveProjectNotes = async () => {
+    if (!project) return;
+    const text = notesInput.trim();
+    if (!text) {
+      setNotesError("Bitte zuerst eine Notiz eingeben.");
+      return;
+    }
+
+    setNotesSaving(true);
+    setNotesError(null);
+    setNotesOk(null);
+
+    const { data: currentRow, error: currentErr } = await supabase
+      .from("projects")
+      .select("notes")
+      .eq("id", projectId)
+      .single();
+
+    if (currentErr) {
+      setNotesError("Aktuelle Notizen konnten nicht geladen werden: " + currentErr.message);
+      setNotesSaving(false);
+      return;
+    }
+
+    const currentEntries = parseProjectNotes((currentRow as { notes?: string | null } | null)?.notes ?? "");
+    const nextEntry: ProjectNoteEntry = {
+      id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `note-${Date.now()}`,
+      text,
+      created_at: new Date().toISOString(),
+      done: false,
+      author_id: me?.id ?? null,
+      author_email: me?.email ?? null,
+    };
+    const nextEntries = [nextEntry, ...currentEntries].slice(0, 300);
+
+    const { data, error } = await supabase
+      .from("projects")
+      .update({ notes: JSON.stringify(nextEntries) })
+      .eq("id", projectId)
+      .select("id,notes")
+      .single();
+
+    if (error) {
+      setNotesError("Notizen konnten nicht gespeichert werden: " + error.message);
+      setNotesSaving(false);
+      return;
+    }
+
+    const savedNotesRaw = (data as { notes?: string | null } | null)?.notes ?? "";
+    const savedEntries = parseProjectNotes(savedNotesRaw);
+    setProject((prev) => (prev ? { ...prev, notes: savedNotesRaw } : prev));
+    setProjectNotes(savedEntries);
+    setNotesInput("");
+    setNotesOk("Notiz gespeichert ✅");
+    setNotesSaving(false);
+  };
+
+  const persistProjectNotes = async (entries: ProjectNoteEntry[], okMessage: string) => {
+    setNotesSaving(true);
+    setNotesError(null);
+    setNotesOk(null);
+    const { data, error } = await supabase
+      .from("projects")
+      .update({ notes: JSON.stringify(entries) })
+      .eq("id", projectId)
+      .select("id,notes")
+      .single();
+
+    if (error) {
+      setNotesError("Notizen konnten nicht gespeichert werden: " + error.message);
+      setNotesSaving(false);
+      return;
+    }
+
+    const savedNotesRaw = (data as { notes?: string | null } | null)?.notes ?? "";
+    const savedEntries = parseProjectNotes(savedNotesRaw);
+    setProject((prev) => (prev ? { ...prev, notes: savedNotesRaw } : prev));
+    setProjectNotes(savedEntries);
+    setNotesOk(okMessage);
+    setNotesSaving(false);
+  };
+
+  const removeProjectNote = async (noteId: string) => {
+    if (!isOwner) return;
+    const nextEntries = projectNotes.filter((entry) => entry.id !== noteId);
+    await persistProjectNotes(nextEntries, "Notiz gelöscht ✅");
+  };
+
+  const toggleProjectNoteDone = async (noteId: string) => {
+    if (!isOwner) return;
+    const nextEntries = projectNotes.map((entry) =>
+      entry.id === noteId ? { ...entry, done: !entry.done } : entry
+    );
+    await persistProjectNotes(nextEntries, "Notiz aktualisiert ✅");
+  };
+
+  const handleNotesInputChange = (value: string) => {
+    const next = value.slice(0, 1500);
+    setNotesInput(next);
+    if (notesError) setNotesError(null);
+    if (notesOk) setNotesOk(null);
+
+    // Keep cursor stable on mobile Safari while state updates/re-renders.
+    requestAnimationFrame(() => {
+      const input = notesInputRef.current;
+      if (!input) return;
+      if (document.activeElement !== input) input.focus();
+      const pos = Math.min(next.length, input.value.length);
+      input.setSelectionRange(pos, pos);
+    });
   };
 
   const isProbablyUrl = (value: string) => {
@@ -786,6 +962,8 @@ export default function ProjectDetailPage() {
     });
   }, [allUsers, teamMembers]);
 
+  const myMapsEmbedUrl = useMemo(() => getMymapsEmbedUrl(project?.mymaps_url), [project?.mymaps_url]);
+
   const uploadFiles = async (fileList: FileList | File[]) => {
     if (!fileList || fileList.length === 0) return;
     setUploading(true);
@@ -946,7 +1124,7 @@ export default function ProjectDetailPage() {
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => openSettingsFor("all")}
               title="Projekt‑Details bearbeiten"
             >
               <span className="inline-flex items-center gap-2">
@@ -993,7 +1171,11 @@ export default function ProjectDetailPage() {
           }
         >
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-xl border border-slate-200/70 p-4">
+            <button
+              type="button"
+              onClick={() => openSettingsFor("client")}
+              className="rounded-xl border border-slate-200/70 p-4 text-left transition hover:border-sky-200 hover:bg-sky-50/40"
+            >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <Briefcase className="h-4 w-4 text-sky-700" aria-hidden="true" />
                 Auftraggeber
@@ -1006,9 +1188,13 @@ export default function ProjectDetailPage() {
                 {project.client_mobile ? ` • Mobil: ${project.client_mobile}` : ""}
                 {project.client_email ? ` • Mail: ${project.client_email}` : ""}
               </div>
-            </div>
+            </button>
 
-            <div className="rounded-xl border border-slate-200/70 p-4">
+            <button
+              type="button"
+              onClick={() => openSettingsFor("stakeholder")}
+              className="rounded-xl border border-slate-200/70 p-4 text-left transition hover:border-sky-200 hover:bg-sky-50/40"
+            >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <Users className="h-4 w-4 text-sky-700" aria-hidden="true" />
                 Gutachter / Beteiligte
@@ -1020,11 +1206,15 @@ export default function ProjectDetailPage() {
                 {project.stakeholder_mobile ? ` • Mobil: ${project.stakeholder_mobile}` : ""}
                 {project.stakeholder_email ? ` • Mail: ${project.stakeholder_email}` : ""}
               </div>
-            </div>
+            </button>
           </div>
 
           <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div className="rounded-xl border border-slate-200/70 p-4">
+            <button
+              type="button"
+              onClick={() => openSettingsFor("program")}
+              className="rounded-xl border border-slate-200/70 p-4 text-left transition hover:border-sky-200 hover:bg-sky-50/40"
+            >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <List className="h-4 w-4 text-sky-700" aria-hidden="true" />
                 Programm
@@ -1038,8 +1228,12 @@ export default function ProjectDetailPage() {
                   .filter(Boolean)
                   .join(" • ") || "—"}
               </div>
-            </div>
-            <div className="rounded-xl border border-slate-200/70 p-4">
+            </button>
+            <button
+              type="button"
+              onClick={() => openSettingsFor("zeitraum")}
+              className="rounded-xl border border-slate-200/70 p-4 text-left transition hover:border-sky-200 hover:bg-sky-50/40"
+            >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <Calendar className="h-4 w-4 text-sky-700" aria-hidden="true" />
                 Zeitraum
@@ -1048,14 +1242,23 @@ export default function ProjectDetailPage() {
                 {project.start_date ? new Date(project.start_date).toLocaleDateString() : "—"} bis{" "}
                 {project.end_date ? new Date(project.end_date).toLocaleDateString() : "—"}
               </div>
-            </div>
-            <div className="rounded-xl border border-slate-200/70 p-4">
+            </button>
+            <button
+              type="button"
+              onClick={() => openSettingsFor("notes")}
+              className="rounded-xl border border-slate-200/70 p-4 text-left transition hover:border-sky-200 hover:bg-sky-50/40"
+            >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <FileText className="h-4 w-4 text-sky-700" aria-hidden="true" />
                 Notizen
               </div>
-              <div className="mt-2 text-xs text-slate-500">{project.notes || "—"}</div>
-            </div>
+              <div className="mt-2 text-xs text-slate-500">
+                {projectNotes.length > 0 ? `${projectNotes.length} Notiz${projectNotes.length > 1 ? "en" : ""}` : "—"}
+              </div>
+              {projectNotes[0]?.text ? (
+                <div className="mt-1 line-clamp-2 text-xs text-slate-600">{projectNotes[0].text}</div>
+              ) : null}
+            </button>
           </div>
         </SectionCard>
       )}
@@ -1244,7 +1447,7 @@ export default function ProjectDetailPage() {
                   <div className="aspect-[4/3] w-full">
                     <iframe
                       title={project.mymaps_title || "Google My Maps"}
-                      src={getMymapsEmbedUrl(project.mymaps_url)}
+                      src={myMapsEmbedUrl}
                       className="h-full w-full"
                       loading="lazy"
                       referrerPolicy="no-referrer-when-downgrade"
@@ -1257,6 +1460,94 @@ export default function ProjectDetailPage() {
           </div>
         </SectionCard>
       </div>
+
+      {!loading && !err && project && (
+        <SectionCard
+          title="Bugs & Notizen"
+          subtitle="Jede Speicherung erzeugt einen neuen Eintrag. Alle Mitglieder können hinzufügen."
+          action={<span className="text-xs text-slate-500">{notesInput.length}/1500</span>}
+        >
+          <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+            <textarea
+              ref={notesInputRef}
+              value={notesInput}
+              onChange={(e) => handleNotesInputChange(e.target.value)}
+              placeholder="z. B. Offene Bugs, Rückfragen vom Bauleiter, nächste Schritte…"
+              className="min-h-[120px] w-full rounded-xl border border-slate-200/70 px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+            />
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs text-slate-500">Neueste Notizen stehen oben.</div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={saveProjectNotes}
+                disabled={notesSaving}
+              >
+                {notesSaving ? "Speichert…" : "Notiz speichern"}
+              </button>
+            </div>
+            {notesError ? <div className="mt-2 text-xs text-red-600">{notesError}</div> : null}
+            {notesOk ? <div className="mt-2 text-xs text-green-700">{notesOk}</div> : null}
+
+            <div className="mt-4 rounded-xl border border-slate-200/70 bg-slate-50/50">
+              <div className="border-b border-slate-200/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Verlauf
+              </div>
+              <div className="max-h-72 divide-y divide-slate-200/70 overflow-y-auto">
+                {projectNotes.length === 0 ? (
+                  <div className="px-3 py-3 text-sm text-slate-500">Noch keine Notizen vorhanden.</div>
+                ) : (
+                  projectNotes.map((entry) => {
+                    const byMe = entry.author_id && me?.id && entry.author_id === me.id;
+                    const author = byMe ? "von dir" : entry.author_email || "Mitglied";
+                    return (
+                      <div key={entry.id} className="px-3 py-3">
+                        <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={[
+                                "rounded-full border px-2 py-0.5",
+                                entry.done ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white",
+                              ].join(" ")}
+                            >
+                              {entry.done ? "erledigt" : "offen"}
+                            </span>
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5">{author}</span>
+                            <span>{new Date(entry.created_at).toLocaleString()}</span>
+                          </div>
+                          {isOwner ? (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                disabled={notesSaving}
+                                onClick={() => toggleProjectNoteDone(entry.id)}
+                              >
+                                {entry.done ? "Unerledigt" : "Erledigt"}
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-md border border-red-200 bg-white px-2 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                disabled={notesSaving}
+                                onClick={() => removeProjectNote(entry.id)}
+                              >
+                                Löschen
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className={["whitespace-pre-wrap text-sm", entry.done ? "text-slate-500 line-through" : "text-slate-800"].join(" ")}>
+                          {entry.text}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </SectionCard>
+      )}
 
       {loading && <p className="mt-4 text-sm text-gray-600">Lade…</p>}
       {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
@@ -1448,6 +1739,32 @@ export default function ProjectDetailPage() {
             </div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2 flex flex-wrap gap-2">
+                {[
+                  { id: "all", label: "Alle" },
+                  { id: "client", label: "Auftraggeber" },
+                  { id: "stakeholder", label: "Gutachter" },
+                  { id: "program", label: "Programm" },
+                  { id: "zeitraum", label: "Zeitraum" },
+                  { id: "notes", label: "Notizen" },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setSettingsFocus(item.id as SettingsFocus)}
+                    className={[
+                      "rounded-full border px-3 py-1 text-xs font-semibold",
+                      settingsFocus === item.id
+                        ? "bg-slate-900 text-white border-slate-900"
+                        : "border-slate-200/70 text-slate-600 hover:bg-slate-50",
+                    ].join(" ")}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              {settingsFocus === "all" ? (
+                <>
               <label className="space-y-1">
                 <span className="text-sm text-gray-600">Projektnummer *</span>
                 <input
@@ -1464,6 +1781,10 @@ export default function ProjectDetailPage() {
                   onChange={(e) => setSettingsForm((prev) => ({ ...prev, name: e.target.value }))}
                 />
               </label>
+                </>
+              ) : null}
+              {isSettingsSectionVisible("client") ? (
+                <>
               <label className="space-y-1 md:col-span-2">
                 <span className="text-sm text-gray-600">Auftraggeber *</span>
                 <input
@@ -1512,8 +1833,11 @@ export default function ProjectDetailPage() {
                   onChange={(e) => setSettingsForm((prev) => ({ ...prev, client_email: e.target.value }))}
                 />
               </label>
+                </>
+              ) : null}
             </div>
 
+            {isSettingsSectionVisible("stakeholder") ? (
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="space-y-1 md:col-span-2">
                 <span className="text-sm text-gray-600">Gutachter / Beteiligte</span>
@@ -1556,10 +1880,12 @@ export default function ProjectDetailPage() {
                 />
               </label>
             </div>
+            ) : null}
 
-            <div className="mt-5 grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <div className="text-sm font-semibold">Programm</div>
+            {isSettingsSectionVisible("program") ? (
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+              <div className="text-sm font-semibold text-slate-800">Programm</div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {[
                   { id: "program_borehole", label: "Bohrlochsondierung" },
                   { id: "program_surface", label: "Oberflächensondierung" },
@@ -1580,23 +1906,27 @@ export default function ProjectDetailPage() {
                   </label>
                 ))}
               </div>
+            </div>
+            ) : null}
 
-              <label className="space-y-1">
-                <span className="text-sm text-gray-600">Status</span>
-                <select
-                  className="w-full rounded-xl border p-2.5"
-                  value={settingsForm.status ?? "geplant"}
-                  onChange={(e) => setSettingsForm((prev) => ({ ...prev, status: e.target.value }))}
-                >
-                  {["geplant", "laufend", "pausiert", "abgeschlossen"].map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="space-y-2">
+            {isSettingsSectionVisible("zeitraum") ? (
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+              <div className="text-sm font-semibold text-slate-800">Zeitraum</div>
+              <div className="mt-3 grid gap-4 lg:grid-cols-3">
+                <label className="space-y-1">
+                  <span className="text-sm text-gray-600">Status</span>
+                  <select
+                    className="w-full rounded-xl border p-2.5"
+                    value={settingsForm.status ?? "geplant"}
+                    onChange={(e) => setSettingsForm((prev) => ({ ...prev, status: e.target.value }))}
+                  >
+                    {["geplant", "laufend", "pausiert", "abgeschlossen"].map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label className="space-y-1">
                   <span className="text-sm text-gray-600">Startdatum</span>
                   <input
@@ -1617,7 +1947,9 @@ export default function ProjectDetailPage() {
                 </label>
               </div>
             </div>
+            ) : null}
 
+            {isSettingsSectionVisible("notes") ? (
             <label className="mt-5 block space-y-1">
               <span className="text-sm text-gray-600">Sonstiges / Anmerkungen</span>
               <textarea
@@ -1627,6 +1959,7 @@ export default function ProjectDetailPage() {
                 onChange={(e) => setSettingsForm((prev) => ({ ...prev, notes: e.target.value }))}
               />
             </label>
+            ) : null}
 
             {settingsError && <div className="mt-3 text-xs text-red-600">{settingsError}</div>}
 
