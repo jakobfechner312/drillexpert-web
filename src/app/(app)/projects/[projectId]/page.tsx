@@ -51,6 +51,10 @@ type TeamMember = {
   role_in_project: string | null;
   profiles?: { email?: string | null; full_name?: string | null } | null;
 };
+type UserOption = {
+  id: string;
+  email: string;
+};
 
 export default function ProjectDetailPage() {
   const params = useParams<{ projectId: string }>();
@@ -105,6 +109,11 @@ export default function ProjectDetailPage() {
   const [filter, setFilter] = useState<"all" | "reports" | "files" | "images">("all");
   const [memberEmail, setMemberEmail] = useState("");
   const [addingMember, setAddingMember] = useState(false);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersErr, setUsersErr] = useState<string | null>(null);
+  const [allUsers, setAllUsers] = useState<UserOption[]>([]);
+  const [memberQuery, setMemberQuery] = useState("");
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [memberErr, setMemberErr] = useState<string | null>(null);
   const [memberOk, setMemberOk] = useState<string | null>(null);
   const [mymapsUrlInput, setMymapsUrlInput] = useState("");
@@ -282,7 +291,27 @@ export default function ProjectDetailPage() {
       setTeamLoading(false);
     }
 
-    // 4) Reports laden
+    // 4) Alle Nutzer für Mitgliederauswahl laden (falls Rechte vorhanden)
+    setUsersLoading(true);
+    setUsersErr(null);
+    const { data: usersData, error: usersError } = await supabase
+      .from("profiles")
+      .select("id,email")
+      .not("email", "is", null)
+      .order("email", { ascending: true })
+      .limit(5000);
+    if (usersError) {
+      setUsersErr("Mitgliederliste konnte nicht geladen werden.");
+      setAllUsers([]);
+    } else {
+      const mapped = (usersData ?? [])
+        .map((u: any) => ({ id: String(u.id ?? ""), email: String(u.email ?? "").trim() }))
+        .filter((u: UserOption) => Boolean(u.id) && Boolean(u.email));
+      setAllUsers(mapped);
+    }
+    setUsersLoading(false);
+
+    // 5) Reports laden
     const { data: reps, error: repsErr } = await supabase
       .from("reports")
       .select("id,title,created_at,user_id,status,report_type")
@@ -297,7 +326,7 @@ export default function ProjectDetailPage() {
 
     setReports((reps ?? []) as ReportRow[]);
 
-    // 5) Dateien laden
+    // 6) Dateien laden
     setFilesLoading(true);
     setFilesErr(null);
     const { data: fileList, error: fileErr } = await supabase.storage
@@ -700,6 +729,57 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const addSelectedMembers = async () => {
+    const ids = Array.from(new Set(selectedMemberIds.filter(Boolean)));
+    if (!ids.length) {
+      setMemberErr("Bitte mindestens ein Mitglied auswählen.");
+      return;
+    }
+
+    setAddingMember(true);
+    setMemberErr(null);
+    setMemberOk(null);
+    try {
+      const rows = ids.map((userId) => ({
+        project_id: projectId,
+        user_id: userId,
+        role_in_project: "member",
+      }));
+
+      const { error } = await supabase
+        .from("project_members")
+        .upsert(rows, { onConflict: "project_id,user_id", ignoreDuplicates: true });
+
+      if (error) {
+        setMemberErr("Hinzufügen fehlgeschlagen: " + error.message);
+        return;
+      }
+
+      setSelectedMemberIds([]);
+      setMemberOk("Mitglieder hinzugefügt ✅");
+      await load();
+    } finally {
+      setAddingMember(false);
+    }
+  };
+
+  const toggleSelectedMember = (userId: string, checked: boolean) => {
+    setSelectedMemberIds((prev) => {
+      if (checked) return Array.from(new Set([...prev, userId]));
+      return prev.filter((id) => id !== userId);
+    });
+  };
+
+  const availableUserOptions = useMemo(() => {
+    const existing = new Set(teamMembers.map((m) => m.user_id));
+    const q = memberQuery.trim().toLowerCase();
+    return allUsers.filter((u) => {
+      if (existing.has(u.id)) return false;
+      if (!q) return true;
+      return u.email.toLowerCase().includes(q);
+    });
+  }, [allUsers, teamMembers, memberQuery]);
+
   const uploadFiles = async (fileList: FileList | File[]) => {
     if (!fileList || fileList.length === 0) return;
     setUploading(true);
@@ -986,27 +1066,74 @@ export default function ProjectDetailPage() {
                   <Users className="h-5 w-5" aria-hidden="true" />
                 </div>
                 <div className="flex-1 min-w-[240px]">
-                  <div className="text-sm font-semibold text-slate-800">Mitglied hinzufügen</div>
-                  <div className="text-xs text-slate-500">Nur existierende Nutzer können hinzugefügt werden.</div>
+                  <div className="text-sm font-semibold text-slate-800">Mitglieder auswählen</div>
+                  <div className="text-xs text-slate-500">Mail auswählen und gesammelt hinzufügen.</div>
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-4 space-y-3 rounded-xl border border-slate-200/70 bg-white p-3">
                 <input
-                  className="min-w-[240px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-                  placeholder="E-Mail des Users"
-                  value={memberEmail}
-                  onChange={(e) => setMemberEmail(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  placeholder="Mitglieder suchen (E-Mail)…"
+                  value={memberQuery}
+                  onChange={(e) => setMemberQuery(e.target.value)}
                 />
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={addMemberByEmail}
-                  disabled={addingMember}
-                >
-                  {addingMember ? "Füge hinzu…" : "Hinzufügen"}
-                </button>
+                <div className="max-h-52 space-y-2 overflow-y-auto rounded-lg border border-slate-100 p-2">
+                  {usersLoading ? (
+                    <div className="px-2 py-1 text-xs text-slate-500">Lade Nutzer…</div>
+                  ) : usersErr ? (
+                    <div className="px-2 py-1 text-xs text-amber-700">{usersErr}</div>
+                  ) : availableUserOptions.length === 0 ? (
+                    <div className="px-2 py-1 text-xs text-slate-500">Keine passenden Nutzer verfügbar.</div>
+                  ) : (
+                    availableUserOptions.map((u) => (
+                      <label
+                        key={u.id}
+                        className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedMemberIds.includes(u.id)}
+                          onChange={(e) => toggleSelectedMember(u.id, e.target.checked)}
+                        />
+                        <span className="truncate text-slate-700">{u.email}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs text-slate-500">
+                    Ausgewählt: {selectedMemberIds.length}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={addSelectedMembers}
+                    disabled={addingMember || selectedMemberIds.length === 0}
+                  >
+                    {addingMember ? "Füge hinzu…" : "Ausgewählte hinzufügen"}
+                  </button>
+                </div>
               </div>
+
+              {usersErr ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <input
+                    className="min-w-[240px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+                    placeholder="Fallback: E-Mail des Users"
+                    value={memberEmail}
+                    onChange={(e) => setMemberEmail(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={addMemberByEmail}
+                    disabled={addingMember}
+                  >
+                    {addingMember ? "Füge hinzu…" : "Per E-Mail hinzufügen"}
+                  </button>
+                </div>
+              ) : null}
               {memberErr && <div className="mt-2 text-xs text-red-600">{memberErr}</div>}
               {memberOk && <div className="mt-2 text-xs text-green-700">{memberOk}</div>}
             </>
