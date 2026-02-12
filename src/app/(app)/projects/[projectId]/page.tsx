@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Briefcase, Calendar, ClipboardList, Crown, ExternalLink, FileText, Hash, Link2, List, MapPin, Settings, Upload, User, Users } from "lucide-react";
 import { useParams } from "next/navigation";
@@ -108,11 +108,11 @@ export default function ProjectDetailPage() {
   const maxFileSizeMb = 25;
   const [filter, setFilter] = useState<"all" | "reports" | "files" | "images">("all");
   const [memberEmail, setMemberEmail] = useState("");
+  const memberEmailInputRef = useRef<HTMLInputElement | null>(null);
   const [addingMember, setAddingMember] = useState(false);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersErr, setUsersErr] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<UserOption[]>([]);
-  const [memberQuery, setMemberQuery] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [memberErr, setMemberErr] = useState<string | null>(null);
   const [memberOk, setMemberOk] = useState<string | null>(null);
@@ -729,6 +729,21 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const handleMemberEmailChange = (value: string) => {
+    setMemberEmail(value);
+
+    // Keep focus stable on iOS/Safari where rerenders may drop caret unexpectedly.
+    requestAnimationFrame(() => {
+      const input = memberEmailInputRef.current;
+      if (!input) return;
+      if (document.activeElement !== input) {
+        input.focus();
+      }
+      const pos = value.length;
+      input.setSelectionRange(pos, pos);
+    });
+  };
+
   const addSelectedMembers = async () => {
     const ids = Array.from(new Set(selectedMemberIds.filter(Boolean)));
     if (!ids.length) {
@@ -763,22 +778,13 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const toggleSelectedMember = (userId: string, checked: boolean) => {
-    setSelectedMemberIds((prev) => {
-      if (checked) return Array.from(new Set([...prev, userId]));
-      return prev.filter((id) => id !== userId);
-    });
-  };
-
   const availableUserOptions = useMemo(() => {
     const existing = new Set(teamMembers.map((m) => m.user_id));
-    const q = memberQuery.trim().toLowerCase();
     return allUsers.filter((u) => {
       if (existing.has(u.id)) return false;
-      if (!q) return true;
-      return u.email.toLowerCase().includes(q);
+      return true;
     });
-  }, [allUsers, teamMembers, memberQuery]);
+  }, [allUsers, teamMembers]);
 
   const uploadFiles = async (fileList: FileList | File[]) => {
     if (!fileList || fileList.length === 0) return;
@@ -1066,74 +1072,31 @@ export default function ProjectDetailPage() {
                   <Users className="h-5 w-5" aria-hidden="true" />
                 </div>
                 <div className="flex-1 min-w-[240px]">
-                  <div className="text-sm font-semibold text-slate-800">Mitglieder auswählen</div>
-                  <div className="text-xs text-slate-500">Mail auswählen und gesammelt hinzufügen.</div>
+                  <div className="text-sm font-semibold text-slate-800">Mitglied per E-Mail hinzufügen</div>
+                  <div className="text-xs text-slate-500">Schnelle, sichere Variante für den Live-Betrieb.</div>
                 </div>
               </div>
 
-              <div className="mt-4 space-y-3 rounded-xl border border-slate-200/70 bg-white p-3">
+              <div className="mt-4 flex flex-wrap gap-2">
                 <input
-                  className="w-full rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-                  placeholder="Mitglieder suchen (E-Mail)…"
-                  value={memberQuery}
-                  onChange={(e) => setMemberQuery(e.target.value)}
+                  ref={memberEmailInputRef}
+                  className="min-w-[240px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  placeholder="E-Mail des Users"
+                  value={memberEmail}
+                  onChange={(e) => handleMemberEmailChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.preventDefault();
+                  }}
                 />
-                <div className="max-h-52 space-y-2 overflow-y-auto rounded-lg border border-slate-100 p-2">
-                  {usersLoading ? (
-                    <div className="px-2 py-1 text-xs text-slate-500">Lade Nutzer…</div>
-                  ) : usersErr ? (
-                    <div className="px-2 py-1 text-xs text-amber-700">{usersErr}</div>
-                  ) : availableUserOptions.length === 0 ? (
-                    <div className="px-2 py-1 text-xs text-slate-500">Keine passenden Nutzer verfügbar.</div>
-                  ) : (
-                    availableUserOptions.map((u) => (
-                      <label
-                        key={u.id}
-                        className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedMemberIds.includes(u.id)}
-                          onChange={(e) => toggleSelectedMember(u.id, e.target.checked)}
-                        />
-                        <span className="truncate text-slate-700">{u.email}</span>
-                      </label>
-                    ))
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-xs text-slate-500">
-                    Ausgewählt: {selectedMemberIds.length}
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={addSelectedMembers}
-                    disabled={addingMember || selectedMemberIds.length === 0}
-                  >
-                    {addingMember ? "Füge hinzu…" : "Ausgewählte hinzufügen"}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={addMemberByEmail}
+                  disabled={addingMember}
+                >
+                  {addingMember ? "Füge hinzu…" : "Hinzufügen"}
+                </button>
               </div>
-
-              {usersErr ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <input
-                    className="min-w-[240px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-                    placeholder="Fallback: E-Mail des Users"
-                    value={memberEmail}
-                    onChange={(e) => setMemberEmail(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={addMemberByEmail}
-                    disabled={addingMember}
-                  >
-                    {addingMember ? "Füge hinzu…" : "Per E-Mail hinzufügen"}
-                  </button>
-                </div>
-              ) : null}
               {memberErr && <div className="mt-2 text-xs text-red-600">{memberErr}</div>}
               {memberOk && <div className="mt-2 text-xs text-green-700">{memberOk}</div>}
             </>
