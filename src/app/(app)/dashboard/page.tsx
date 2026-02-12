@@ -280,6 +280,12 @@ export default function DashboardPage() {
     return set;
   }, [domainVotes, currentUserId]);
 
+  const totalVotesCast = useMemo(() => domainVotes.length, [domainVotes]);
+  const uniqueVotersCount = useMemo(
+    () => new Set(domainVotes.map((v) => v.voter_user_id)).size,
+    [domainVotes]
+  );
+
   const rankedSuggestions = useMemo(() => {
     return [...domainSuggestions].sort((a, b) => {
       const av = voteCountBySuggestion.get(a.id) ?? 0;
@@ -484,6 +490,9 @@ export default function DashboardPage() {
                 <h2 className="font-medium">Wunsch-Domain Voting</h2>
                 <p className="text-xs text-slate-500">
                   1 Vorschlag pro Mitglied, 1 Stimme pro fremdem Vorschlag.
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Gesamtstimmen: {totalVotesCast} · Aktive Voter: {uniqueVotersCount}
                 </p>
               </div>
             </div>
