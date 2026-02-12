@@ -63,10 +63,21 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const origin = new URL(req.url).origin;
     const previewUrl = new URL("/api/pdf/tagesbericht", origin);
     const payload = normalizeTagesberichtPayload(report.data);
+    const forwardedHeaders = new Headers({ "Content-Type": "application/json" });
+    const cookie = req.headers.get("cookie");
+    const authorization = req.headers.get("authorization");
+    const vercelBypass = req.headers.get("x-vercel-protection-bypass");
+    const vercelSetBypass = req.headers.get("x-vercel-set-bypass-cookie");
+    if (cookie) forwardedHeaders.set("cookie", cookie);
+    if (authorization) forwardedHeaders.set("authorization", authorization);
+    if (vercelBypass) forwardedHeaders.set("x-vercel-protection-bypass", vercelBypass);
+    if (vercelSetBypass) forwardedHeaders.set("x-vercel-set-bypass-cookie", vercelSetBypass);
+
     const res = await fetch(previewUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: forwardedHeaders,
       body: JSON.stringify(payload),
+      cache: "no-store",
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
