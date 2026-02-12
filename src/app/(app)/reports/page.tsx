@@ -77,8 +77,18 @@ export default function MyReportsPage() {
   }, [reports, typeFilter, query]);
 
   const typeBadge = (type: string | null | undefined) => {
-    if (type === "schichtenverzeichnis") return { label: "Schichtenverzeichnis", cls: "bg-amber-50 text-amber-800 border-amber-200" };
-    return { label: "Tagesbericht", cls: "bg-sky-50 text-sky-800 border-sky-200" };
+    if (type === "schichtenverzeichnis") {
+      return {
+        label: "Schichtenverzeichnis",
+        cls: "bg-amber-50 text-amber-800 border-amber-200",
+        card: "from-amber-50/70 via-white to-orange-50/50",
+      };
+    }
+    return {
+      label: "Tagesbericht",
+      cls: "bg-sky-50 text-sky-800 border-sky-200",
+      card: "from-sky-50/70 via-white to-cyan-50/50",
+    };
   };
 
   return (
@@ -104,12 +114,12 @@ export default function MyReportsPage() {
       {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
 
       {!loading && !err && (
-        <div className="mt-5 rounded-2xl border border-slate-200/70 bg-white shadow-sm">
-          <div className="border-b p-4 sm:p-5">
+        <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-b from-white via-white to-slate-50 shadow-sm">
+          <div className="border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white p-4 sm:p-5">
             <div className="flex flex-col items-stretch justify-between gap-3 lg:flex-row lg:items-center">
               <div>
-                <h2 className="font-medium">Berichte</h2>
-                <p className="mt-1 text-sm text-gray-600">
+                <h2 className="text-lg font-semibold text-slate-900">Berichte</h2>
+                <p className="mt-1 text-sm text-slate-600">
                   {filteredReports.length} Einträge
                 </p>
               </div>
@@ -147,7 +157,7 @@ export default function MyReportsPage() {
                   </button>
                 </div>
                 <input
-                  className="w-full rounded-xl border px-3 py-2.5 text-sm lg:w-72"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm transition placeholder:text-slate-400 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-200/60 lg:w-72"
                   placeholder="Suchen…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -165,11 +175,18 @@ export default function MyReportsPage() {
               {filteredReports.map((r) => {
                 const type = typeBadge(r.report_type);
                 return (
-                  <div key={r.id} className="rounded-2xl border border-slate-200/70 p-4 shadow-sm">
+                  <div
+                    key={r.id}
+                    className={[
+                      "rounded-2xl border border-slate-200/80 bg-gradient-to-br p-4 shadow-sm transition",
+                      "hover:-translate-y-0.5 hover:shadow-md",
+                      type.card,
+                    ].join(" ")}
+                  >
                     <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div className="min-w-0">
-                        <div className="text-base font-semibold leading-snug break-words">{r.title}</div>
-                        <div className="mt-1 text-xs text-gray-500">
+                        <div className="text-base font-semibold leading-snug text-slate-900 break-words">{r.title}</div>
+                        <div className="mt-1 text-xs text-slate-500">
                           {new Date(r.created_at).toLocaleDateString()}
                         </div>
                       </div>
@@ -178,7 +195,7 @@ export default function MyReportsPage() {
                       </span>
                     </div>
 
-                    <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
                       <span>Status:</span>
                       <span className="rounded-full border border-slate-200/70 px-2 py-0.5">
                         {r.status ?? "—"}

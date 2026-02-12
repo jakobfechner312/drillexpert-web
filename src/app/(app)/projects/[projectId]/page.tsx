@@ -195,6 +195,13 @@ export default function ProjectDetailPage() {
   const [notesOk, setNotesOk] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
 
+  const formatProjectDisplayName = (value: { name?: string | null; project_number?: string | null } | null | undefined) => {
+    const nr = (value?.project_number ?? "").trim();
+    const name = (value?.name ?? "").trim();
+    if (nr && name) return `${nr} - ${name}`;
+    return name || nr || "Projekt";
+  };
+
   const SectionCard = ({
     title,
     subtitle,
@@ -847,14 +854,16 @@ export default function ProjectDetailPage() {
 
   const deleteProject = async () => {
     if (!isOwner || !project) return;
-    const name = (project.name ?? "").trim();
-    if (!name) {
+    const displayName = formatProjectDisplayName(project);
+    const rawName = (project.name ?? "").trim();
+    if (!rawName) {
       alert("Projektname fehlt. Löschen abgebrochen.");
       return;
     }
-    const typed = prompt(`Zum Löschen bitte den Projektnamen eingeben:\n${name}`);
+    const typed = prompt(`Zum Löschen bitte den Projektnamen eingeben:\n${displayName}`);
     if (typed == null) return;
-    if (typed.trim() !== name) {
+    const normalized = typed.trim();
+    if (normalized !== rawName && normalized !== displayName) {
       alert("Projektname stimmt nicht. Löschen abgebrochen.");
       return;
     }
@@ -1178,7 +1187,7 @@ export default function ProjectDetailPage() {
           <div className="min-w-0">
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Projekt</div>
             <h1 className="mt-2 text-2xl font-semibold text-slate-900 truncate">
-              {project?.name ?? "Projekt"}
+              {formatProjectDisplayName(project)}
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-600">
               <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
