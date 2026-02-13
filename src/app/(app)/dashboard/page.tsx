@@ -26,25 +26,16 @@ type ProjectMemberSelectRow = {
   project: ProjectRow | ProjectRow[] | null;
 };
 
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-};
-
 export default function DashboardPage() {
   const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading] = useState(true);
   const [createReportOpen, setCreateReportOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
-
-  const [installHint, setInstallHint] = useState<string | null>(null);
-  const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -58,8 +49,6 @@ export default function DashboardPage() {
         setLoading(false);
         return;
       }
-      setCurrentUserId(user.id);
-
       const [projRes, repRes, draftRes] = await Promise.all([
         supabase
           .from("project_members")
@@ -107,64 +96,6 @@ export default function DashboardPage() {
     load();
   }, [supabase]);
 
-  useEffect(() => {
-    const onBeforeInstallPrompt = (event: Event) => {
-      event.preventDefault();
-      setInstallPromptEvent(event as BeforeInstallPromptEvent);
-    };
-
-    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-    return () => window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-  }, []);
-
-  const handleDomainBannerClick = async () => {
-    const targetUrl = "https://drillexpert.app";
-    const onTargetHost = typeof window !== "undefined" && window.location.hostname === "drillexpert.app";
-
-    if (!onTargetHost) {
-      window.open(targetUrl, "_blank", "noopener,noreferrer");
-      setInstallHint("Neue Seite geöffnet. Dort kannst du die Verknüpfung installieren.");
-      return;
-    }
-
-    if (installPromptEvent) {
-      await installPromptEvent.prompt();
-      const choice = await installPromptEvent.userChoice;
-      setInstallHint(
-        choice.outcome === "accepted"
-          ? "Verknüpfung/Installation gestartet ✅"
-          : "Installation abgebrochen. Du kannst sie über Browser-Menü erneut starten."
-      );
-      setInstallPromptEvent(null);
-      return;
-    }
-
-    const ua = navigator.userAgent.toLowerCase();
-    const isIOS = /iphone|ipad|ipod/.test(ua);
-    const isAndroid = /android/.test(ua);
-    const isMac = /mac os/.test(ua) && !isIOS;
-    const isWindows = /windows/.test(ua);
-
-    if (isIOS) {
-      setInstallHint("Safari: Teilen → Zum Home-Bildschirm.");
-      return;
-    }
-    if (isAndroid) {
-      setInstallHint("Chrome/Brave: Menü ⋮ → App installieren / Zum Startbildschirm hinzufügen.");
-      return;
-    }
-    if (isMac) {
-      setInstallHint("Brave/Chrome auf Mac: Speichern und teilen → Verknüpfung erstellen.");
-      return;
-    }
-    if (isWindows) {
-      setInstallHint("Chrome/Edge: Menü → App installieren oder Verknüpfung erstellen.");
-      return;
-    }
-
-    setInstallHint("Browser-Menü öffnen und 'App installieren' oder 'Verknüpfung erstellen' wählen.");
-  };
-
   return (
     <div className="mx-auto max-w-[1800px] overflow-x-hidden px-4 py-6">
       <div className="rounded-3xl border border-slate-200/70 bg-gradient-to-b from-white via-white to-slate-50 p-6 shadow-soft">
@@ -192,29 +123,20 @@ export default function DashboardPage() {
       </div>
 
       {!loading && !err && (
-        <button
-          type="button"
-          onClick={handleDomainBannerClick}
-          className="mt-6 w-full rounded-3xl border border-sky-200/70 bg-gradient-to-r from-sky-600 via-cyan-500 to-blue-600 p-5 text-left text-white shadow-soft transition hover:brightness-105"
-        >
+        <div className="mt-6 w-full rounded-3xl border border-sky-200/70 bg-gradient-to-r from-sky-600 via-cyan-500 to-blue-600 p-5 text-left text-white shadow-soft">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.15em] text-sky-100/90">Neu</div>
               <h2 className="mt-1 text-2xl font-extrabold tracking-tight">🚀 Drillexpert ist jetzt live auf drillexpert.app</h2>
               <p className="mt-2 text-sm text-sky-50/95">
-                📱💻 Tippe hier für App-Install/Verknüpfung und schnellen Start auf jedem Gerät.
+                📱💻 Unsere neue Domain ist live: drillexpert.app
               </p>
             </div>
             <div className="rounded-full border border-white/40 bg-white/20 px-4 py-2 text-sm font-semibold">
-              ✨ Jetzt verknüpfen
+              🌐 Domain aktiv
             </div>
           </div>
-          {installHint ? (
-            <div className="mt-3 rounded-xl border border-white/30 bg-white/15 px-3 py-2 text-xs text-sky-50">
-              {installHint}
-            </div>
-          ) : null}
-        </button>
+        </div>
       )}
 
       {loading && <p className="mt-6 text-sm text-slate-600">Lade…</p>}
