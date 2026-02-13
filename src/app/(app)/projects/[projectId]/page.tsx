@@ -939,15 +939,9 @@ export default function ProjectDetailPage() {
 
     setDeletingProject(true);
     try {
-      // Reports bleiben erhalten, werden aber aus dem Projekt gelöst.
-      const { error: reportErr } = await supabase
-        .from("reports")
-        .update({ project_id: null })
-        .eq("project_id", projectId);
-      if (reportErr) {
-        alert("Reports konnten nicht aus dem Projekt gelöst werden: " + reportErr.message);
-        return;
-      }
+      // Wichtig: Kein manuelles reports.update(project_id=null), da das häufig an RLS scheitert
+      // (z.B. wenn Berichte von anderen Mitgliedern erstellt wurden).
+      // Stattdessen projekt löschen und DB-FK-Regel (ON DELETE SET NULL/CASCADE) nutzen.
 
       const { error: memberErr } = await supabase
         .from("project_members")
@@ -982,7 +976,11 @@ export default function ProjectDetailPage() {
         .delete()
         .eq("id", projectId);
       if (projectErr) {
-        alert("Projekt löschen fehlgeschlagen: " + projectErr.message);
+        alert(
+          "Projekt löschen fehlgeschlagen: " +
+            projectErr.message +
+            "\\n\\nFalls FK-Fehler: reports.project_id sollte ON DELETE SET NULL nutzen."
+        );
         return;
       }
 
