@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Briefcase, Calendar, ClipboardList, CloudSun, Crown, ExternalLink, FileText, Hash, Link2, List, MapPin, RefreshCcw, Settings, Upload, User, Users } from "lucide-react";
+import { Briefcase, Calendar, ClipboardList, CloudSun, Crown, ExternalLink, FileText, Hash, Link2, List, MapPin, RefreshCcw, Settings, Trash2, Upload, User, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -173,16 +173,15 @@ export default function ProjectDetailPage() {
   const [uploading, setUploading] = useState(false);
   const maxFileSizeMb = 25;
   const [filter, setFilter] = useState<"all" | "reports" | "files" | "images">("all");
-  const [memberEmail, setMemberEmail] = useState("");
-  const memberEmailInputRef = useRef<HTMLInputElement | null>(null);
   const [addingMember, setAddingMember] = useState(false);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersErr, setUsersErr] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<UserOption[]>([]);
-  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState<string>("");
   const [memberErr, setMemberErr] = useState<string | null>(null);
   const [memberOk, setMemberOk] = useState<string | null>(null);
   const [promotingOwnerId, setPromotingOwnerId] = useState<string | null>(null);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [mymapsUrlInput, setMymapsUrlInput] = useState("");
   const [mymapsSaving, setMymapsSaving] = useState(false);
   const [mymapsError, setMymapsError] = useState<string | null>(null);
@@ -388,17 +387,14 @@ export default function ProjectDetailPage() {
       setTeamLoading(false);
     }
 
-    // 4) Alle Nutzer für Mitgliederauswahl laden (falls Rechte vorhanden)
+    // 4) Addierbare Nutzer per RPC laden (RLS-sicher)
     setUsersLoading(true);
     setUsersErr(null);
-    const { data: usersData, error: usersError } = await supabase
-      .from("profiles")
-      .select("id,email")
-      .not("email", "is", null)
-      .order("email", { ascending: true })
-      .limit(5000);
+    const { data: usersData, error: usersError } = await supabase.rpc("list_project_addable_users", {
+      p_project_id: projectId,
+    });
     if (usersError) {
-      setUsersErr("Mitgliederliste konnte nicht geladen werden.");
+      setUsersErr("Mitgliederliste konnte nicht geladen werden (RPC).");
       setAllUsers([]);
     } else {
       const mapped = (usersData ?? [])
@@ -991,61 +987,6 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const addMemberByEmail = async () => {
-    if (!isOwner) {
-      setMemberErr("Nur der Projekt-Owner darf Berechtigungen ändern.");
-      setMemberOk(null);
-      return;
-    }
-    const email = memberEmail.trim().toLowerCase();
-    if (!email) {
-      setMemberErr("Bitte E-Mail eingeben.");
-      return;
-    }
-
-    setAddingMember(true);
-    setMemberErr(null);
-    setMemberOk(null);
-
-    try {
-      const { data, error } = await supabase.rpc("get_user_by_email_for_project", {
-        p_project_id: projectId,
-        p_email: email,
-      });
-
-      if (error) {
-        setMemberErr("Suche fehlgeschlagen: " + error.message);
-        return;
-      }
-
-      const row = Array.isArray(data) ? data[0] : data;
-      if (!row?.user_id) {
-        setMemberErr("Kein Nutzer mit dieser E-Mail gefunden.");
-        return;
-      }
-
-      const { error: insErr } = await supabase.from("project_members").insert({
-        project_id: projectId,
-        user_id: row.user_id,
-        role_in_project: "member",
-      });
-
-      if (insErr) {
-        if (typeof insErr === "object" && insErr && "code" in insErr && (insErr as { code?: string }).code === "23505") {
-          setMemberOk("Ist schon Mitglied ✅");
-          return;
-        }
-        setMemberErr("Hinzufügen fehlgeschlagen: " + insErr.message);
-        return;
-      }
-
-      setMemberOk("Mitglied hinzugefügt ✅");
-      setMemberEmail("");
-      await load();
-    } finally {
-      setAddingMember(false);
-    }
-  };
 
   const demoteOwnerToMember = async (memberUserId: string) => {
     if (!canManageOwnership) {
@@ -1187,30 +1128,89 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const handleMemberEmailChange = (value: string) => {
-    setMemberEmail(value);
+  const removeMemberFromProject = async (member: TeamMember) => {
+    if (!canManageOwnership) {
+      setMemberErr("Nur der Projektersteller darf Mitglieder entfernen.");
+      setMemberOk(null);
+      return;
+    }
 
-    // Keep focus stable on iOS/Safari where rerenders may drop caret unexpectedly.
-    requestAnimationFrame(() => {
-      const input = memberEmailInputRef.current;
-      if (!input) return;
-      if (document.activeElement !== input) {
-        input.focus();
+    const targetUserId = member.user_id;
+    if (!targetUserId) {
+      setMemberErr("Ungültiges Mitglied.");
+      setMemberOk(null);
+      return;
+    }
+
+    const isTargetOwner = member.role_in_project === "owner";
+    const creatorId = project?.created_by ?? null;
+
+    if (isTargetOwner) {
+      if (!canManageOwnership) {
+        setMemberErr("Nur der Projektersteller als aktueller Owner darf Owner-Mitglieder entfernen.");
+        setMemberOk(null);
+        return;
       }
-      const pos = value.length;
-      input.setSelectionRange(pos, pos);
-    });
+      if (creatorId && targetUserId === creatorId) {
+        setMemberErr("Der Projektersteller kann nicht aus dem Projekt entfernt werden.");
+        setMemberOk(null);
+        return;
+      }
+
+      const ownerIds = teamMembers
+        .filter((m) => m.role_in_project === "owner")
+        .map((m) => m.user_id);
+      if (ownerIds.length <= 1) {
+        setMemberErr("Mindestens ein Owner muss im Projekt bleiben.");
+        setMemberOk(null);
+        return;
+      }
+    }
+
+    const email = member.profiles?.email?.trim() || targetUserId;
+    if (!confirm(`Mitglied wirklich entfernen?\n${email}`)) return;
+
+    setRemovingMemberId(targetUserId);
+    setMemberErr(null);
+    setMemberOk("Mitglied wird entfernt…");
+
+    try {
+      const { error } = await supabase
+        .from("project_members")
+        .delete()
+        .eq("project_id", projectId)
+        .eq("user_id", targetUserId);
+
+      if (error) {
+        setMemberErr("Entfernen fehlgeschlagen: " + error.message);
+        setMemberOk(null);
+        return;
+      }
+
+      setTeamMembers((prev) => prev.filter((m) => m.user_id !== targetUserId));
+      setMemberOk("Mitglied entfernt ✅");
+
+      if (me?.id && targetUserId === me.id) {
+        window.location.href = "/projects";
+        return;
+      }
+
+      await load();
+    } finally {
+      setRemovingMemberId(null);
+    }
   };
 
-  const addSelectedMembers = async () => {
+
+  const addSelectedMember = async () => {
     if (!isOwner) {
       setMemberErr("Nur der Projekt-Owner darf Berechtigungen ändern.");
       setMemberOk(null);
       return;
     }
-    const ids = Array.from(new Set(selectedMemberIds.filter(Boolean)));
-    if (!ids.length) {
-      setMemberErr("Bitte mindestens ein Mitglied auswählen.");
+    const id = selectedMemberId.trim();
+    if (!id) {
+      setMemberErr("Bitte ein Mitglied auswählen.");
       return;
     }
 
@@ -1218,11 +1218,11 @@ export default function ProjectDetailPage() {
     setMemberErr(null);
     setMemberOk(null);
     try {
-      const rows = ids.map((userId) => ({
+      const rows = [{
         project_id: projectId,
-        user_id: userId,
+        user_id: id,
         role_in_project: "member",
-      }));
+      }];
 
       const { error } = await supabase
         .from("project_members")
@@ -1233,21 +1233,21 @@ export default function ProjectDetailPage() {
         return;
       }
 
-      setSelectedMemberIds([]);
-      setMemberOk("Mitglieder hinzugefügt ✅");
+      setSelectedMemberId("");
+      setMemberOk("Mitglied hinzugefügt ✅");
       await load();
     } finally {
       setAddingMember(false);
     }
   };
 
+  const existingMemberIds = useMemo(() => {
+    return new Set(teamMembers.map((m) => m.user_id));
+  }, [teamMembers]);
+
   const availableUserOptions = useMemo(() => {
-    const existing = new Set(teamMembers.map((m) => m.user_id));
-    return allUsers.filter((u) => {
-      if (existing.has(u.id)) return false;
-      return true;
-    });
-  }, [allUsers, teamMembers]);
+    return allUsers;
+  }, [allUsers]);
 
   const myMapsEmbedUrl = useMemo(
     () => getMymapsEmbedUrl(project?.mymaps_url, project?.mymaps_title ?? project?.name),
@@ -1584,31 +1584,37 @@ export default function ProjectDetailPage() {
                   <Users className="h-5 w-5" aria-hidden="true" />
                 </div>
                 <div className="flex-1 min-w-[240px]">
-                  <div className="text-sm font-semibold text-slate-800">Mitglied per E-Mail hinzufügen</div>
-                  <div className="text-xs text-slate-500">Schnelle, sichere Variante für den Live-Betrieb.</div>
+                  <div className="text-sm font-semibold text-slate-800">Mitglieder auswählen</div>
+                  <div className="text-xs text-slate-500">Nutzer per E-Mail aus der Liste wählen und gesammelt hinzufügen.</div>
                 </div>
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
-                <input
-                  ref={memberEmailInputRef}
-                  className="min-w-[240px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-                  placeholder="E-Mail des Users"
-                  value={memberEmail}
-                  onChange={(e) => handleMemberEmailChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") e.preventDefault();
-                  }}
-                />
+                <select
+                  className="min-h-[44px] min-w-[280px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  value={selectedMemberId}
+                  onChange={(e) => setSelectedMemberId(e.target.value)}
+                >
+                  <option value="">Mitglied auswählen…</option>
+                  {availableUserOptions.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.email}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  onClick={addMemberByEmail}
+                  onClick={addSelectedMember}
                   disabled={addingMember}
                 >
                   {addingMember ? "Füge hinzu…" : "Hinzufügen"}
                 </button>
               </div>
+              <div className="mt-1 text-xs text-slate-500">
+                {usersLoading ? "Lade Nutzer…" : availableUserOptions.length > 0 ? `${availableUserOptions.length} Nutzer verfügbar` : "Keine addierbaren Nutzer verfügbar."}
+              </div>
+              {usersErr && <div className="mt-2 text-xs text-rose-600">{usersErr}</div>}
               {memberErr && <div className="mt-2 text-xs text-red-600">{memberErr}</div>}
               {memberOk && <div className="mt-2 text-xs text-green-700">{memberOk}</div>}
             </>
@@ -1644,10 +1650,10 @@ export default function ProjectDetailPage() {
                         </div>
                         {!email ? <div className="truncate text-xs text-slate-500">{m.user_id}</div> : null}
                       </div>
-                      <div className="ml-3 flex items-center gap-2">
-                        {canManageOwnership && !isMemberOwner ? (
-                          <button
-                            type="button"
+                        <div className="ml-3 flex items-center gap-2">
+                          {canManageOwnership && !isMemberOwner ? (
+                            <button
+                              type="button"
                             className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
                             onClick={() => void promoteMemberToOwner(m.user_id)}
                             disabled={promotingOwnerId === m.user_id}
@@ -1655,17 +1661,28 @@ export default function ProjectDetailPage() {
                             {promotingOwnerId === m.user_id ? "Setze…" : "Zum Owner machen"}
                           </button>
                         ) : null}
-                        {canManageOwnership && isMemberOwner && m.user_id !== project?.created_by ? (
-                          <button
-                            type="button"
+                          {canManageOwnership && isMemberOwner && m.user_id !== project?.created_by ? (
+                            <button
+                              type="button"
                             className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
                             onClick={() => void demoteOwnerToMember(m.user_id)}
                             disabled={promotingOwnerId === m.user_id}
                           >
                             {promotingOwnerId === m.user_id ? "Entferne…" : "Owner entfernen"}
-                          </button>
-                        ) : null}
-                        <div className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold">
+                            </button>
+                          ) : null}
+                          {canManageOwnership ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 p-1.5 text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              title="Mitglied entfernen"
+                              onClick={() => void removeMemberFromProject(m)}
+                              disabled={removingMemberId === m.user_id || promotingOwnerId === m.user_id}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                          ) : null}
+                          <div className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold">
                           {isMemberOwner ? (
                             <>
                               <Crown className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
