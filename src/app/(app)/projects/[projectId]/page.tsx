@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/browser";
 type Project = {
   id: string;
   name: string;
+  created_by?: string | null;
   project_number?: string | null;
   client_name?: string | null;
   client_address?: string | null;
@@ -255,6 +256,7 @@ export default function ProjectDetailPage() {
         "id",
         "name",
         "owner_id",
+        "created_by",
         "project_number",
         "client_name",
         "client_address",
@@ -535,6 +537,8 @@ export default function ProjectDetailPage() {
       .select([
         "id",
         "name",
+        "owner_id",
+        "created_by",
         "project_number",
         "client_name",
         "client_address",
@@ -725,6 +729,8 @@ export default function ProjectDetailPage() {
         .select([
           "id",
           "name",
+          "owner_id",
+          "created_by",
           "project_number",
           "client_name",
           "client_address",
@@ -772,6 +778,8 @@ export default function ProjectDetailPage() {
       .select([
         "id",
         "name",
+        "owner_id",
+        "created_by",
         "project_number",
         "client_name",
         "client_address",
@@ -808,6 +816,7 @@ export default function ProjectDetailPage() {
   };
 
   const isOwner = role === "owner";
+  const isProjectCreator = Boolean(project?.created_by && me?.id && project.created_by === me.id);
   const sortedTeam = useMemo(() => {
     const list = [...teamMembers];
     list.sort((a, b) => {
@@ -988,6 +997,85 @@ export default function ProjectDetailPage() {
       await load();
     } finally {
       setAddingMember(false);
+    }
+  };
+
+  const demoteOwnerToMember = async (memberUserId: string) => {
+    if (!isProjectCreator) {
+      setMemberErr("Nur der Projektersteller darf Owner zurückstufen.");
+      setMemberOk(null);
+      return;
+    }
+    const creatorId = project?.created_by ?? null;
+    if (!memberUserId) {
+      setMemberErr("Ungültiges Mitglied.");
+      setMemberOk(null);
+      return;
+    }
+    if (creatorId && memberUserId === creatorId) {
+      setMemberErr("Der Projektersteller kann nicht zurückgestuft werden.");
+      setMemberOk(null);
+      return;
+    }
+
+    const ownerIds = teamMembers
+      .filter((m) => m.role_in_project === "owner")
+      .map((m) => m.user_id);
+    if (!ownerIds.includes(memberUserId)) {
+      setMemberOk("Dieses Mitglied ist bereits kein Owner.");
+      return;
+    }
+    if (ownerIds.length <= 1) {
+      setMemberErr("Mindestens ein Owner muss im Projekt bleiben.");
+      setMemberOk(null);
+      return;
+    }
+    if (!confirm("Owner-Recht für dieses Mitglied wirklich entfernen?")) return;
+
+    setPromotingOwnerId(memberUserId);
+    setMemberErr(null);
+    setMemberOk("Owner-Recht wird entfernt…");
+
+    try {
+      const { error: demoteErr } = await supabase
+        .from("project_members")
+        .update({ role_in_project: "member" })
+        .eq("project_id", projectId)
+        .eq("user_id", memberUserId);
+      if (demoteErr) {
+        setMemberErr("Zurückstufen fehlgeschlagen: " + demoteErr.message);
+        setMemberOk(null);
+        return;
+      }
+
+      // Keep projects.owner_id valid when the canonical owner was demoted.
+      if (project?.owner_id && project.owner_id === memberUserId) {
+        const fallbackOwnerId =
+          (creatorId && creatorId !== memberUserId ? creatorId : null) ??
+          ownerIds.find((id) => id !== memberUserId) ??
+          null;
+
+        if (fallbackOwnerId) {
+          const { error: ownerErr } = await supabase
+            .from("projects")
+            .update({ owner_id: fallbackOwnerId })
+            .eq("id", projectId);
+          if (ownerErr) {
+            setMemberErr("Owner-Feld im Projekt konnte nicht aktualisiert werden: " + ownerErr.message);
+            setMemberOk(null);
+            return;
+          }
+          setProject((prev) => (prev ? { ...prev, owner_id: fallbackOwnerId } : prev));
+        }
+      }
+
+      setTeamMembers((prev) =>
+        prev.map((m) => (m.user_id === memberUserId ? { ...m, role_in_project: "member" } : m))
+      );
+      setMemberOk("Owner-Recht entfernt ✅");
+      await load();
+    } finally {
+      setPromotingOwnerId(null);
     }
   };
 
@@ -1517,6 +1605,16 @@ export default function ProjectDetailPage() {
                             {promotingOwnerId === m.user_id ? "Setze…" : "Zum Owner machen"}
                           </button>
                         ) : null}
+                        {isProjectCreator && isMemberOwner && m.user_id !== project?.created_by ? (
+                          <button
+                            type="button"
+                            className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => void demoteOwnerToMember(m.user_id)}
+                            disabled={promotingOwnerId === m.user_id}
+                          >
+                            {promotingOwnerId === m.user_id ? "Entferne…" : "Owner entfernen"}
+                          </button>
+                        ) : null}
                         <div className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold">
                           {isMemberOwner ? (
                             <>
@@ -1965,9 +2063,15 @@ export default function ProjectDetailPage() {
       )}
 
       {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-3xl rounded-2xl bg-white p-5 shadow">
-            <div className="flex items-center justify-between gap-3">
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4"
+          onClick={() => setSettingsOpen(false)}
+        >
+          <div
+            className="mx-auto my-4 flex w-full max-w-3xl max-h-[calc(100vh-2rem)] flex-col rounded-2xl bg-white shadow"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
               <div>
                 <h3 className="text-lg font-semibold">Projekt‑Details</h3>
                 <p className="text-xs text-gray-500">Zusätzliche Angaben wie im Formular</p>
@@ -1981,6 +2085,7 @@ export default function ProjectDetailPage() {
               </button>
             </div>
 
+            <div className="overflow-y-auto px-5 pb-4">
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2 flex flex-wrap gap-2">
                 {[
@@ -2210,7 +2315,7 @@ export default function ProjectDetailPage() {
 
             {settingsError && <div className="mt-3 text-xs text-red-600">{settingsError}</div>}
 
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-200 bg-white pt-4">
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -2226,6 +2331,7 @@ export default function ProjectDetailPage() {
               >
                 {savingSettings ? "Speichert…" : "Speichern"}
               </button>
+            </div>
             </div>
           </div>
         </div>
