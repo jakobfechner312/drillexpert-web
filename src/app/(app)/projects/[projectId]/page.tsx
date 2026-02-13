@@ -1152,6 +1152,7 @@ export default function ProjectDetailPage() {
   };
 
   const typeBadge = (type: string | null | undefined) => {
+    if (type === "tagesbericht_rhein_main_link") return { label: "TB Rhein-Main-Link", cls: "bg-indigo-50 text-indigo-800 ring-indigo-200" };
     if (type === "schichtenverzeichnis") return { label: "Schichtenverzeichnis", cls: "bg-amber-50 text-amber-800 ring-amber-200" };
     return { label: "Tagesbericht", cls: "bg-sky-50 text-sky-800 ring-sky-200" };
   };
@@ -1229,6 +1230,12 @@ export default function ProjectDetailPage() {
               className="btn btn-secondary"
             >
               + Tagesbericht
+            </Link>
+            <Link
+              href={`/projects/${projectId}/reports/rhein-main-link/new`}
+              className="btn btn-secondary"
+            >
+              + TB Rhein-Main-Link
             </Link>
             <Link
               href={`/projects/${projectId}/reports/schichtenverzeichnis/step`}
@@ -1799,7 +1806,9 @@ export default function ProjectDetailPage() {
                             href={
                               item.report_type === "schichtenverzeichnis"
                                 ? `/api/pdf/schichtenverzeichnis/${item.id}`
-                                : `/api/pdf/tagesbericht/${item.id}`
+                                : item.report_type === "tagesbericht_rhein_main_link"
+                                  ? `/api/pdf/tagesbericht-rhein-main-link/${item.id}`
+                                  : `/api/pdf/tagesbericht/${item.id}`
                             }
                             target="_blank"
                             className="btn btn-secondary btn-xs"
@@ -1811,7 +1820,9 @@ export default function ProjectDetailPage() {
                               href={
                               item.report_type === "schichtenverzeichnis"
                                 ? `/projects/${projectId}/reports/schichtenverzeichnis/step/${item.id}/edit`
-                                : `/projects/${projectId}/reports/${item.id}/edit`
+                                : item.report_type === "tagesbericht_rhein_main_link"
+                                  ? `/projects/${projectId}/reports/rhein-main-link/${item.id}/edit`
+                                  : `/projects/${projectId}/reports/${item.id}/edit`
                               }
                               className="btn btn-secondary btn-xs"
                               title="Bearbeiten"

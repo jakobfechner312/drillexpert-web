@@ -12,6 +12,15 @@ export function createDefaultTagesbericht(): Tagesbericht {
     name: "",
     project: "",
     client: "",
+    firma: "",
+    berichtNr: "",
+    plz: "",
+    ort: "",
+    bohrungNr: "",
+    bohrrichtung: "",
+    winkelHorizontal: "",
+    winkelNord: "",
+    verrohrungAbGok: "",
 
     // Kopf / oben rechts
     vehicles: "",
@@ -156,6 +165,10 @@ export function createDefaultTagesbericht(): Tagesbericht {
     workCyclesSame: false,
     otherWork: "",
     remarks: "",
+    besucher: "",
+    sheVorfaelle: "",
+    toolBoxTalks: "",
+    taeglicheUeberpruefungBg: "",
 
     signatures: {
     clientOrManagerName: "",

@@ -138,6 +138,11 @@ type TagesberichtFormProps = {
   reportId?: string;
   mode?: "create" | "edit";
   stepper?: boolean;
+  pdfEndpointBase?: string;
+  draftStorageKey?: string;
+  draftBlockStorageKey?: string;
+  reportType?: "tagesbericht" | "tagesbericht_rhein_main_link";
+  formTitle?: string;
 };
 
 const GroupCard = ({
@@ -328,7 +333,17 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
 
   return r as Tagesbericht;
 }
-export default function TagesberichtForm({ projectId, reportId, mode = "create", stepper = true }: TagesberichtFormProps) {
+export default function TagesberichtForm({
+  projectId,
+  reportId,
+  mode = "create",
+  stepper = true,
+  pdfEndpointBase = "/api/pdf/tagesbericht",
+  draftStorageKey = "tagesbericht_draft",
+  draftBlockStorageKey = "tagesbericht_draft_block",
+  reportType = "tagesbericht",
+  formTitle,
+}: TagesberichtFormProps) {
   const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -347,7 +362,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   const weatherPrefillProjectRef = useRef<string | null>(null);
   const isAutoSaveBlocked = () => {
     try {
-      return localStorage.getItem("tagesbericht_draft_block") === "1";
+      return localStorage.getItem(draftBlockStorageKey) === "1";
     } catch {
       return false;
     }
@@ -375,6 +390,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projects, setProjects] = useState<{ id: string; name: string; project_number?: string | null }[]>([]);
   const [projectUiLoading, setProjectUiLoading] = useState(false);
+  const [prefillProjectId, setPrefillProjectId] = useState<string | null>(projectId ?? null);
 
   const loadMyProjects = useCallback(async () => {
     const supabase = createClient();
@@ -439,29 +455,55 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
     return result ?? null;
   }, [projectId, saveScope, localProjectId, loadMyProjects]);
 
-  const applyProjectPrefill = useCallback(async (targetProjectId: string, force = false) => {
+  const fetchProjectPrefill = useCallback(async (targetProjectId: string) => {
     const { data: proj, error } = await supabase
       .from("projects")
       .select("name,project_number,client_name")
       .eq("id", targetProjectId)
       .single();
 
-    if (error || !proj) return;
+    if (error || !proj) return null;
 
     const p = proj as {
       name?: string | null;
       project_number?: string | null;
       client_name?: string | null;
     };
+    return {
+      project: String(p.name ?? "").trim(),
+      aNr: String(p.project_number ?? "").trim(),
+      client: String(p.client_name ?? "").trim(),
+    };
+  }, [supabase]);
+
+  const applyProjectPrefill = useCallback(async (targetProjectId: string, force = false) => {
+    const prefill = await fetchProjectPrefill(targetProjectId);
+    if (!prefill) return;
 
     setReport((prev) => {
       const next = { ...prev };
-      if (force || !String(prev.project ?? "").trim()) next.project = String(p.name ?? "").trim();
-      if (force || !String(prev.aNr ?? "").trim()) next.aNr = String(p.project_number ?? "").trim();
-      if (force || !String(prev.client ?? "").trim()) next.client = String(p.client_name ?? "").trim();
+      if (force || !String(prev.project ?? "").trim()) next.project = prefill.project;
+      if (force || !String(prev.aNr ?? "").trim()) next.aNr = prefill.aNr;
+      if (force || !String(prev.client ?? "").trim()) next.client = prefill.client;
       return next;
     });
-  }, [supabase]);
+    setPrefillProjectId(targetProjectId);
+  }, [fetchProjectPrefill]);
+
+  const hydrateReportWithProject = useCallback(
+    async (source: Tagesbericht, targetProjectId: string | null) => {
+      if (!targetProjectId) return source;
+      const prefill = await fetchProjectPrefill(targetProjectId);
+      if (!prefill) return source;
+      return {
+        ...source,
+        project: prefill.project || source.project,
+        aNr: prefill.aNr || source.aNr,
+        client: prefill.client || source.client,
+      };
+    },
+    [fetchProjectPrefill]
+  );
 
   const createProject = useCallback(async () => {
     const supabase = createClient();
@@ -528,6 +570,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
     const base = createDefaultTagesbericht();
     const fallback: Tagesbericht = {
       ...base,
+      reportType,
       tableRows: Array.isArray(base.tableRows) && base.tableRows.length ? base.tableRows : [emptyTableRow()],
       workers: Array.isArray(base.workers) && base.workers.length ? base.workers : [emptyWorker()],
       umsetzenRows: Array.isArray(base.umsetzenRows) && base.umsetzenRows.length ? base.umsetzenRows : [emptyUmsetzenRow()],
@@ -538,16 +581,17 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
     if (typeof window === "undefined") return fallback;
 
     try {
-      const raw = localStorage.getItem("tagesbericht_draft");
+      const raw = localStorage.getItem(draftStorageKey);
       if (!raw) return fallback;
       const parsed = JSON.parse(raw);
       localDraftLoadedRef.current = true;
-      return normalizeTagesbericht(parsed);
+      return { ...normalizeTagesbericht(parsed), reportType };
     } catch (e) {
       console.warn("Local draft load failed", e);
       return fallback;
     }
   });
+  const reportTitleLabel = formTitle ?? (reportType === "tagesbericht_rhein_main_link" ? "Tagesbericht Rhein-Main-Link" : "Tagesbericht");
   const [customCycleDraft, setCustomCycleDraft] = useState<Record<string, string>>({});
   const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
   const [expandedLines, setExpandedLines] = useState<Record<string, boolean>>({});
@@ -561,20 +605,34 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   const [pegelSumpfEnabled, setPegelSumpfEnabled] = useState<Record<number, boolean>>({});
   const [pegelStahlEnabled, setPegelStahlEnabled] = useState<Record<number, boolean>>({});
   const [clientSigEnabled, setClientSigEnabled] = useState(false);
+  const isRml = reportType === "tagesbericht_rhein_main_link";
   const useStepper = stepper;
   const steps = useMemo(
-    () => [
-      { key: "stammdaten", title: "Stammdaten" },
-      { key: "fahrzeuge", title: "Fahrzeuge / Transport / Umsetzen" },
-      { key: "wetter", title: "Wetter + Ruhewasser" },
-      { key: "zeiten", title: "Arbeitszeit & Pausen" },
-      { key: "arbeitsakte", title: "Arbeitsakte / Stunden" },
-      { key: "tabelle", title: "Tabelle Bohrungen" },
-      { key: "verfuellung", title: "Verfüllung" },
-      { key: "pegel", title: "Pegelausbau" },
-      { key: "abschluss", title: "Bemerkungen & Unterschriften" },
-    ],
-    []
+    () =>
+      isRml
+        ? [
+            { key: "stammdaten", title: "Stammdaten" },
+            { key: "bohrdaten", title: "Bohrdaten" },
+            { key: "wetter", title: "Wetter + Ruhewasser" },
+            { key: "zeiten", title: "Arbeitszeit & Pausen" },
+            { key: "arbeitsakte", title: "Arbeitsakte / Stunden" },
+            { key: "tabelle", title: "Tabelle Bohrungen" },
+            { key: "verfuellung", title: "Verfüllung" },
+            { key: "pegel", title: "Pegelausbau" },
+            { key: "abschluss", title: "Bemerkungen & Unterschriften" },
+          ]
+        : [
+            { key: "stammdaten", title: "Stammdaten" },
+            { key: "fahrzeuge", title: "Fahrzeuge / Transport / Umsetzen" },
+            { key: "wetter", title: "Wetter + Ruhewasser" },
+            { key: "zeiten", title: "Arbeitszeit & Pausen" },
+            { key: "arbeitsakte", title: "Arbeitsakte / Stunden" },
+            { key: "tabelle", title: "Tabelle Bohrungen" },
+            { key: "verfuellung", title: "Verfüllung" },
+            { key: "pegel", title: "Pegelausbau" },
+            { key: "abschluss", title: "Bemerkungen & Unterschriften" },
+          ],
+    [isRml]
   );
   const [stepIndex, setStepIndex] = useState(0);
   const openNativePicker = (input: HTMLInputElement | null) => {
@@ -683,7 +741,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
       console.log("[EDIT LOAD] project", dbReport.project);
       console.log("[EDIT LOAD] vehicles", dbReport.vehicles);
       console.log("[EDIT LOAD] worker0 name", dbReport.workers?.[0]?.name);
-      setReport(normalizeTagesbericht(data.data));
+      setReport({ ...normalizeTagesbericht(data.data), reportType });
     };
 
     load();
@@ -709,7 +767,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
         return;
       }
 
-      setReport(normalizeTagesbericht(data.data));
+      setReport({ ...normalizeTagesbericht(data.data), reportType });
     };
 
     loadDraft();
@@ -843,19 +901,23 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
       const pid = effectiveProjectId ?? null;
 
       const currentReport = reportRef.current;
+      const reportForSave =
+        pid != null
+          ? await hydrateReportWithProject(currentReport, pid)
+          : currentReport;
       console.log("[Form] inserting draft…");
 
       const title =
-        currentReport?.project?.trim()
-          ? `Tagesbericht – ${currentReport.project} (${currentReport.date})`
-          : `Tagesbericht Entwurf (${currentReport?.date ?? ""})`;
+        reportForSave?.project?.trim()
+          ? `${reportTitleLabel} – ${reportForSave.project} (${reportForSave.date})`
+          : `${reportTitleLabel} Entwurf (${reportForSave?.date ?? ""})`;
 
       const { error } = await supabase.from("drafts").insert({
         user_id: user.id,
         project_id: pid,
-        report_type: "tagesbericht",
+        report_type: reportType,
         title,
-        data: currentReport,
+        data: reportForSave,
       });
 
       console.log("[Form] insert done", { error });
@@ -889,15 +951,23 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
         }
 
         const currentReport = reportRef.current;
+        const projectScoped = scope === "project" ? pid ?? null : null;
+        const reportForSave = await hydrateReportWithProject(currentReport, projectScoped);
+        if (projectScoped && prefillProjectId && prefillProjectId !== projectScoped) {
+          console.warn("[PROJECT PREFILL GUARD] prefill project changed before save", {
+            prefillProjectId,
+            projectScoped,
+          });
+        }
         console.log("[SAVE] currentReport.client", currentReport.client);
         console.log("[SAVE] currentReport.project", currentReport.project);
         console.log("[SAVE] currentReport.vehicles", currentReport.vehicles);
         console.log("[SAVE] currentReport.worker0 name", currentReport.workers?.[0]?.name);
 
         const title =
-          currentReport?.project?.trim()
-            ? `Tagesbericht – ${currentReport.project} (${currentReport.date})`
-            : `Tagesbericht (${currentReport?.date ?? ""})`;
+          reportForSave?.project?.trim()
+            ? `${reportTitleLabel} – ${reportForSave.project} (${reportForSave.date})`
+            : `${reportTitleLabel} (${reportForSave?.date ?? ""})`;
 
         // ===============================
 // EDIT → UPDATE
@@ -912,7 +982,7 @@ if (mode === "edit") {
     .from("reports")
     .update({
       title,
-      data: currentReport,
+      data: reportForSave,
       status: "final",
       project_id: pid,
     })
@@ -940,15 +1010,15 @@ if (mode === "edit") {
   const payload = {
     user_id: user.id,
     project_id: scope === "project" ? pid : null,
-    report_type: "tagesbericht",
+    report_type: reportType,
     title,
-    data: currentReport,
+    data: reportForSave,
     status: "final",
     idempotency_key: idempotencyKey,
   } satisfies {
     user_id: string;
     project_id: string | null;
-    report_type: "tagesbericht";
+    report_type: "tagesbericht" | "tagesbericht_rhein_main_link";
     title: string;
     data: Tagesbericht;
     status: "final";
@@ -987,8 +1057,12 @@ if (mode === "edit") {
     requireProjectId,
     ensureSaveTarget,
     effectiveProjectId,
+    hydrateReportWithProject,
     mode,
+    prefillProjectId,
     reportId,
+    reportTitleLabel,
+    reportType,
     saveScope,
   ]);
   // ========================================================
@@ -1166,7 +1240,7 @@ if (mode === "edit") {
 
   function saveDraftToLocalStorage() {
     try {
-      localStorage.setItem("tagesbericht_draft", JSON.stringify(reportRef.current));
+      localStorage.setItem(draftStorageKey, JSON.stringify(reportRef.current));
       alert("Entwurf lokal gespeichert ✅");
     } catch (e) {
       console.error("Local draft save failed", e);
@@ -1211,7 +1285,7 @@ if (mode === "edit") {
   async function downloadPdfToLocal() {
     try {
       const payload = buildPdfPayload(reportRef.current);
-      const res = await fetch("/api/pdf/tagesbericht", {
+      const res = await fetch(pdfEndpointBase, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1241,7 +1315,7 @@ if (mode === "edit") {
   useEffect(() => {
     if (mode === "edit" || hasDraftId) return;
     try {
-      localStorage.removeItem("tagesbericht_draft_block");
+      localStorage.removeItem(draftBlockStorageKey);
     } catch (e) {
       console.warn("Failed to clear draft block on mount", e);
     }
@@ -1250,10 +1324,10 @@ if (mode === "edit") {
       return;
     }
     try {
-      const raw = localStorage.getItem("tagesbericht_draft");
+      const raw = localStorage.getItem(draftStorageKey);
       if (!raw) return;
       const parsed = JSON.parse(raw);
-      setReport(normalizeTagesbericht(parsed));
+      setReport({ ...normalizeTagesbericht(parsed), reportType });
     } catch (e) {
       console.warn("Local draft load failed", e);
     } finally {
@@ -1266,7 +1340,7 @@ if (mode === "edit") {
     const saveNow = () => {
       if (isAutoSaveBlocked()) return;
       try {
-        localStorage.setItem("tagesbericht_draft", JSON.stringify(reportRef.current));
+        localStorage.setItem(draftStorageKey, JSON.stringify(reportRef.current));
       } catch (e) {
         console.warn("Local draft save on pagehide failed", e);
       }
@@ -1287,7 +1361,7 @@ if (mode === "edit") {
     return () => {
       if (isAutoSaveBlocked()) return;
       try {
-        localStorage.setItem("tagesbericht_draft", JSON.stringify(reportRef.current));
+        localStorage.setItem(draftStorageKey, JSON.stringify(reportRef.current));
       } catch (e) {
         console.warn("Local draft save on route change failed", e);
       }
@@ -1301,7 +1375,7 @@ if (mode === "edit") {
     autoSaveTimerRef.current = setTimeout(() => {
       if (isAutoSaveBlocked()) return;
       try {
-        localStorage.setItem("tagesbericht_draft", JSON.stringify(report));
+        localStorage.setItem(draftStorageKey, JSON.stringify(report));
       } catch (e) {
         console.warn("Local draft autosave failed", e);
       }
@@ -1316,7 +1390,7 @@ if (mode === "edit") {
       if (mode === "edit" || hasDraftId) return;
       if (isAutoSaveBlocked()) return;
       try {
-        localStorage.setItem("tagesbericht_draft", JSON.stringify(report));
+        localStorage.setItem(draftStorageKey, JSON.stringify(report));
       } catch (e) {
         console.warn("Local draft save on unmount failed", e);
       }
@@ -1327,11 +1401,77 @@ if (mode === "edit") {
     const base = createDefaultTagesbericht();
     const today = new Date().toISOString().slice(0, 10);
 
+    if (reportType === "tagesbericht_rhein_main_link") {
+      const rml: Tagesbericht = {
+        ...base,
+        reportType,
+        date: today,
+        project: "Baustelle Freiburg Nord",
+        firma: "Drillexpert",
+        client: "Stadt Freiburg",
+        device: "Bohrgerät BG-12",
+        plz: "79312",
+        ort: "Emmendingen",
+        bohrungNr: "B1",
+        berichtNr: "RML-001",
+        aNr: "DE-2026-001",
+        bohrrichtung: "vertikal",
+        winkelHorizontal: "0",
+        winkelNord: "0",
+        verrohrungAbGok: "0.0",
+        vehicles: "Bohrgerät, Kompressor",
+        workTimeRows: [{ name: "Max Mustermann", from: "07:00", to: "17:00" }],
+        breakRows: [{ name: "Max Mustermann", from: "12:00", to: "12:30" }],
+        weather: { conditions: ["trocken"], tempMaxC: 10, tempMinC: 2 },
+        ruhewasserVorArbeitsbeginnM: 1,
+        transportRows: [{ from: "Lager", to: "Baustelle", km: 12, time: "00:20" }],
+        workers: [
+          { ...emptyWorker(), name: "Max Mustermann" },
+          { ...emptyWorker(), name: "Leon Beispiel" },
+        ],
+        tableRows: [
+          { ...emptyTableRow(), verrohrtFlags: ["RB"], boNr: "B1", gebohrtVon: "0.0", gebohrtBis: "6", indivProbe: "A1", hindernisZeit: "" },
+          { ...emptyTableRow(), verrohrtFlags: ["EK"], boNr: "B2", gebohrtVon: "0.0", gebohrtBis: "7.5", indivProbe: "B2", hindernisZeit: "" },
+          { ...emptyTableRow(), verrohrtFlags: ["DK"], boNr: "B3", gebohrtVon: "0.0", gebohrtBis: "9", indivProbe: "A1", hindernisZeit: "" },
+          { ...emptyTableRow(), verrohrtFlags: ["S"], boNr: "B4", gebohrtVon: "0.0", gebohrtBis: "10.5", indivProbe: "B2", hindernisZeit: "" },
+          { ...emptyTableRow(), verrohrtFlags: ["RB"], boNr: "B5", gebohrtVon: "0.0", gebohrtBis: "12", indivProbe: "A1", hindernisZeit: "" },
+        ],
+        pegelAusbauRows: [
+          { ...emptyPegelAusbauRow(), filterVon: "4", filterBis: "8", pegelDm: "DN100", tonVon: "0.0", tonBis: "1.5" },
+          { ...emptyPegelAusbauRow(), filterVon: "5", filterBis: "9", pegelDm: "DN80", tonVon: "0.0", tonBis: "1.5" },
+          { ...emptyPegelAusbauRow(), filterVon: "6", filterBis: "10", pegelDm: "DN100", tonVon: "0.0", tonBis: "1.5" },
+        ],
+        besucher: "Bauleitung 10:30",
+        sheVorfaelle: "Keine",
+        toolBoxTalks: "Sicherheitsunterweisung 07:00",
+        taeglicheUeberpruefungBg: "Kontrolliert / i.O.",
+        signatures: {
+          clientOrManagerName: "Herr Bauleiter",
+          drillerName: "Max Mustermann",
+          clientOrManagerSigPng: "",
+          drillerSigPng: "",
+        },
+      };
+
+      setReport(rml);
+      return;
+    }
+
     const filled: Tagesbericht = {
       ...base,
+      reportType,
       date: today,
       project: "Baustelle Freiburg Nord",
       client: "Stadt Freiburg",
+      firma: "Drillexpert GmbH",
+      berichtNr: "RML-001",
+      plz: "79312",
+      ort: "Emmendingen",
+      bohrungNr: "B1",
+      bohrrichtung: "vertikal",
+      winkelHorizontal: "0",
+      winkelNord: "0",
+      verrohrungAbGok: "0.0",
       name: "Team A",
       vehicles: "LKW 7.5t, Bohrgerät X2, Sprinter",
       aNr: "A-2026-001",
@@ -1366,6 +1506,10 @@ if (mode === "edit") {
       workCyclesSame: false,
       otherWork: "Material angeliefert, Baustelle eingerichtet, Sondierung.",
       remarks: "Keine besonderen Vorkommnisse.",
+      besucher: "Bauleitung vor Ort 10:30",
+      sheVorfaelle: "Keine",
+      toolBoxTalks: "Sicherheitsunterweisung 07:00",
+      taeglicheUeberpruefungBg: "Durchgeführt und dokumentiert",
       tableRows: Array.from({ length: 5 }, (_, i) => ({
         ...emptyTableRow(),
         boNr: `B${i + 1}`,
@@ -1491,13 +1635,14 @@ if (mode === "edit") {
     const base = createDefaultTagesbericht();
     setReport({
       ...base,
+      reportType,
       tableRows: Array.isArray(base.tableRows) && base.tableRows.length ? base.tableRows : [emptyTableRow()],
       workers: Array.isArray(base.workers) && base.workers.length ? base.workers : [emptyWorker()],
       umsetzenRows: Array.isArray(base.umsetzenRows) && base.umsetzenRows.length ? base.umsetzenRows : [emptyUmsetzenRow()],
       pegelAusbauRows: Array.isArray(base.pegelAusbauRows) && base.pegelAusbauRows.length ? base.pegelAusbauRows : [emptyPegelAusbauRow()],
     });
     try {
-      localStorage.removeItem("tagesbericht_draft");
+      localStorage.removeItem(draftStorageKey);
     } catch {
       // ignore
     }
@@ -1514,7 +1659,7 @@ if (mode === "edit") {
     const previewWindow = window.open("", "_blank");
     try {
       const payload = buildPdfPayload(report);
-      const res = await fetch("/api/pdf/tagesbericht", {
+      const res = await fetch(pdfEndpointBase, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -2237,7 +2382,7 @@ if (mode === "edit") {
       
       {/* ======================= KOPF (PDF-LAYOUT) ======================= */}
       {showHeaderBlock ? (
-        <GroupCard title="Tagesbericht" badge="Kopfbereich">
+        <GroupCard title={reportTitleLabel} badge="Kopfbereich">
           {(!useStepper || showStep(0)) ? null : null}
           <div className={headerGridClass}>
             {showStep(0) ? (
@@ -2262,6 +2407,16 @@ if (mode === "edit") {
                       onChange={(e) => update("project", e.target.value)}
                     />
                   </label>
+                  {reportType === "tagesbericht_rhein_main_link" ? (
+                    <label className="space-y-1">
+                      <span className="text-sm text-slate-600">Firma</span>
+                      <input
+                        className="w-full rounded-xl border p-3"
+                        value={report.firma ?? ""}
+                        onChange={(e) => update("firma", e.target.value)}
+                      />
+                    </label>
+                  ) : null}
                   <label className="space-y-1">
                     <span className="text-sm text-slate-600">Auftraggeber</span>
                     <input
@@ -2270,27 +2425,92 @@ if (mode === "edit") {
                       onChange={(e) => update("client", e.target.value)}
                     />
                   </label>
+                  {reportType === "tagesbericht_rhein_main_link" ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">PLZ</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          value={report.plz ?? ""}
+                          onChange={(e) => update("plz", e.target.value)}
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Ort</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          value={report.ort ?? ""}
+                          onChange={(e) => update("ort", e.target.value)}
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Bericht-Nr.</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          value={report.berichtNr ?? ""}
+                          onChange={(e) => update("berichtNr", e.target.value)}
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Bohrung-Nr.</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          value={report.bohrungNr ?? ""}
+                          onChange={(e) => update("bohrungNr", e.target.value)}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                 </div>
               </SubGroup>
             ) : null}
 
             {(showStep(1) || showStep(3)) ? (
-              <SubGroup title="Fahrzeuge & Zeiten">
+              <SubGroup title={reportType === "tagesbericht_rhein_main_link" ? "Bohrdaten & Zeiten" : "Fahrzeuge & Zeiten"}>
                 {showStep(1) ? (
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <label className="space-y-1 md:col-span-3">
-                      <span className="text-sm text-slate-600">Fahrzeuge</span>
-                      <input className="w-full rounded-xl border p-3" value={report.vehicles ?? ""} onChange={(e) => update("vehicles", e.target.value)} />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-sm text-slate-600">A.Nr.</span>
-                      <input className="w-full rounded-xl border p-3" value={report.aNr ?? ""} onChange={(e) => update("aNr", e.target.value)} />
-                    </label>
-                    <label className="space-y-1 md:col-span-2">
-                      <span className="text-sm text-slate-600">Gerät</span>
-                      <input className="w-full rounded-xl border p-3" value={report.device ?? ""} onChange={(e) => update("device", e.target.value)} />
-                    </label>
-                  </div>
+                  reportType === "tagesbericht_rhein_main_link" ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Bohrgerät</span>
+                        <input className="w-full rounded-xl border p-3" value={report.device ?? ""} onChange={(e) => update("device", e.target.value)} />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Geräte</span>
+                        <input className="w-full rounded-xl border p-3" value={report.vehicles ?? ""} onChange={(e) => update("vehicles", e.target.value)} />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Bohrrichtung</span>
+                        <input className="w-full rounded-xl border p-3" value={report.bohrrichtung ?? ""} onChange={(e) => update("bohrrichtung", e.target.value)} />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Winkel horizontal</span>
+                        <input className="w-full rounded-xl border p-3" value={report.winkelHorizontal ?? ""} onChange={(e) => update("winkelHorizontal", e.target.value)} />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Winkel Nordrichtung</span>
+                        <input className="w-full rounded-xl border p-3" value={report.winkelNord ?? ""} onChange={(e) => update("winkelNord", e.target.value)} />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Verrohrung ab GOK</span>
+                        <input className="w-full rounded-xl border p-3" value={report.verrohrungAbGok ?? ""} onChange={(e) => update("verrohrungAbGok", e.target.value)} />
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <label className="space-y-1 md:col-span-3">
+                        <span className="text-sm text-slate-600">Fahrzeuge</span>
+                        <input className="w-full rounded-xl border p-3" value={report.vehicles ?? ""} onChange={(e) => update("vehicles", e.target.value)} />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">A.Nr.</span>
+                        <input className="w-full rounded-xl border p-3" value={report.aNr ?? ""} onChange={(e) => update("aNr", e.target.value)} />
+                      </label>
+                      <label className="space-y-1 md:col-span-2">
+                        <span className="text-sm text-slate-600">Gerät</span>
+                        <input className="w-full rounded-xl border p-3" value={report.device ?? ""} onChange={(e) => update("device", e.target.value)} />
+                      </label>
+                    </div>
+                  )
                 ) : null}
 
                 {showStep(3) ? (
@@ -2375,7 +2595,7 @@ if (mode === "edit") {
             ) : null}
 
             {(showStep(1) || showStep(2)) ? (
-              <SubGroup title="Wetter / Transport / Entfernung">
+              <SubGroup title={isRml ? "Wetter / Entfernung" : "Wetter / Transport / Entfernung"}>
                 {showStep(2) ? (
                   <div className="rounded-xl border border-slate-200/70 p-3 bg-slate-50/60">
                     <h3 className="font-medium">Wetter</h3>
@@ -2455,7 +2675,7 @@ if (mode === "edit") {
                   </div>
                 ) : null}
 
-                {showStep(1) ? (
+                {showStep(1) && !isRml ? (
                   <div className="rounded-xl border border-slate-200/70 p-3 bg-white">
                     <div className="flex items-center justify-between">
                       <h3 className="font-medium">Transport</h3>
@@ -3422,7 +3642,7 @@ if (mode === "edit") {
       </GroupCard> : null}
 
       {/* ======================= UMSETZEN ======================= */}
-      {showStep(1) ? <GroupCard title="Umsetzen" badge="Logistik">
+      {showStep(1) && !isRml ? <GroupCard title="Umsetzen" badge="Logistik">
 
         <RowActions
           addLabel="+ Umsetzen"
@@ -3665,27 +3885,68 @@ if (mode === "edit") {
       {showStep(8) ? <GroupCard title="Sonstige / Bemerkungen / Unterschriften" badge="Abschluss">
 
     {/* Texte */}
-    <div className="mt-4 grid gap-4 lg:grid-cols-2">
-      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-        <h3 className="font-medium">Sonstige Arbeiten</h3>
-        <textarea
-          className="mt-3 w-full rounded-xl border p-3 min-h-[160px]"
-          value={report.otherWork ?? ""}
-          onChange={(e) => update("otherWork", e.target.value)}
-          placeholder="Sonstige Arbeiten…"
-        />
+    {reportType === "tagesbericht_rhein_main_link" ? (
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <h3 className="font-medium">Besucher</h3>
+          <textarea
+            className="mt-3 w-full rounded-xl border p-3 min-h-[110px]"
+            value={report.besucher ?? ""}
+            onChange={(e) => update("besucher", e.target.value)}
+            placeholder="Besucher…"
+          />
+        </div>
+        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <h3 className="font-medium">SHE - Vorfälle</h3>
+          <textarea
+            className="mt-3 w-full rounded-xl border p-3 min-h-[110px]"
+            value={report.sheVorfaelle ?? ""}
+            onChange={(e) => update("sheVorfaelle", e.target.value)}
+            placeholder="SHE - Vorfälle…"
+          />
+        </div>
+        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <h3 className="font-medium">Tool-Box-Talks</h3>
+          <textarea
+            className="mt-3 w-full rounded-xl border p-3 min-h-[110px]"
+            value={report.toolBoxTalks ?? ""}
+            onChange={(e) => update("toolBoxTalks", e.target.value)}
+            placeholder="Tool-Box-Talks…"
+          />
+        </div>
+        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <h3 className="font-medium">Tägliche Überprüfung BG</h3>
+          <textarea
+            className="mt-3 w-full rounded-xl border p-3 min-h-[110px]"
+            value={report.taeglicheUeberpruefungBg ?? ""}
+            onChange={(e) => update("taeglicheUeberpruefungBg", e.target.value)}
+            placeholder="Tägliche Überprüfung BG…"
+          />
+        </div>
       </div>
+    ) : (
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <h3 className="font-medium">Sonstige Arbeiten</h3>
+          <textarea
+            className="mt-3 w-full rounded-xl border p-3 min-h-[160px]"
+            value={report.otherWork ?? ""}
+            onChange={(e) => update("otherWork", e.target.value)}
+            placeholder="Sonstige Arbeiten…"
+          />
+        </div>
 
-      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-        <h3 className="font-medium">Bemerkungen / Anordnungen / Besuche</h3>
-        <textarea
-          className="mt-3 w-full rounded-xl border p-3 min-h-[160px]"
-          value={report.remarks ?? ""}
-          onChange={(e) => update("remarks", e.target.value)}
-          placeholder="Bemerkungen, Anordnungen, Besuche…"
-        />
+        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <h3 className="font-medium">Bemerkungen / Anordnungen / Besuche</h3>
+          <textarea
+            className="mt-3 w-full rounded-xl border p-3 min-h-[160px]"
+            value={report.remarks ?? ""}
+            onChange={(e) => update("remarks", e.target.value)}
+            placeholder="Bemerkungen, Anordnungen, Besuche…"
+          />
+        </div>
       </div>
-    </div>
+    )}
 
   {/* UNTERSCHRIFTEN */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">

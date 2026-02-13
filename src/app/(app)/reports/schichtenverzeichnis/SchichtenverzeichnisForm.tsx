@@ -694,6 +694,7 @@ export default function SchichtenverzeichnisForm({
   const [saveScope, setSaveScope] = useState<SaveScope>(projectId ? "project" : "unset");
   const [localProjectId, setLocalProjectId] = useState<string | null>(null);
   const effectiveProjectId = projectId ?? localProjectId;
+  const [prefillProjectId, setPrefillProjectId] = useState<string | null>(projectId ?? null);
   const [initialProjectChoiceDone, setInitialProjectChoiceDone] = useState<boolean>(Boolean(projectId) || mode === "edit");
 
   const pendingSaveResolveRef = useRef<
@@ -1137,15 +1138,15 @@ export default function SchichtenverzeichnisForm({
   const supabase = useMemo(() => createClient(), []);
   const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
 
-  const applyProjectPrefill = useCallback(
-    async (targetProjectId: string, force = false) => {
+  const fetchProjectPrefill = useCallback(
+    async (targetProjectId: string) => {
       const { data: proj, error } = await supabase
         .from("projects")
         .select("name,project_number,start_date,end_date")
         .eq("id", targetProjectId)
         .single();
 
-      if (error || !proj) return;
+      if (error || !proj) return null;
 
       const p = proj as {
         name?: string | null;
@@ -1154,15 +1155,27 @@ export default function SchichtenverzeichnisForm({
         end_date?: string | null;
       };
 
-      const nextVon = fromDateInputValue(p.start_date ?? "");
-      const nextBis = fromDateInputValue(p.end_date ?? "");
+      return {
+        projekt_name: String(p.name ?? "").trim(),
+        auftrag_nr: String(p.project_number ?? "").trim(),
+        durchfuehrungszeit_von: fromDateInputValue(p.start_date ?? ""),
+        durchfuehrungszeit_bis: fromDateInputValue(p.end_date ?? ""),
+      };
+    },
+    [supabase]
+  );
+
+  const applyProjectPrefill = useCallback(
+    async (targetProjectId: string, force = false) => {
+      const prefill = await fetchProjectPrefill(targetProjectId);
+      if (!prefill) return;
 
       setData((prev) => {
         const next = { ...prev };
-        if (force || !String(prev.projekt_name ?? "").trim()) next.projekt_name = String(p.name ?? "").trim();
-        if (force || !String(prev.auftrag_nr ?? "").trim()) next.auftrag_nr = String(p.project_number ?? "").trim();
-        if (force || !String(prev.durchfuehrungszeit_von ?? "").trim()) next.durchfuehrungszeit_von = nextVon;
-        if (force || !String(prev.durchfuehrungszeit_bis ?? "").trim()) next.durchfuehrungszeit_bis = nextBis;
+        if (force || !String(prev.projekt_name ?? "").trim()) next.projekt_name = prefill.projekt_name;
+        if (force || !String(prev.auftrag_nr ?? "").trim()) next.auftrag_nr = prefill.auftrag_nr;
+        if (force || !String(prev.durchfuehrungszeit_von ?? "").trim()) next.durchfuehrungszeit_von = prefill.durchfuehrungszeit_von;
+        if (force || !String(prev.durchfuehrungszeit_bis ?? "").trim()) next.durchfuehrungszeit_bis = prefill.durchfuehrungszeit_bis;
 
         const hadManualRange = String(prev.durchfuehrungszeit ?? "").trim().length > 0;
         if (force || !hadManualRange) {
@@ -1175,8 +1188,31 @@ export default function SchichtenverzeichnisForm({
 
         return next;
       });
+
+      setPrefillProjectId(targetProjectId);
     },
-    [supabase]
+    [fetchProjectPrefill]
+  );
+
+  const hydrateDataWithProject = useCallback(
+    async (baseData: FormData, targetProjectId: string | null): Promise<FormData> => {
+      if (!targetProjectId) return baseData;
+      const prefill = await fetchProjectPrefill(targetProjectId);
+      if (!prefill) return baseData;
+
+      const next = { ...baseData };
+      next.projekt_name = prefill.projekt_name;
+      next.auftrag_nr = prefill.auftrag_nr;
+      next.durchfuehrungszeit_von = prefill.durchfuehrungszeit_von;
+      next.durchfuehrungszeit_bis = prefill.durchfuehrungszeit_bis;
+      next.durchfuehrungszeit = composeDurchfuehrungszeit(
+        prefill.durchfuehrungszeit_von,
+        prefill.durchfuehrungszeit_bis,
+        baseData.durchfuehrungszeit
+      );
+      return next;
+    },
+    [fetchProjectPrefill]
   );
 
   const loadMyProjects = useCallback(async () => {
@@ -1928,8 +1964,8 @@ export default function SchichtenverzeichnisForm({
     previewWindow.location.href = objectUrl;
   };
 
-  const buildReportDataPayload = () => ({
-    ...data,
+  const buildReportDataPayload = (baseData: FormData = data) => ({
+    ...baseData,
     probe_ki: effectiveProbeKi,
     ...legacyBohrungsFields,
     ...legacyFilterFields,

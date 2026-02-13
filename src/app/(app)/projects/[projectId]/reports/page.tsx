@@ -11,7 +11,7 @@ export default function ProjectReportsPage() {
 
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [typeFilter, setTypeFilter] = useState<"all" | "tagesbericht" | "schichtenverzeichnis">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "tagesbericht" | "tagesbericht_rhein_main_link" | "schichtenverzeichnis">("all");
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -40,6 +40,7 @@ export default function ProjectReportsPage() {
   }, [reports, typeFilter, query]);
 
   const typeBadge = (type: string | null | undefined) => {
+    if (type === "tagesbericht_rhein_main_link") return { label: "TB Rhein-Main-Link", cls: "bg-indigo-50 text-indigo-800 border-indigo-200" };
     if (type === "schichtenverzeichnis") return { label: "Schichtenverzeichnis", cls: "bg-amber-50 text-amber-800 border-amber-200" };
     return { label: "Tagesbericht", cls: "bg-sky-50 text-sky-800 border-sky-200" };
   };
@@ -70,6 +71,16 @@ export default function ProjectReportsPage() {
           onClick={() => setTypeFilter("tagesbericht")}
         >
           Tagesbericht
+        </button>
+        <button
+          type="button"
+          className={[
+            "rounded-full border px-3 py-1 text-xs",
+            typeFilter === "tagesbericht_rhein_main_link" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
+          ].join(" ")}
+          onClick={() => setTypeFilter("tagesbericht_rhein_main_link")}
+        >
+          TB Rhein-Main-Link
         </button>
         <button
           type="button"
@@ -114,7 +125,9 @@ export default function ProjectReportsPage() {
                     href={
                       r.report_type === "schichtenverzeichnis"
                         ? `/api/pdf/schichtenverzeichnis/${r.id}`
-                        : `/api/pdf/tagesbericht/${r.id}`
+                        : r.report_type === "tagesbericht_rhein_main_link"
+                          ? `/api/pdf/tagesbericht-rhein-main-link/${r.id}`
+                          : `/api/pdf/tagesbericht/${r.id}`
                     }
                     className="rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
                     target="_blank"

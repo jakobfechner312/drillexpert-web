@@ -714,6 +714,15 @@ export default function DashboardPage() {
                 </div>
               </Link>
               <Link
+                href="/reports/new/rhein-main-link"
+                className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow"
+              >
+                <div className="text-sm font-semibold text-indigo-900">TB Rhein-Main-Link</div>
+                <div className="mt-1 text-xs text-indigo-700">
+                  Bautagesbericht auf TB_RML Vorlage
+                </div>
+              </Link>
+              <Link
                 href="/reports/schichtenverzeichnis/step"
                 className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow"
               >

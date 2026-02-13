@@ -132,7 +132,7 @@ export type PegelAusbauRow = {
 };
 
 export type Tagesbericht = {
-  reportType: "tagesbericht";
+  reportType: "tagesbericht" | "tagesbericht_rhein_main_link";
   status: ReportStatus;
 
   date: string; // "YYYY-MM-DD"
@@ -141,6 +141,15 @@ export type Tagesbericht = {
   name: string;
   project: string;
   client: string;
+  firma: string;
+  berichtNr: string;
+  plz: string;
+  ort: string;
+  bohrungNr: string;
+  bohrrichtung: string;
+  winkelHorizontal: string;
+  winkelNord: string;
+  verrohrungAbGok: string;
 
   // falls du das später brauchst (Nummerierung)
 
@@ -189,6 +198,10 @@ export type Tagesbericht = {
   workCyclesSame?: boolean;
   otherWork: string;
   remarks: string;
+  besucher: string;
+  sheVorfaelle: string;
+  toolBoxTalks: string;
+  taeglicheUeberpruefungBg: string;
 
   signatures: {
   clientOrManagerName: string;

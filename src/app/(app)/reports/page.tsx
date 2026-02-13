@@ -19,7 +19,7 @@ export default function MyReportsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<"all" | "tagesbericht" | "schichtenverzeichnis">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "tagesbericht" | "tagesbericht_rhein_main_link" | "schichtenverzeichnis">("all");
   const [query, setQuery] = useState("");
 
   const deleteReport = async (reportId: string) => {
@@ -77,6 +77,13 @@ export default function MyReportsPage() {
   }, [reports, typeFilter, query]);
 
   const typeBadge = (type: string | null | undefined) => {
+    if (type === "tagesbericht_rhein_main_link") {
+      return {
+        label: "TB Rhein-Main-Link",
+        cls: "bg-indigo-50 text-indigo-800 border-indigo-200",
+        card: "from-indigo-50/70 via-white to-sky-50/40",
+      };
+    }
     if (type === "schichtenverzeichnis") {
       return {
         label: "Schichtenverzeichnis",
@@ -149,6 +156,16 @@ export default function MyReportsPage() {
                     type="button"
                     className={[
                       "rounded-full border px-3.5 py-2 text-xs font-medium",
+                      typeFilter === "tagesbericht_rhein_main_link" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
+                    ].join(" ")}
+                    onClick={() => setTypeFilter("tagesbericht_rhein_main_link")}
+                  >
+                    TB Rhein-Main-Link
+                  </button>
+                  <button
+                    type="button"
+                    className={[
+                      "rounded-full border px-3.5 py-2 text-xs font-medium",
                       typeFilter === "schichtenverzeichnis" ? "bg-slate-900 text-white border-slate-900" : "hover:bg-gray-50",
                     ].join(" ")}
                     onClick={() => setTypeFilter("schichtenverzeichnis")}
@@ -207,7 +224,9 @@ export default function MyReportsPage() {
                         href={
                           r.report_type === "schichtenverzeichnis"
                             ? `/api/pdf/schichtenverzeichnis/${r.id}`
-                            : `/api/pdf/tagesbericht/${r.id}`
+                            : r.report_type === "tagesbericht_rhein_main_link"
+                              ? `/api/pdf/tagesbericht-rhein-main-link/${r.id}`
+                              : `/api/pdf/tagesbericht/${r.id}`
                         }
                         target="_blank"
                         className="btn btn-secondary btn-xs w-full"
@@ -218,7 +237,9 @@ export default function MyReportsPage() {
                         href={
                           r.report_type === "schichtenverzeichnis"
                             ? `/reports/schichtenverzeichnis/step/${r.id}/edit`
-                            : `/reports/${r.id}/edit`
+                            : r.report_type === "tagesbericht_rhein_main_link"
+                              ? `/reports/rhein-main-link/${r.id}/edit`
+                              : `/reports/${r.id}/edit`
                         }
                         className="btn btn-secondary btn-xs w-full"
                         title="Bearbeiten"
@@ -264,6 +285,16 @@ export default function MyReportsPage() {
                 Tagesbericht
                 <div className="mt-1 text-xs text-gray-500">
                   Standard Tagesbericht (digital)
+                </div>
+              </Link>
+              <Link
+                href="/reports/new/rhein-main-link"
+                className="block rounded-xl border px-3 py-3 hover:bg-gray-50"
+                onClick={() => setCreateOpen(false)}
+              >
+                Tagesbericht Rhein-Main-Link
+                <div className="mt-1 text-xs text-gray-500">
+                  Bautagesbericht für TB_RML Vorlage
                 </div>
               </Link>
               <Link
