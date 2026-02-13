@@ -807,7 +807,7 @@ export default function ProjectDetailPage() {
     setMymapsSaving(false);
   };
 
-  const isOwner = role === "owner" || (project?.owner_id && me?.id && project.owner_id === me.id);
+  const isOwner = role === "owner";
   const sortedTeam = useMemo(() => {
     const list = [...teamMembers];
     list.sort((a, b) => {
@@ -936,6 +936,11 @@ export default function ProjectDetailPage() {
   };
 
   const addMemberByEmail = async () => {
+    if (!isOwner) {
+      setMemberErr("Nur der Projekt-Owner darf Berechtigungen ändern.");
+      setMemberOk(null);
+      return;
+    }
     const email = memberEmail.trim().toLowerCase();
     if (!email) {
       setMemberErr("Bitte E-Mail eingeben.");
@@ -987,14 +992,35 @@ export default function ProjectDetailPage() {
   };
 
   const promoteMemberToOwner = async (memberUserId: string) => {
-    if (!isOwner) return;
-    const currentOwnerId = project?.owner_id ?? null;
-    if (!memberUserId || memberUserId === currentOwnerId) return;
+    if (!isOwner) {
+      setMemberErr("Nur der aktuelle Owner darf einen neuen Owner ernennen.");
+      return;
+    }
+    const { data: ownerCheck, error: ownerCheckErr } = await supabase
+      .from("project_members")
+      .select("role_in_project")
+      .eq("project_id", projectId)
+      .eq("user_id", me?.id ?? "")
+      .maybeSingle();
+    if (ownerCheckErr || ownerCheck?.role_in_project !== "owner") {
+      setMemberErr("Du bist in diesem Projekt kein Owner.");
+      setMemberOk(null);
+      return;
+    }
+    if (!memberUserId) {
+      setMemberErr("Ungültiges Mitglied.");
+      return;
+    }
+    const alreadyOwner = teamMembers.some((m) => m.user_id === memberUserId && m.role_in_project === "owner");
+    if (alreadyOwner) {
+      setMemberOk("Dieses Mitglied ist bereits Owner.");
+      return;
+    }
     if (!confirm("Dieses Mitglied wirklich zum Owner machen?")) return;
 
     setPromotingOwnerId(memberUserId);
     setMemberErr(null);
-    setMemberOk(null);
+    setMemberOk("Owner wird aktualisiert…");
 
     try {
       const { error: promoteErr } = await supabase
@@ -1005,33 +1031,22 @@ export default function ProjectDetailPage() {
 
       if (promoteErr) {
         setMemberErr("Owner setzen fehlgeschlagen: " + promoteErr.message);
+        setMemberOk(null);
         return;
       }
 
-      if (currentOwnerId && currentOwnerId !== memberUserId) {
-        const { error: demoteErr } = await supabase
-          .from("project_members")
-          .update({ role_in_project: "member" })
-          .eq("project_id", projectId)
-          .eq("user_id", currentOwnerId);
-        if (demoteErr) {
-          setMemberErr("Alter Owner konnte nicht zurückgestuft werden: " + demoteErr.message);
-          return;
-        }
-      }
-
-      const { error: ownerErr } = await supabase
-        .from("projects")
-        .update({ owner_id: memberUserId })
-        .eq("id", projectId);
-
-      if (ownerErr) {
-        setMemberErr("Projekt-Owner konnte nicht aktualisiert werden: " + ownerErr.message);
-        return;
-      }
-
-      setMemberOk("Neuer Owner gesetzt ✅");
+      // Immediate UI update so badge changes instantly.
+      setTeamMembers((prev) =>
+        prev.map((m) => {
+          if (m.user_id === memberUserId) return { ...m, role_in_project: "owner" };
+          return m;
+        })
+      );
+      setMemberOk("Owner hinzugefügt ✅");
       await load();
+    } catch (e) {
+      setMemberErr(e instanceof Error ? e.message : "Owner-Wechsel fehlgeschlagen.");
+      setMemberOk(null);
     } finally {
       setPromotingOwnerId(null);
     }
@@ -1053,6 +1068,11 @@ export default function ProjectDetailPage() {
   };
 
   const addSelectedMembers = async () => {
+    if (!isOwner) {
+      setMemberErr("Nur der Projekt-Owner darf Berechtigungen ändern.");
+      setMemberOk(null);
+      return;
+    }
     const ids = Array.from(new Set(selectedMemberIds.filter(Boolean)));
     if (!ids.length) {
       setMemberErr("Bitte mindestens ein Mitglied auswählen.");
