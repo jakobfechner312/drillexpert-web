@@ -58,6 +58,38 @@ const extractGoogleMapsUrlFromHtml = (html: string): string | null => {
   return null;
 };
 
+const userAgents = [
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile Safari/604.1",
+];
+
+const followShortLink = async (startUrl: string): Promise<string> => {
+  for (const ua of userAgents) {
+    let current = startUrl;
+    for (let i = 0; i < 8; i++) {
+      try {
+        const hop = await fetch(current, {
+          redirect: "manual",
+          cache: "no-store",
+          headers: {
+            "user-agent": ua,
+            "accept-language": "de-DE,de;q=0.9,en;q=0.8",
+          },
+        });
+        const location = hop.headers.get("location");
+        if (!location) break;
+        current = new URL(location, current).toString();
+        if (/google\./i.test(new URL(current).hostname) && /\/maps\//i.test(new URL(current).pathname)) {
+          return current;
+        }
+      } catch {
+        break;
+      }
+    }
+  }
+  return startUrl;
+};
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const url = searchParams.get("url");
@@ -67,27 +99,12 @@ export async function GET(request: Request) {
   }
 
   try {
-    let current = url;
-    for (let i = 0; i < 6; i++) {
-      const hop = await fetch(current, {
-        redirect: "manual",
-        cache: "no-store",
-        headers: {
-          "user-agent":
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile Safari/604.1",
-          "accept-language": "de-DE,de;q=0.9,en;q=0.8",
-        },
-      });
-      const location = hop.headers.get("location");
-      if (!location) break;
-      current = new URL(location, current).toString();
-      if (extractCoordsFromText(current)) break;
-    }
+    const current = await followShortLink(url);
 
     const res = await fetch(current, {
       headers: {
         "user-agent":
-          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile Safari/604.1",
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "accept-language": "de-DE,de;q=0.9,en;q=0.8",
       },
       redirect: "follow",
@@ -112,12 +129,7 @@ export async function GET(request: Request) {
       .replace(/\s*-\s*Google Maps\s*$/i, "")
       .trim();
     const safeTitle = title || "Google Maps";
-    const needsQueryFallback = /(^|\.)maps\.app\.goo\.gl$/i.test(new URL(resolvedUrl).hostname);
-    const resolvedForSave = needsQueryFallback
-      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(safeTitle)}`
-      : resolvedUrl;
-
-    return NextResponse.json({ title: safeTitle, resolvedUrl: resolvedForSave });
+    return NextResponse.json({ title: safeTitle, resolvedUrl });
   } catch {
     return NextResponse.json({ title: "Google Maps", resolvedUrl: url });
   }

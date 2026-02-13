@@ -529,8 +529,10 @@ export default function ProjectDetailPage() {
       status: settingsForm.status || null,
       start_date: settingsForm.start_date || null,
       end_date: settingsForm.end_date || null,
-      mymaps_url: settingsForm.mymaps_url?.trim() || null,
-      mymaps_title: settingsForm.mymaps_title?.trim() || null,
+      // IMPORTANT:
+      // Keep maps link/title out of the generic settings save.
+      // They are managed only by the dedicated maps save/remove actions
+      // to prevent stale overwrites from parallel owner sessions.
     };
 
     const { data, error } = await supabase
@@ -752,46 +754,44 @@ export default function ProjectDetailPage() {
     setMymapsSaving(true);
     try {
       const resolved = await resolveMymapsMeta(url);
-      let normalizedResolvedUrl = resolved.resolvedUrl;
-      try {
-        const host = new URL(normalizedResolvedUrl).hostname.toLowerCase();
-        const isShortHost =
-          host === "maps.app.goo.gl" ||
-          host.endsWith(".maps.app.goo.gl") ||
-          host === "goo.gl" ||
-          host.endsWith(".goo.gl");
-        if (isShortHost) {
-          const q = encodeURIComponent(resolved.title || "Google Maps");
-          normalizedResolvedUrl = `https://www.google.com/maps/search/?api=1&query=${q}`;
-        }
-      } catch {
-        // keep resolved url as-is
-      }
-      const { error } = await supabase
+      const urlToSave = url;
+      const { data: savedRow, error } = await supabase
         .from("projects")
-        .update({ mymaps_url: normalizedResolvedUrl, mymaps_title: resolved.title })
-        .eq("id", projectId);
+        .update({ mymaps_url: urlToSave, mymaps_title: resolved.title })
+        .eq("id", projectId)
+        .select("id,mymaps_url,mymaps_title")
+        .maybeSingle();
 
       if (error) {
         setMymapsError("Speichern fehlgeschlagen: " + error.message);
         return;
       }
+      if (!savedRow?.id) {
+        setMymapsError(
+          "Speichern blockiert: Keine Schreibrechte auf dieses Projekt (RLS). Bitte Owner-Rechte/Policy prüfen."
+        );
+        return;
+      }
+
+      const savedUrl = savedRow.mymaps_url?.trim() || urlToSave;
+      const savedTitle = savedRow.mymaps_title?.trim() || resolved.title;
+
       setProject((prev) =>
         prev
           ? {
               ...prev,
-              mymaps_url: normalizedResolvedUrl,
-              mymaps_title: resolved.title,
+              mymaps_url: savedUrl,
+              mymaps_title: savedTitle,
             }
           : prev
       );
       setSettingsForm((prev) => ({
         ...prev,
-        mymaps_url: normalizedResolvedUrl,
-        mymaps_title: resolved.title,
+        mymaps_url: savedUrl,
+        mymaps_title: savedTitle,
       }));
-      setMymapsUrlInput(normalizedResolvedUrl);
-      await loadProjectWeather(normalizedResolvedUrl, resolved.title);
+      setMymapsUrlInput(savedUrl);
+      await loadProjectWeather(savedUrl, savedTitle);
     } catch (err) {
       setMymapsError(err instanceof Error ? err.message : "Link konnte nicht gespeichert werden.");
     } finally {
@@ -802,13 +802,22 @@ export default function ProjectDetailPage() {
   const removeMymapsLink = async () => {
     setMymapsError(null);
     setMymapsSaving(true);
-    const { error } = await supabase
+    const { data: removedRow, error } = await supabase
       .from("projects")
       .update({ mymaps_url: null, mymaps_title: null })
-      .eq("id", projectId);
+      .eq("id", projectId)
+      .select("id")
+      .maybeSingle();
 
     if (error) {
       setMymapsError("Entfernen fehlgeschlagen: " + error.message);
+      setMymapsSaving(false);
+      return;
+    }
+    if (!removedRow?.id) {
+      setMymapsError(
+        "Entfernen blockiert: Keine Schreibrechte auf dieses Projekt (RLS). Bitte Owner-Rechte/Policy prüfen."
+      );
       setMymapsSaving(false);
       return;
     }
@@ -848,7 +857,7 @@ export default function ProjectDetailPage() {
         host.endsWith(".goo.gl");
       if (isShortHost) {
         const q = encodeURIComponent((title || "Google Maps").trim());
-        return `https://www.google.com/maps/search/?api=1&query=${q}&output=embed`;
+        return `https://www.google.com/maps?q=${q}&output=embed`;
       }
       if (!/google\./i.test(host)) return rawUrl;
       if (/\/maps\/embed/i.test(url.pathname)) return url.toString();
@@ -1821,11 +1830,19 @@ export default function ProjectDetailPage() {
                     <div className="truncate text-sm font-semibold text-slate-800">
                       {project.mymaps_title || "Google My Maps"}
                     </div>
-                    {isOwner ? (
-                      <div className="mt-1 truncate text-xs text-slate-500">
-                        {project.mymaps_url}
-                      </div>
-                    ) : null}
+                    <div className="mt-1 truncate text-xs text-slate-500">
+                      {project.mymaps_url}
+                    </div>
+                  </div>
+                  <div className="ml-2 shrink-0">
+                    <a
+                      href={project.mymaps_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary btn-xs"
+                    >
+                      In Google Maps öffnen
+                    </a>
                   </div>
                 </div>
                 <div className="overflow-hidden rounded-lg border border-slate-200/70">

@@ -3761,6 +3761,17 @@ export default function SchichtenverzeichnisForm({
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-4">
         <div className="flex flex-wrap items-center gap-2">
+          {effectiveProjectId ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                window.location.href = `/projects/${effectiveProjectId}`;
+              }}
+            >
+              Zu Projekt
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn btn-danger"
