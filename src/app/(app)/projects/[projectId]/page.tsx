@@ -445,7 +445,7 @@ export default function ProjectDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  const loadProjectWeather = async (mymapsUrl: string) => {
+  const loadProjectWeather = async (mymapsUrl: string, placeHint?: string | null) => {
     if (!mymapsUrl) {
       setProjectWeather(null);
       setWeatherError(null);
@@ -454,7 +454,10 @@ export default function ProjectDetailPage() {
     setWeatherLoading(true);
     setWeatherError(null);
     try {
-      const res = await fetch(`/api/project-weather?mymapsUrl=${encodeURIComponent(mymapsUrl)}`, {
+      const params = new URLSearchParams({ mymapsUrl });
+      const hint = String(placeHint ?? "").trim();
+      if (hint) params.set("placeHint", hint);
+      const res = await fetch(`/api/project-weather?${params.toString()}`, {
         cache: "no-store",
       });
       const payload = (await res.json()) as ProjectWeather | { error?: string };
@@ -483,9 +486,9 @@ export default function ProjectDetailPage() {
       setWeatherError(null);
       return;
     }
-    loadProjectWeather(url);
+    loadProjectWeather(url, project?.mymaps_title ?? project?.name ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.mymaps_url]);
+  }, [project?.mymaps_url, project?.mymaps_title, project?.name]);
 
   const saveSettings = async () => {
     const name = settingsForm.name?.trim();
@@ -694,21 +697,48 @@ export default function ProjectDetailPage() {
   const isProbablyUrl = (value: string) => {
     try {
       const u = new URL(value);
-      return u.protocol === "http:" || u.protocol === "https:";
+      if (!(u.protocol === "http:" || u.protocol === "https:")) return false;
+      const host = u.hostname.toLowerCase();
+      const isGoogleMapsHost =
+        /google\./i.test(host) ||
+        host.includes("maps.google") ||
+        host === "maps.app.goo.gl" ||
+        host.endsWith(".maps.app.goo.gl") ||
+        host === "goo.gl" ||
+        host.endsWith(".goo.gl");
+      const looksLikeMapsPath =
+        /\/maps\//i.test(u.pathname) ||
+        host.includes("maps.app.goo.gl") ||
+        host === "goo.gl" ||
+        host.endsWith(".goo.gl");
+      return isGoogleMapsHost && looksLikeMapsPath;
     } catch {
       return false;
     }
   };
 
-  const resolveMymapsTitle = async (url: string) => {
+  const normalizeMapsInput = (value: string) => {
+    const raw = value.trim();
+    if (!raw) return "";
+    const iframeSrc =
+      raw.match(/<iframe[^>]+src=["']([^"']+)["']/i)?.[1] ??
+      raw.match(/src=["']([^"']+)["']/i)?.[1] ??
+      null;
+    return (iframeSrc ?? raw).replace(/&amp;/g, "&").trim();
+  };
+
+  const resolveMymapsMeta = async (url: string) => {
     const res = await fetch(`/api/mymaps/resolve?url=${encodeURIComponent(url)}`);
     if (!res.ok) throw new Error("Titel konnte nicht geladen werden.");
-    const data = (await res.json()) as { title?: string | null };
-    return data.title?.trim() || "Google My Maps";
+    const data = (await res.json()) as { title?: string | null; resolvedUrl?: string | null };
+    return {
+      title: data.title?.trim() || "Google Maps",
+      resolvedUrl: data.resolvedUrl?.trim() || url,
+    };
   };
 
   const saveMymapsLink = async () => {
-    const url = mymapsUrlInput.trim();
+    const url = normalizeMapsInput(mymapsUrlInput);
     if (!url) {
       setMymapsError("Bitte einen Link einfügen.");
       return;
@@ -721,46 +751,47 @@ export default function ProjectDetailPage() {
     setMymapsError(null);
     setMymapsSaving(true);
     try {
-      const title = await resolveMymapsTitle(url);
-      const { data, error } = await supabase
+      const resolved = await resolveMymapsMeta(url);
+      let normalizedResolvedUrl = resolved.resolvedUrl;
+      try {
+        const host = new URL(normalizedResolvedUrl).hostname.toLowerCase();
+        const isShortHost =
+          host === "maps.app.goo.gl" ||
+          host.endsWith(".maps.app.goo.gl") ||
+          host === "goo.gl" ||
+          host.endsWith(".goo.gl");
+        if (isShortHost) {
+          const q = encodeURIComponent(resolved.title || "Google Maps");
+          normalizedResolvedUrl = `https://www.google.com/maps/search/?api=1&query=${q}`;
+        }
+      } catch {
+        // keep resolved url as-is
+      }
+      const { error } = await supabase
         .from("projects")
-        .update({ mymaps_url: url, mymaps_title: title })
-        .eq("id", projectId)
-        .select([
-          "id",
-          "name",
-          "owner_id",
-          "created_by",
-          "project_number",
-          "client_name",
-          "client_address",
-          "client_contact",
-          "client_phone",
-          "client_mobile",
-          "client_email",
-          "stakeholder_name",
-          "stakeholder_contact",
-          "stakeholder_phone",
-          "stakeholder_mobile",
-          "stakeholder_email",
-          "program_borehole",
-          "program_surface",
-          "program_ramming",
-          "status",
-          "start_date",
-          "end_date",
-          "notes",
-          "mymaps_url",
-          "mymaps_title",
-        ].join(","))
-        .single();
+        .update({ mymaps_url: normalizedResolvedUrl, mymaps_title: resolved.title })
+        .eq("id", projectId);
 
       if (error) {
         setMymapsError("Speichern fehlgeschlagen: " + error.message);
         return;
       }
-
-      setProject(data as unknown as Project);
+      setProject((prev) =>
+        prev
+          ? {
+              ...prev,
+              mymaps_url: normalizedResolvedUrl,
+              mymaps_title: resolved.title,
+            }
+          : prev
+      );
+      setSettingsForm((prev) => ({
+        ...prev,
+        mymaps_url: normalizedResolvedUrl,
+        mymaps_title: resolved.title,
+      }));
+      setMymapsUrlInput(normalizedResolvedUrl);
+      await loadProjectWeather(normalizedResolvedUrl, resolved.title);
     } catch (err) {
       setMymapsError(err instanceof Error ? err.message : "Link konnte nicht gespeichert werden.");
     } finally {
@@ -771,52 +802,27 @@ export default function ProjectDetailPage() {
   const removeMymapsLink = async () => {
     setMymapsError(null);
     setMymapsSaving(true);
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("projects")
       .update({ mymaps_url: null, mymaps_title: null })
-      .eq("id", projectId)
-      .select([
-        "id",
-        "name",
-        "owner_id",
-        "created_by",
-        "project_number",
-        "client_name",
-        "client_address",
-        "client_contact",
-        "client_phone",
-        "client_mobile",
-        "client_email",
-        "stakeholder_name",
-        "stakeholder_contact",
-        "stakeholder_phone",
-        "stakeholder_mobile",
-        "stakeholder_email",
-        "program_borehole",
-        "program_surface",
-        "program_ramming",
-        "status",
-        "start_date",
-        "end_date",
-        "notes",
-        "mymaps_url",
-        "mymaps_title",
-      ].join(","))
-      .single();
+      .eq("id", projectId);
 
     if (error) {
       setMymapsError("Entfernen fehlgeschlagen: " + error.message);
       setMymapsSaving(false);
       return;
     }
-
-    setProject(data as unknown as Project);
+    setProject((prev) => (prev ? { ...prev, mymaps_url: null, mymaps_title: null } : prev));
+    setSettingsForm((prev) => ({ ...prev, mymaps_url: "", mymaps_title: "" }));
+    setProjectWeather(null);
+    setWeatherError(null);
     setMymapsUrlInput("");
     setMymapsSaving(false);
   };
 
   const isOwner = role === "owner";
   const isProjectCreator = Boolean(project?.created_by && me?.id && project.created_by === me.id);
+  const canManageOwnership = isOwner && isProjectCreator;
   const sortedTeam = useMemo(() => {
     const list = [...teamMembers];
     list.sort((a, b) => {
@@ -830,15 +836,49 @@ export default function ProjectDetailPage() {
     return list;
   }, [teamMembers]);
 
-  const getMymapsEmbedUrl = (rawUrl?: string | null) => {
+  const getMymapsEmbedUrl = (rawUrl?: string | null, title?: string | null) => {
     if (!rawUrl) return "";
     try {
       const url = new URL(rawUrl);
-      if (!/google\./i.test(url.hostname)) return rawUrl;
-      if (!/\/maps\/d\//i.test(url.pathname)) return rawUrl;
-      if (url.pathname.includes("/embed")) return url.toString();
-      url.pathname = url.pathname.replace("/edit", "/embed");
-      return url.toString();
+      const host = url.hostname.toLowerCase();
+      const isShortHost =
+        host === "maps.app.goo.gl" ||
+        host.endsWith(".maps.app.goo.gl") ||
+        host === "goo.gl" ||
+        host.endsWith(".goo.gl");
+      if (isShortHost) {
+        const q = encodeURIComponent((title || "Google Maps").trim());
+        return `https://www.google.com/maps/search/?api=1&query=${q}&output=embed`;
+      }
+      if (!/google\./i.test(host)) return rawUrl;
+      if (/\/maps\/embed/i.test(url.pathname)) return url.toString();
+      if (/\/maps\/d\//i.test(url.pathname)) {
+        if (url.pathname.includes("/embed")) return url.toString();
+        url.pathname = url.pathname.replace("/edit", "/embed");
+        return url.toString();
+      }
+
+      const full = `${url.pathname}${url.search}${url.hash}`;
+      const atMatch = full.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i);
+      if (atMatch) {
+        return `https://www.google.com/maps?q=${atMatch[1]},${atMatch[2]}&z=15&output=embed`;
+      }
+
+      const dMatch = full.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/i);
+      if (dMatch) {
+        return `https://www.google.com/maps?q=${dMatch[1]},${dMatch[2]}&z=15&output=embed`;
+      }
+      const d2Match = full.match(/!2d(-?\d+(?:\.\d+)?)!3d(-?\d+(?:\.\d+)?)/i);
+      if (d2Match) {
+        return `https://www.google.com/maps?q=${d2Match[2]},${d2Match[1]}&z=15&output=embed`;
+      }
+
+      const q = url.searchParams.get("q") ?? url.searchParams.get("query") ?? url.searchParams.get("ll");
+      if (q) {
+        return `https://www.google.com/maps?q=${encodeURIComponent(q)}&z=15&output=embed`;
+      }
+
+      return `${url.origin}${url.pathname}${url.search}${url.hash}${url.search ? "&" : "?"}output=embed`;
     } catch {
       return rawUrl;
     }
@@ -1001,8 +1041,8 @@ export default function ProjectDetailPage() {
   };
 
   const demoteOwnerToMember = async (memberUserId: string) => {
-    if (!isProjectCreator) {
-      setMemberErr("Nur der Projektersteller darf Owner zurückstufen.");
+    if (!canManageOwnership) {
+      setMemberErr("Nur der Projektersteller als aktueller Owner darf Owner zurückstufen.");
       setMemberOk(null);
       return;
     }
@@ -1080,8 +1120,8 @@ export default function ProjectDetailPage() {
   };
 
   const promoteMemberToOwner = async (memberUserId: string) => {
-    if (!isOwner) {
-      setMemberErr("Nur der aktuelle Owner darf einen neuen Owner ernennen.");
+    if (!canManageOwnership) {
+      setMemberErr("Nur der Projektersteller als aktueller Owner darf Owner ernennen.");
       return;
     }
     const { data: ownerCheck, error: ownerCheckErr } = await supabase
@@ -1202,7 +1242,10 @@ export default function ProjectDetailPage() {
     });
   }, [allUsers, teamMembers]);
 
-  const myMapsEmbedUrl = useMemo(() => getMymapsEmbedUrl(project?.mymaps_url), [project?.mymaps_url]);
+  const myMapsEmbedUrl = useMemo(
+    () => getMymapsEmbedUrl(project?.mymaps_url, project?.mymaps_title ?? project?.name),
+    [project?.mymaps_url, project?.mymaps_title, project?.name]
+  );
 
   const weatherCodeLabel = (code: number | null | undefined) => {
     if (code == null) return "Unbekannt";
@@ -1344,7 +1387,7 @@ export default function ProjectDetailPage() {
     return merged.filter((item) => {
       if (filter === "all") return true;
       if (filter === "reports") return item.type === "report";
-      if (filter === "files") return item.type === "file";
+      if (filter === "files") return item.type === "file" && !item.isImage;
       if (filter === "images") return item.type === "file" && item.isImage;
       return true;
     });
@@ -1595,7 +1638,7 @@ export default function ProjectDetailPage() {
                         {!email ? <div className="truncate text-xs text-slate-500">{m.user_id}</div> : null}
                       </div>
                       <div className="ml-3 flex items-center gap-2">
-                        {isOwner && !isMemberOwner ? (
+                        {canManageOwnership && !isMemberOwner ? (
                           <button
                             type="button"
                             className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1605,7 +1648,7 @@ export default function ProjectDetailPage() {
                             {promotingOwnerId === m.user_id ? "Setze…" : "Zum Owner machen"}
                           </button>
                         ) : null}
-                        {isProjectCreator && isMemberOwner && m.user_id !== project?.created_by ? (
+                        {canManageOwnership && isMemberOwner && m.user_id !== project?.created_by ? (
                           <button
                             type="button"
                             className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1649,8 +1692,8 @@ export default function ProjectDetailPage() {
                     <MapPin className="h-5 w-5" aria-hidden="true" />
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-slate-800">My Maps Link</div>
-                    <div className="text-xs text-slate-500">Link einfügen oder hier hineinziehen.</div>
+                    <div className="text-sm font-semibold text-slate-800">Google Maps / My Maps Link</div>
+                    <div className="text-xs text-slate-500">Öffentlichen Link einfügen oder hier hineinziehen.</div>
                   </div>
                 </div>
 
@@ -1660,14 +1703,14 @@ export default function ProjectDetailPage() {
                   onDrop={(e) => {
                     e.preventDefault();
                     const text = e.dataTransfer.getData("text");
-                    if (text) setMymapsUrlInput(text.trim());
+                    if (text) setMymapsUrlInput(normalizeMapsInput(text));
                   }}
                 >
                   <div className="flex items-center gap-2">
                     <Link2 className="h-4 w-4" aria-hidden="true" />
                     <input
                       className="w-full border-0 bg-transparent p-0 text-sm text-slate-700 outline-none"
-                      placeholder="https://www.google.com/maps/d/..."
+                      placeholder="https://www.google.com/maps/... oder https://www.google.com/maps/d/..."
                       value={mymapsUrlInput}
                       onChange={(e) => setMymapsUrlInput(e.target.value)}
                     />
@@ -1720,7 +1763,12 @@ export default function ProjectDetailPage() {
                   <button
                     type="button"
                     className="btn btn-secondary btn-xs"
-                    onClick={() => loadProjectWeather(project.mymaps_url ?? "")}
+                    onClick={() =>
+                      loadProjectWeather(
+                        project.mymaps_url ?? "",
+                        project?.mymaps_title ?? project?.name ?? null
+                      )
+                    }
                     disabled={weatherLoading}
                   >
                     <span className="inline-flex items-center gap-1">

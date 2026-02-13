@@ -25,6 +25,12 @@ const readNumber = (value: string | null | undefined): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const unescapeHtmlLike = (value: string) =>
+  value
+    .replace(/\\\//g, "/")
+    .replace(/\\u0026/gi, "&")
+    .replace(/&amp;/gi, "&");
+
 const parseCoordPair = (value: string | null): { lat: number; lon: number } | null => {
   if (!value) return null;
   const cleaned = decodeURIComponent(value).trim();
@@ -40,6 +46,13 @@ const parseCoordPair = (value: string | null): { lat: number; lon: number } | nu
 const extractCoordsFromMapsUrl = (rawUrl: string): { lat: number; lon: number } | null => {
   try {
     const url = new URL(rawUrl);
+    const combinedRaw = `${url.pathname}${url.search}${url.hash}`;
+    let combined = combinedRaw;
+    try {
+      combined = decodeURIComponent(combinedRaw);
+    } catch {
+      combined = combinedRaw;
+    }
 
     const directKeys = ["ll", "center", "q"];
     for (const key of directKeys) {
@@ -47,7 +60,13 @@ const extractCoordsFromMapsUrl = (rawUrl: string): { lat: number; lon: number } 
       if (pair) return pair;
     }
 
-    const atMatch = `${url.pathname}${url.search}${url.hash}`.match(
+    const pb = url.searchParams.get("pb");
+    if (pb) {
+      const pbPair = extractCoordsFromText(pb);
+      if (pbPair) return pbPair;
+    }
+
+    const atMatch = combined.match(
       /@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/i
     );
     if (atMatch) {
@@ -56,12 +75,21 @@ const extractCoordsFromMapsUrl = (rawUrl: string): { lat: number; lon: number } 
       if (lat != null && lon != null) return { lat, lon };
     }
 
-    const dMatch = `${url.pathname}${url.search}${url.hash}`.match(
+    const dMatch = combined.match(
       /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/i
     );
     if (dMatch) {
       const lat = readNumber(dMatch[1]);
       const lon = readNumber(dMatch[2]);
+      if (lat != null && lon != null) return { lat, lon };
+    }
+
+    const d2Match = combined.match(
+      /!2d(-?\d+(?:\.\d+)?)!3d(-?\d+(?:\.\d+)?)/i
+    );
+    if (d2Match) {
+      const lon = readNumber(d2Match[1]);
+      const lat = readNumber(d2Match[2]);
       if (lat != null && lon != null) return { lat, lon };
     }
 
@@ -71,17 +99,176 @@ const extractCoordsFromMapsUrl = (rawUrl: string): { lat: number; lon: number } 
   }
 };
 
+const extractCoordsFromText = (text: string): { lat: number; lon: number } | null => {
+  const normalized = unescapeHtmlLike(text);
+  const patterns: RegExp[] = [
+    /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i,
+    /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/i,
+    /!2d(-?\d+(?:\.\d+)?)!3d(-?\d+(?:\.\d+)?)/i,
+  ];
+  for (const pattern of patterns) {
+    const m = normalized.match(pattern);
+    if (!m) continue;
+    if (pattern.source.startsWith("!2d")) {
+      const lon = readNumber(m[1]);
+      const lat = readNumber(m[2]);
+      if (lat != null && lon != null) return { lat, lon };
+      continue;
+    }
+    const lat = readNumber(m[1]);
+    const lon = readNumber(m[2]);
+    if (lat != null && lon != null) return { lat, lon };
+  }
+  return null;
+};
+
+const extractGoogleMapsUrlFromHtml = (html: string): string | null => {
+  const normalized = unescapeHtmlLike(html);
+  const patterns = [
+    /<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i,
+    /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i,
+    /https?:\/\/(?:www\.)?google\.[^"'\s<]+\/maps\/[^"'\s<]+/i,
+    /https?:\\\/\\\/(?:www\.)?google\.[^"'\s<]+\\\/maps\\\/[^"'\s<]+/i,
+  ];
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    const value = match?.[1] ?? match?.[0] ?? "";
+    if (value) return unescapeHtmlLike(value);
+  }
+  return null;
+};
+
+const resolveMapsUrl = async (rawUrl: string): Promise<string> => {
+  try {
+    const parsed = new URL(rawUrl);
+    const isShortGoogleMaps =
+      /(^|\.)maps\.app\.goo\.gl$/i.test(parsed.hostname) || /(^|\.)goo\.gl$/i.test(parsed.hostname);
+    if (!isShortGoogleMaps) return rawUrl;
+
+    // Prefer manual redirect hops to capture target map URL before consent/app pages.
+    let current = rawUrl;
+    for (let i = 0; i < 6; i++) {
+      const res = await fetch(current, {
+        redirect: "manual",
+        cache: "no-store",
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile Safari/604.1",
+          "accept-language": "de-DE,de;q=0.9,en;q=0.8",
+        },
+      });
+      const location = res.headers.get("location");
+      if (!location) break;
+      current = new URL(location, current).toString();
+      const maybeCoords = extractCoordsFromMapsUrl(current);
+      if (maybeCoords) return current;
+      if (!/(google\.|goo\.gl)/i.test(new URL(current).hostname)) break;
+    }
+
+    const res = await fetch(current, {
+      redirect: "follow",
+      cache: "no-store",
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile Safari/604.1",
+        "accept-language": "de-DE,de;q=0.9,en;q=0.8",
+      },
+    });
+
+    if (!res.ok) return current;
+    const text = await res.text();
+    const extracted = extractGoogleMapsUrlFromHtml(text);
+    return extracted || res.url || current;
+  } catch {
+    return rawUrl;
+  }
+};
+
+const extractPlaceTitleFromHtml = (html: string): string | null => {
+  const normalized = unescapeHtmlLike(html);
+  const titleMatch = normalized.match(/<title>(.*?)<\/title>/i);
+  const ogTitle = normalized.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ?? "";
+  const raw = (ogTitle || titleMatch?.[1] || "").trim();
+  const cleaned = raw
+    .replace(/\s+/g, " ")
+    .replace(/\s*-\s*Google Maps\s*$/i, "")
+    .replace(/\s*-\s*Google My Maps\s*$/i, "")
+    .trim();
+  if (!cleaned || /^google maps$/i.test(cleaned)) return null;
+  return cleaned;
+};
+
+const geocodePlaceName = async (name: string): Promise<{ lat: number; lon: number } | null> => {
+  try {
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.searchParams.set("q", name);
+    url.searchParams.set("format", "jsonv2");
+    url.searchParams.set("limit", "1");
+    url.searchParams.set("addressdetails", "1");
+    const res = await fetch(url.toString(), {
+      cache: "no-store",
+      headers: {
+        "user-agent": "Drillexpert/1.0 (project weather)",
+        "accept-language": "de-DE,de;q=0.9,en;q=0.8",
+      },
+    });
+    if (!res.ok) return null;
+    const rows = (await res.json()) as Array<{ lat?: string; lon?: string }>;
+    const first = rows?.[0];
+    const lat = readNumber(first?.lat);
+    const lon = readNumber(first?.lon);
+    if (lat == null || lon == null) return null;
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    return { lat, lon };
+  } catch {
+    return null;
+  }
+};
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const mymapsUrl = searchParams.get("mymapsUrl")?.trim() ?? "";
+  const placeHint = searchParams.get("placeHint")?.trim() ?? "";
   if (!mymapsUrl) {
     return NextResponse.json({ error: "Missing mymapsUrl" }, { status: 400 });
   }
 
-  const coords = extractCoordsFromMapsUrl(mymapsUrl);
+  const resolvedUrl = await resolveMapsUrl(mymapsUrl);
+  let coords = extractCoordsFromMapsUrl(resolvedUrl);
+  if (!coords) {
+    try {
+      const res = await fetch(resolvedUrl, {
+        cache: "no-store",
+        headers: {
+          "user-agent": "Mozilla/5.0 (compatible; DrillexpertBot/1.0)",
+          "accept-language": "de-DE,de;q=0.9,en;q=0.8",
+        },
+      });
+      if (res.ok) {
+        const html = await res.text();
+        coords = extractCoordsFromText(html);
+        if (coords) {
+          // got coordinates directly from shared-page payload
+        }
+        const place = extractPlaceTitleFromHtml(html);
+        if (!coords && place) {
+          const geocoded = await geocodePlaceName(place);
+          if (geocoded) coords = geocoded;
+        }
+      }
+    } catch {
+      // ignore; handled by final error below
+    }
+  }
+  if (!coords) {
+    if (placeHint) {
+      const hinted = await geocodePlaceName(placeHint);
+      if (hinted) coords = hinted;
+    }
+  }
   if (!coords) {
     return NextResponse.json(
-      { error: "Keine Koordinaten im MyMaps-Link gefunden." },
+      { error: "Keine Koordinaten im Google-Maps-Link gefunden." },
       { status: 422 }
     );
   }
