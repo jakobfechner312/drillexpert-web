@@ -181,6 +181,7 @@ export default function ProjectDetailPage() {
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [memberErr, setMemberErr] = useState<string | null>(null);
   const [memberOk, setMemberOk] = useState<string | null>(null);
+  const [promotingOwnerId, setPromotingOwnerId] = useState<string | null>(null);
   const [mymapsUrlInput, setMymapsUrlInput] = useState("");
   const [mymapsSaving, setMymapsSaving] = useState(false);
   const [mymapsError, setMymapsError] = useState<string | null>(null);
@@ -985,6 +986,57 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const promoteMemberToOwner = async (memberUserId: string) => {
+    if (!isOwner) return;
+    const currentOwnerId = project?.owner_id ?? null;
+    if (!memberUserId || memberUserId === currentOwnerId) return;
+    if (!confirm("Dieses Mitglied wirklich zum Owner machen?")) return;
+
+    setPromotingOwnerId(memberUserId);
+    setMemberErr(null);
+    setMemberOk(null);
+
+    try {
+      const { error: promoteErr } = await supabase
+        .from("project_members")
+        .update({ role_in_project: "owner" })
+        .eq("project_id", projectId)
+        .eq("user_id", memberUserId);
+
+      if (promoteErr) {
+        setMemberErr("Owner setzen fehlgeschlagen: " + promoteErr.message);
+        return;
+      }
+
+      if (currentOwnerId && currentOwnerId !== memberUserId) {
+        const { error: demoteErr } = await supabase
+          .from("project_members")
+          .update({ role_in_project: "member" })
+          .eq("project_id", projectId)
+          .eq("user_id", currentOwnerId);
+        if (demoteErr) {
+          setMemberErr("Alter Owner konnte nicht zurückgestuft werden: " + demoteErr.message);
+          return;
+        }
+      }
+
+      const { error: ownerErr } = await supabase
+        .from("projects")
+        .update({ owner_id: memberUserId })
+        .eq("id", projectId);
+
+      if (ownerErr) {
+        setMemberErr("Projekt-Owner konnte nicht aktualisiert werden: " + ownerErr.message);
+        return;
+      }
+
+      setMemberOk("Neuer Owner gesetzt ✅");
+      await load();
+    } finally {
+      setPromotingOwnerId(null);
+    }
+  };
+
   const handleMemberEmailChange = (value: string) => {
     setMemberEmail(value);
 
@@ -1434,18 +1486,30 @@ export default function ProjectDetailPage() {
                         </div>
                         {!email ? <div className="truncate text-xs text-slate-500">{m.user_id}</div> : null}
                       </div>
-                      <div className="ml-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold">
-                        {isMemberOwner ? (
-                          <>
-                            <Crown className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
-                            Owner
-                          </>
-                        ) : (
-                          <>
-                            <User className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-                            Mitglied
-                          </>
-                        )}
+                      <div className="ml-3 flex items-center gap-2">
+                        {isOwner && !isMemberOwner ? (
+                          <button
+                            type="button"
+                            className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => void promoteMemberToOwner(m.user_id)}
+                            disabled={promotingOwnerId === m.user_id}
+                          >
+                            {promotingOwnerId === m.user_id ? "Setze…" : "Zum Owner machen"}
+                          </button>
+                        ) : null}
+                        <div className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold">
+                          {isMemberOwner ? (
+                            <>
+                              <Crown className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
+                              Owner
+                            </>
+                          ) : (
+                            <>
+                              <User className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                              Mitglied
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
