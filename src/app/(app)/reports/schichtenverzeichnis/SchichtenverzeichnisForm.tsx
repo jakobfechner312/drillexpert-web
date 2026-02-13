@@ -162,6 +162,7 @@ const buildRowFieldOffsetState = (
 };
 
 const MAX_FESTSTELLUNGEN_CHARS = 200;
+const MAX_GROUNDWATER_ROWS = 50;
 const BOHR_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
 const SCHLITZWEITE_OPTIONS = ["0,5", "0,75", "1", "1,5", "1,75", "2", "2,25", "2,5"] as const;
 const KIES_KOERNUNG_OPTIONS = ["0,0-0,71", "0,71-1,25", "1,0-2,0", "2,0-3,15", "3,15-5,6", "5,6-8", "8,0-16"] as const;
@@ -2158,21 +2159,21 @@ export default function SchichtenverzeichnisForm({
 
     const maxRows = Math.max(1, Number(schichtRowsPerPage1) + Number(schichtRowsPerPage2));
     setGrundwasserRows(
-      Array.from({ length: 4 }, (_, idx) => ({
+      Array.from({ length: 12 }, (_, idx) => ({
         ...emptyGroundwaterRow(),
         grundwasserstand:
-          idx === 0
+          idx % 4 === 0
             ? "angebohrt"
-            : idx === 1
+            : idx % 4 === 1
               ? "eingespiegelt"
-              : idx === 2
+              : idx % 4 === 2
                 ? "Bohrende"
                 : "im Pegel",
-        datum: "30.01.2026",
-        uhrzeit: "10:30",
-        tiefe_m: (3.2 + idx * 0.4).toFixed(2),
-        uk_verrohrg: (8.5 + idx * 0.5).toFixed(2),
-        bohrtiefe: (42 + idx * 1.5).toFixed(2),
+        datum: `30.01.2026`,
+        uhrzeit: `${String(7 + Math.floor(idx / 2)).padStart(2, "0")}:${idx % 2 === 0 ? "15" : "45"}`,
+        tiefe_m: (3.2 + idx * 0.35).toFixed(2),
+        uk_verrohrg: (8.5 + idx * 0.45).toFixed(2),
+        bohrtiefe: (42 + idx * 1.2).toFixed(2),
       }))
     );
 
@@ -2620,17 +2621,17 @@ export default function SchichtenverzeichnisForm({
         ? renderStep(
             <Card title="Grundwasserstände">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-xs text-slate-500">Max. 4 Zeilen</div>
+          <div className="text-xs text-slate-500">Max. {MAX_GROUNDWATER_ROWS} Zeilen</div>
           <div className="flex gap-2">
             <button
               type="button"
               className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
               onClick={() =>
                 setGrundwasserRows((prev) =>
-                  prev.length >= 4 ? prev : [...prev, emptyGroundwaterRow()]
+                  prev.length >= MAX_GROUNDWATER_ROWS ? prev : [...prev, emptyGroundwaterRow()]
                 )
               }
-              disabled={grundwasserRows.length >= 4}
+              disabled={grundwasserRows.length >= MAX_GROUNDWATER_ROWS}
             >
               + Zeile
             </button>

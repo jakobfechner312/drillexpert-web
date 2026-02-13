@@ -22,6 +22,7 @@ type GenerateOptions = {
 
 const TEMPLATE_PAGE_1 = "SV_1.pdf" as const;
 const TEMPLATE_PAGE_N = "SV_2.pdf" as const;
+const TEMPLATE_PAGE_GW = "GW_SV.pdf" as const;
 const HIDDEN_FIELD_KEYS = new Set([
   "hoehe_ansatzpunkt",
   "bezogen_auf",
@@ -91,6 +92,14 @@ export async function generateSchichtenverzeichnisPdf(
 ): Promise<Uint8Array> {
   const outDoc = await PDFDocument.create();
   const font = await outDoc.embedFont(StandardFonts.Helvetica);
+  const groundwaterRows = Array.isArray(data?.grundwasser_rows)
+    ? data.grundwasser_rows
+    : [];
+  const gwRowsPerPage = Math.max(1, Number(data?.grundwasser_rows_per_sheet) || 32);
+  const gwOverflowRows = groundwaterRows.length > 4 ? groundwaterRows.slice(4) : [];
+  const requiredGwCopies = gwOverflowRows.length > 0
+    ? Math.ceil(gwOverflowRows.length / gwRowsPerPage)
+    : 0;
 
   const hasRowData = Array.isArray(data?.schicht_rows) && data.schicht_rows.length > 0;
   const fallbackRowsPerPage = Math.max(1, Number(data?.schicht_rows_per_page) || 4);
@@ -130,6 +139,20 @@ export async function generateSchichtenverzeichnisPdf(
     const [pageN] = await outDoc.copyPages(pageNSrcDoc, [0]);
     outDoc.addPage(pageN);
     pages.push(pageN);
+  }
+  const gwPageStartIndex = pages.length;
+  if (requiredGwCopies > 0) {
+    const gwTemplatePath = getTemplatePath(TEMPLATE_PAGE_GW);
+    if (!fs.existsSync(gwTemplatePath)) {
+      throw new Error(`Template PDF not found at: ${gwTemplatePath}`);
+    }
+    const gwTemplateBytes = fs.readFileSync(gwTemplatePath);
+    const gwSrcDoc = await PDFDocument.load(gwTemplateBytes);
+    for (let i = 0; i < requiredGwCopies; i += 1) {
+      const [gwPage] = await outDoc.copyPages(gwSrcDoc, [0]);
+      outDoc.addPage(gwPage);
+      pages.push(gwPage);
+    }
   }
 
   if (options.debugGrid) {
@@ -971,9 +994,6 @@ export async function generateSchichtenverzeichnisPdf(
     });
   }
 
-  const groundwaterRows = Array.isArray(data?.grundwasser_rows)
-    ? data.grundwasser_rows
-    : [];
   if (groundwaterRows.length) {
     const gwFields = {
       grundwasserstand: "grundwasserstand",
@@ -1001,6 +1021,70 @@ export async function generateSchichtenverzeichnisPdf(
         );
       });
     });
+
+    if (gwOverflowRows.length > 0) {
+      const headerFields = {
+        auftrag_nr: "auftrag_nr",
+        bohrmeister: "bohrmeister",
+        blatt_nr: "blatt_nr",
+        projekt_name: "projekt_name",
+        bohrung_nr: "bohrung_nr",
+        durchfuehrungszeit: "durchfuehrungszeit",
+      } as const;
+      const gwFieldPositions = {
+        auftrag_nr: { x: 242, y: 790, size: 9 },
+        bohrmeister: { x: 372, y: 790, size: 8 },
+        blatt_nr: { x: 488, y: 790, size: 10 },
+        projekt_name: { x: 225, y: 761, size: 10 },
+        bohrung_nr: { x: 210, y: 725, size: 10 },
+        durchfuehrungszeit: { x: 135, y: 695, size: 10 },
+        grundwasserstand: { x: 60, y: 640, size: 9 },
+        datum: { x: 150, y: 640, size: 9 },
+        uhrzeit: { x: 235, y: 640, size: 9 },
+        tiefe_m: { x: 315, y: 640, size: 9 },
+        uk_verrohrg: { x: 390, y: 640, size: 9 },
+        bohrtiefe: { x: 466, y: 640, size: 9 },
+      } as const;
+      const gwHeaderMaxChars: Record<keyof typeof headerFields, number> = {
+        auftrag_nr: 11,
+        bohrmeister: 11,
+        blatt_nr: 3,
+        projekt_name: 30,
+        bohrung_nr: 12,
+        durchfuehrungszeit: 28,
+      };
+      const gwRowHOverflow = (Number(data?.grundwasser_row_height) || 16) + 4;
+
+      // Write header values on every GW supplement page.
+      for (let pageOffset = 0; pageOffset < requiredGwCopies; pageOffset += 1) {
+        const pageIndex = gwPageStartIndex + pageOffset;
+        Object.entries(headerFields).forEach(([rowKey, fieldKey]) => {
+          const value =
+            data?.[fieldKey] ??
+            (SV_FIELDS.find((f) => f.key === fieldKey)?.aliases ?? [])
+              .map((k) => data?.[k])
+              .find((v) => v != null);
+          const text = value == null ? "" : String(value);
+          if (!text) return;
+          const pos = gwFieldPositions[rowKey as keyof typeof headerFields];
+          const maxChars = gwHeaderMaxChars[rowKey as keyof typeof headerFields];
+          drawText(pageIndex, String(text).slice(0, maxChars), pos.x, pos.y, pos.size);
+        });
+      }
+
+      gwOverflowRows.forEach((row: any, overflowIdx: number) => {
+        const pageOffset = Math.floor(overflowIdx / gwRowsPerPage);
+        const localIdx = overflowIdx % gwRowsPerPage;
+        const pageIndex = gwPageStartIndex + pageOffset;
+        Object.entries(gwFields).forEach(([rowKey, fieldKey]) => {
+          const value = row?.[rowKey];
+          const text = value == null ? "" : String(value);
+          if (!text) return;
+          const pos = gwFieldPositions[rowKey as keyof typeof gwFields];
+          drawText(pageIndex, text, pos.x, pos.y - localIdx * gwRowHOverflow + 25, pos.size);
+        });
+      });
+    }
   }
 
   return outDoc.save();
