@@ -255,7 +255,7 @@ export async function POST(req: Request) {
 
     const TCOL = {
       from: 590,
-      to: 685,
+      to: 675,
       km: 750,
       time: 792,
     };
@@ -557,7 +557,7 @@ export async function POST(req: Request) {
 
     const UCOL = {
       von: 60,
-      auf: 135,
+      auf: 127,
       entfernungM: 255,
       zeit: 293,
       begruendung: 375,

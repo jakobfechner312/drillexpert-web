@@ -83,6 +83,14 @@ function emptyTransportRow() {
 
 const emptyTimeRow = () => ({ name: "", from: "", to: "" });
 
+type GeoSuggestion = {
+  id: string;
+  label: string;
+  shortLabel: string;
+  lat: number;
+  lon: number;
+};
+
 function emptyPegelAusbauRow(): PegelAusbauRow {
   return {
     bohrNr: "",
@@ -305,6 +313,15 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
   if (Array.isArray(r.transportRows)) {
     r.transportRows = r.transportRows.map((row) => ({
       ...row,
+      km: (() => {
+        const rawKm = (row as { km?: unknown } | undefined)?.km;
+        if (typeof rawKm === "number" && Number.isFinite(rawKm)) return rawKm;
+        if (typeof rawKm === "string") {
+          const parsed = Number(rawKm.trim().replace(",", "."));
+          return Number.isFinite(parsed) ? parsed : null;
+        }
+        return null;
+      })(),
       time: toHHMM(row?.time ?? ""),
     }));
   }
@@ -338,6 +355,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
 
   type SaveScope = "unset" | "project" | "my_reports";
   const [saveScope, setSaveScope] = useState<SaveScope>(projectId ? "project" : "unset");
+  const [initialProjectChoiceDone, setInitialProjectChoiceDone] = useState<boolean>(Boolean(projectId) || mode === "edit");
   const pendingSaveResolveRef = useRef<
   ((v: { scope: SaveScope; projectId: string | null } | undefined) => void) | null
   >(null);  
@@ -355,7 +373,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
 
   // Modal/UI state bleibt wie gehabt
   const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projects, setProjects] = useState<{ id: string; name: string; project_number?: string | null }[]>([]);
   const [projectUiLoading, setProjectUiLoading] = useState(false);
 
   const loadMyProjects = useCallback(async () => {
@@ -373,7 +391,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
 
     const { data, error } = await supabase
       .from("projects")
-      .select("id,name")
+      .select("id,name,project_number")
       .order("created_at", { ascending: false });
 
     setProjectUiLoading(false);
@@ -384,7 +402,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
       return;
     }
 
-    setProjects((data ?? []) as { id: string; name: string }[]);
+    setProjects((data ?? []) as { id: string; name: string; project_number?: string | null }[]);
   }, []);
 
   const requireProjectId = useCallback(async (): Promise<string | null> => {
@@ -401,7 +419,15 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
       return { scope: "project", projectId };
     }
 
-    // Outside a project route: always ask again where to save.
+    // If user already chose at form start, keep that target.
+    if (saveScope === "project" && localProjectId) {
+      return { scope: "project", projectId: localProjectId };
+    }
+    if (saveScope === "my_reports") {
+      return { scope: "my_reports", projectId: null };
+    }
+
+    // Outside a project route and no initial choice yet: ask once.
     await loadMyProjects();
     setProjectModalOpen(true);
 
@@ -411,9 +437,33 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
 
     pendingSaveResolveRef.current = null;
     return result ?? null;
-  }, [projectId, loadMyProjects]);
+  }, [projectId, saveScope, localProjectId, loadMyProjects]);
 
-    const createProject = useCallback(async () => {
+  const applyProjectPrefill = useCallback(async (targetProjectId: string, force = false) => {
+    const { data: proj, error } = await supabase
+      .from("projects")
+      .select("name,project_number,client_name")
+      .eq("id", targetProjectId)
+      .single();
+
+    if (error || !proj) return;
+
+    const p = proj as {
+      name?: string | null;
+      project_number?: string | null;
+      client_name?: string | null;
+    };
+
+    setReport((prev) => {
+      const next = { ...prev };
+      if (force || !String(prev.project ?? "").trim()) next.project = String(p.name ?? "").trim();
+      if (force || !String(prev.aNr ?? "").trim()) next.aNr = String(p.project_number ?? "").trim();
+      if (force || !String(prev.client ?? "").trim()) next.client = String(p.client_name ?? "").trim();
+      return next;
+    });
+  }, [supabase]);
+
+  const createProject = useCallback(async () => {
     const supabase = createClient();
 
     const name = newProjectName.trim();
@@ -437,7 +487,7 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
         owner_id: user.id,
         created_by: user.id,
       })
-      .select("id,name")
+      .select("id,name,project_number")
       .single();
 
     if (projErr || !proj) {
@@ -460,17 +510,19 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
     }
 
     // 3) UI updaten + auswählen
-    setProjects((prev) => [{ id: proj.id, name: proj.name }, ...prev]);
+    setProjects((prev) => [{ id: proj.id, name: proj.name, project_number: (proj as { project_number?: string | null }).project_number ?? null }, ...prev]);
     setSaveScope("project");
     setLocalProjectId(proj.id);
     setNewProjectName("");
     setProjectModalOpen(false);
+    setInitialProjectChoiceDone(true);
+    void applyProjectPrefill(proj.id, true);
 
     pendingSaveResolveRef.current?.({ scope: "project", projectId: proj.id });
     pendingSaveResolveRef.current = null;
 
     setCreatingProject(false);
-  }, [newProjectName]);
+  }, [newProjectName, applyProjectPrefill]);
 
   const [report, setReport] = useState<Tagesbericht>(() => {
     const base = createDefaultTagesbericht();
@@ -499,6 +551,13 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
   const [customCycleDraft, setCustomCycleDraft] = useState<Record<string, string>>({});
   const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
   const [expandedLines, setExpandedLines] = useState<Record<string, boolean>>({});
+  const [umsetzenSuggestions, setUmsetzenSuggestions] = useState<Record<string, GeoSuggestion[]>>({});
+  const [umsetzenCoords, setUmsetzenCoords] = useState<Record<string, { lat: number; lon: number; label: string }>>({});
+  const [umsetzenRouteLoading, setUmsetzenRouteLoading] = useState<Record<number, boolean>>({});
+  const [transportSuggestions, setTransportSuggestions] = useState<Record<string, GeoSuggestion[]>>({});
+  const [transportCoords, setTransportCoords] = useState<Record<string, { lat: number; lon: number; label: string }>>({});
+  const [transportRouteLoading, setTransportRouteLoading] = useState<Record<number, boolean>>({});
+  const geoSearchDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
   const [pegelSumpfEnabled, setPegelSumpfEnabled] = useState<Record<number, boolean>>({});
   const [pegelStahlEnabled, setPegelStahlEnabled] = useState<Record<number, boolean>>({});
   const [clientSigEnabled, setClientSigEnabled] = useState(false);
@@ -518,8 +577,25 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
     []
   );
   const [stepIndex, setStepIndex] = useState(0);
+  const openNativePicker = (input: HTMLInputElement | null) => {
+    if (!input) return;
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    try {
+      pickerInput.showPicker?.();
+    } catch {
+      // Fallback: Browser opens picker natively when supported.
+    }
+  };
 
   const MAX_CUSTOM_WORK_CYCLES = 6;
+
+  useEffect(() => {
+    return () => {
+      Object.values(geoSearchDebounceRef.current).forEach((t) => {
+        if (t) clearTimeout(t);
+      });
+    };
+  }, []);
 
   const saveCustomWorkCycles = useCallback(
     async (list: string[]) => {
@@ -638,6 +714,26 @@ export default function TagesberichtForm({ projectId, reportId, mode = "create",
 
     loadDraft();
   }, [mode, draftId, hasDraftId]);
+
+  useEffect(() => {
+    if (mode !== "create") return;
+    if (projectId) return;
+    if (hasDraftId) return;
+    if (initialProjectChoiceDone) return;
+
+    const boot = async () => {
+      await loadMyProjects();
+      setProjectModalOpen(true);
+    };
+    void boot();
+  }, [mode, projectId, hasDraftId, initialProjectChoiceDone, loadMyProjects]);
+
+  useEffect(() => {
+    if (mode !== "create") return;
+    if (hasDraftId) return;
+    if (!effectiveProjectId) return;
+    void applyProjectPrefill(effectiveProjectId, false);
+  }, [mode, hasDraftId, effectiveProjectId, applyProjectPrefill]);
 
   useEffect(() => {
     if (mode !== "create" || hasDraftId) return;
@@ -1522,6 +1618,171 @@ if (mode === "edit") {
       return { ...p, umsetzenRows: rows };
     });
   }
+
+  const umsetzenFieldKey = (index: number, field: "von" | "auf") => `${index}-${field}`;
+
+  const fetchGeoSuggestions = async (index: number, field: "von" | "auf", query: string) => {
+    const key = umsetzenFieldKey(index, field);
+    if (query.trim().length < 3) {
+      setUmsetzenSuggestions((prev) => ({ ...prev, [key]: [] }));
+      return;
+    }
+    try {
+      const res = await fetch(`/api/geo/search?q=${encodeURIComponent(query.trim())}`, { cache: "no-store" });
+      const payload = (await res.json()) as { suggestions?: GeoSuggestion[] };
+      if (!res.ok || !Array.isArray(payload.suggestions)) {
+        setUmsetzenSuggestions((prev) => ({ ...prev, [key]: [] }));
+        return;
+      }
+      const suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
+      setUmsetzenSuggestions((prev) => ({ ...prev, [key]: suggestions.slice(0, 6) }));
+    } catch {
+      setUmsetzenSuggestions((prev) => ({ ...prev, [key]: [] }));
+    }
+  };
+
+  const triggerGeoSearchDebounced = (index: number, field: "von" | "auf", query: string) => {
+    const key = umsetzenFieldKey(index, field);
+    const existing = geoSearchDebounceRef.current[key];
+    if (existing) clearTimeout(existing);
+    geoSearchDebounceRef.current[key] = setTimeout(() => {
+      void fetchGeoSuggestions(index, field, query);
+    }, 250);
+  };
+
+  const formatDurationHHMM = (seconds: number) => {
+    const totalMinutes = Math.max(1, Math.round(seconds / 60));
+    const hh = Math.floor(totalMinutes / 60);
+    const mm = totalMinutes % 60;
+    return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+  };
+
+  const updateUmsetzenRoute = async (index: number) => {
+    const from = umsetzenCoords[umsetzenFieldKey(index, "von")];
+    const to = umsetzenCoords[umsetzenFieldKey(index, "auf")];
+    if (!from || !to) return;
+    setUmsetzenRouteLoading((prev) => ({ ...prev, [index]: true }));
+    try {
+      const url = `/api/geo/route?fromLat=${encodeURIComponent(String(from.lat))}&fromLon=${encodeURIComponent(String(from.lon))}&toLat=${encodeURIComponent(String(to.lat))}&toLon=${encodeURIComponent(String(to.lon))}`;
+      const res = await fetch(url, { cache: "no-store" });
+      const payload = (await res.json()) as { distanceMeters?: number; durationSeconds?: number };
+      if (!res.ok || typeof payload.distanceMeters !== "number" || typeof payload.durationSeconds !== "number") {
+        setUmsetzenRouteLoading((prev) => ({ ...prev, [index]: false }));
+        return;
+      }
+      setUmsetzenRow(index, {
+        entfernungM: String(Math.round(payload.distanceMeters / 1000)),
+        zeit: formatDurationHHMM(payload.durationSeconds),
+      });
+    } catch {
+      // no-op: user can still fill manually
+    } finally {
+      setUmsetzenRouteLoading((prev) => ({ ...prev, [index]: false }));
+    }
+  };
+
+  const setUmsetzenLocationText = (index: number, field: "von" | "auf", value: string) => {
+    if (field === "von") setUmsetzenRow(index, { von: value });
+    else setUmsetzenRow(index, { auf: value });
+
+    const key = umsetzenFieldKey(index, field);
+    setUmsetzenCoords((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    triggerGeoSearchDebounced(index, field, value);
+  };
+
+  const chooseUmsetzenSuggestion = (index: number, field: "von" | "auf", suggestion: GeoSuggestion) => {
+    const placeName = String(suggestion.shortLabel ?? suggestion.label.split(",")[0] ?? suggestion.label).trim();
+    if (field === "von") setUmsetzenRow(index, { von: placeName });
+    else setUmsetzenRow(index, { auf: placeName });
+    const key = umsetzenFieldKey(index, field);
+    setUmsetzenCoords((prev) => ({ ...prev, [key]: { lat: suggestion.lat, lon: suggestion.lon, label: placeName } }));
+    setUmsetzenSuggestions((prev) => ({ ...prev, [key]: [] }));
+    void updateUmsetzenRoute(index);
+  };
+
+  const transportFieldKey = (index: number, field: "from" | "to") => `transport-${index}-${field}`;
+
+  const fetchTransportSuggestions = async (index: number, field: "from" | "to", query: string) => {
+    const key = transportFieldKey(index, field);
+    if (query.trim().length < 3) {
+      setTransportSuggestions((prev) => ({ ...prev, [key]: [] }));
+      return;
+    }
+    try {
+      const res = await fetch(`/api/geo/search?q=${encodeURIComponent(query.trim())}`, { cache: "no-store" });
+      const payload = (await res.json()) as { suggestions?: GeoSuggestion[] };
+      if (!res.ok || !Array.isArray(payload.suggestions)) {
+        setTransportSuggestions((prev) => ({ ...prev, [key]: [] }));
+        return;
+      }
+      const suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
+      setTransportSuggestions((prev) => ({ ...prev, [key]: suggestions.slice(0, 6) }));
+    } catch {
+      setTransportSuggestions((prev) => ({ ...prev, [key]: [] }));
+    }
+  };
+
+  const triggerTransportSearchDebounced = (index: number, field: "from" | "to", query: string) => {
+    const key = transportFieldKey(index, field);
+    const existing = geoSearchDebounceRef.current[key];
+    if (existing) clearTimeout(existing);
+    geoSearchDebounceRef.current[key] = setTimeout(() => {
+      void fetchTransportSuggestions(index, field, query);
+    }, 250);
+  };
+
+  const updateTransportRoute = async (index: number) => {
+    const from = transportCoords[transportFieldKey(index, "from")];
+    const to = transportCoords[transportFieldKey(index, "to")];
+    if (!from || !to) return;
+    setTransportRouteLoading((prev) => ({ ...prev, [index]: true }));
+    try {
+      const url = `/api/geo/route?fromLat=${encodeURIComponent(String(from.lat))}&fromLon=${encodeURIComponent(String(from.lon))}&toLat=${encodeURIComponent(String(to.lat))}&toLon=${encodeURIComponent(String(to.lon))}`;
+      const res = await fetch(url, { cache: "no-store" });
+      const payload = (await res.json()) as { distanceMeters?: number; durationSeconds?: number };
+      if (!res.ok || typeof payload.distanceMeters !== "number" || typeof payload.durationSeconds !== "number") {
+        setTransportRouteLoading((prev) => ({ ...prev, [index]: false }));
+        return;
+      }
+      setTransportRow(index, {
+        km: Math.round(payload.distanceMeters / 1000),
+        time: formatDurationHHMM(payload.durationSeconds),
+      });
+    } catch {
+      // no-op: user can still fill manually
+    } finally {
+      setTransportRouteLoading((prev) => ({ ...prev, [index]: false }));
+    }
+  };
+
+  const setTransportLocationText = (index: number, field: "from" | "to", value: string) => {
+    if (field === "from") setTransportRow(index, { from: value });
+    else setTransportRow(index, { to: value });
+    const key = transportFieldKey(index, field);
+    setTransportCoords((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    triggerTransportSearchDebounced(index, field, value);
+  };
+
+  const chooseTransportSuggestion = (index: number, field: "from" | "to", suggestion: GeoSuggestion) => {
+    const placeName = String(suggestion.shortLabel ?? suggestion.label.split(",")[0] ?? suggestion.label).trim();
+    if (field === "from") setTransportRow(index, { from: placeName });
+    else setTransportRow(index, { to: placeName });
+    const key = transportFieldKey(index, field);
+    setTransportCoords((prev) => ({ ...prev, [key]: { lat: suggestion.lat, lon: suggestion.lon, label: placeName } }));
+    setTransportSuggestions((prev) => ({ ...prev, [key]: [] }));
+    void updateTransportRoute(index);
+  };
+
   const MAX_TRANSPORT_ROWS = 2;
   const safeTransport = (Array.isArray(report.transportRows) && report.transportRows.length
     ? report.transportRows
@@ -1881,8 +2142,11 @@ if (mode === "edit") {
                 type="button"
                 className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
                 onClick={() => {
+                  setSaveScope("my_reports");
+                  setLocalProjectId(null);
+                  setInitialProjectChoiceDone(true);
                   setProjectModalOpen(false);
-                  pendingSaveResolveRef.current?.(undefined);
+                  pendingSaveResolveRef.current?.({ scope: "my_reports", projectId: null });
                   pendingSaveResolveRef.current = null;
                 }}
               >
@@ -1895,6 +2159,8 @@ if (mode === "edit") {
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-sky-200 hover:bg-sky-50/50"
                 onClick={() => {
                   setSaveScope("my_reports");
+                  setLocalProjectId(null);
+                  setInitialProjectChoiceDone(true);
                   setProjectModalOpen(false);
                   pendingSaveResolveRef.current?.({ scope: "my_reports", projectId: null });
                   pendingSaveResolveRef.current = null;
@@ -1947,12 +2213,18 @@ if (mode === "edit") {
                       onClick={() => {
                         setSaveScope("project");
                         setLocalProjectId(p.id);
+                        setInitialProjectChoiceDone(true);
+                        void applyProjectPrefill(p.id, true);
                         setProjectModalOpen(false);
                         pendingSaveResolveRef.current?.({ scope: "project", projectId: p.id });
                         pendingSaveResolveRef.current = null;
                       }}
                     >
-                      <div className="font-medium">{p.name}</div>
+                      <div className="font-medium">
+                        {String(p.project_number ?? "").trim()
+                          ? `${String(p.project_number).trim()} - ${p.name}`
+                          : p.name}
+                      </div>
                       <div className="text-xs text-slate-500">{p.id}</div>
                     </button>
                   ))}
@@ -1978,6 +2250,8 @@ if (mode === "edit") {
                       className="w-full rounded-xl border p-3"
                       value={report.date ?? ""}
                       onChange={(e) => update("date", e.target.value)}
+                      onFocus={(e) => openNativePicker(e.currentTarget)}
+                      onClick={(e) => openNativePicker(e.currentTarget)}
                     />
                   </label>
                   <label className="space-y-1">
@@ -2053,6 +2327,8 @@ if (mode === "edit") {
                                   className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
                                   value={r.from ?? ""}
                                   onChange={(e) => setWorkTimeRow(i, { from: e.target.value })}
+                                  onFocus={(e) => openNativePicker(e.currentTarget)}
+                                  onClick={(e) => openNativePicker(e.currentTarget)}
                                 />
                               </label>
                               <label className="min-w-0 space-y-1">
@@ -2062,6 +2338,8 @@ if (mode === "edit") {
                                   className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
                                   value={r.to ?? ""}
                                   onChange={(e) => setWorkTimeRow(i, { to: e.target.value })}
+                                  onFocus={(e) => openNativePicker(e.currentTarget)}
+                                  onClick={(e) => openNativePicker(e.currentTarget)}
                                 />
                               </label>
                               <label className="min-w-0 space-y-1">
@@ -2071,6 +2349,8 @@ if (mode === "edit") {
                                   className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
                                   value={b.from ?? ""}
                                   onChange={(e) => setBreakRow(i, { from: e.target.value })}
+                                  onFocus={(e) => openNativePicker(e.currentTarget)}
+                                  onClick={(e) => openNativePicker(e.currentTarget)}
                                 />
                               </label>
                               <label className="min-w-0 space-y-1">
@@ -2080,6 +2360,8 @@ if (mode === "edit") {
                                   className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
                                   value={b.to ?? ""}
                                   onChange={(e) => setBreakRow(i, { to: e.target.value })}
+                                  onFocus={(e) => openNativePicker(e.currentTarget)}
+                                  onClick={(e) => openNativePicker(e.currentTarget)}
                                 />
                               </label>
                             </div>
@@ -2188,11 +2470,76 @@ if (mode === "edit") {
                     </div>
                     <div className="mt-3 space-y-3">
                       {safeTransport.map((r, i) => (
-                        <div key={i} className="grid gap-3 md:grid-cols-4">
-                          <input className="rounded-xl border p-3" value={r.from ?? ""} onChange={(e) => setTransportRow(i, { from: e.target.value })} placeholder="von" />
-                          <input className="rounded-xl border p-3" value={r.to ?? ""} onChange={(e) => setTransportRow(i, { to: e.target.value })} placeholder="nach" />
-                          <input className="rounded-xl border p-3" value={r.km ?? ""} onChange={(e) => setTransportRow(i, { km: e.target.value === "" ? null : Number(e.target.value) })} placeholder="km" />
-                          <input className="rounded-xl border p-3" value={r.time ?? ""} onChange={(e) => setTransportRow(i, { time: e.target.value })} placeholder="Zeit" />
+                        <div key={i} className="grid gap-3 md:grid-cols-12">
+                          <div className="md:col-span-4 space-y-2">
+                            <input
+                              className="rounded-xl border p-3 w-full"
+                              value={r.from ?? ""}
+                              onChange={(e) => setTransportLocationText(i, "from", e.target.value)}
+                              placeholder="von (Ort suchen)"
+                            />
+                            {(transportSuggestions[transportFieldKey(i, "from")] ?? []).length > 0 ? (
+                              <div className="rounded-lg border border-slate-200 bg-white p-1">
+                                {(transportSuggestions[transportFieldKey(i, "from")] ?? []).map((s) => (
+                                  <button
+                                    key={s.id}
+                                    type="button"
+                                    className="block w-full rounded px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-50"
+                                    onClick={() => chooseTransportSuggestion(i, "from", s)}
+                                  >
+                                    {s.label}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="md:col-span-4 space-y-2">
+                            <input
+                              className="rounded-xl border p-3 w-full"
+                              value={r.to ?? ""}
+                              onChange={(e) => setTransportLocationText(i, "to", e.target.value)}
+                              placeholder="nach (Ort suchen)"
+                            />
+                            {(transportSuggestions[transportFieldKey(i, "to")] ?? []).length > 0 ? (
+                              <div className="rounded-lg border border-slate-200 bg-white p-1">
+                                {(transportSuggestions[transportFieldKey(i, "to")] ?? []).map((s) => (
+                                  <button
+                                    key={s.id}
+                                    type="button"
+                                    className="block w-full rounded px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-50"
+                                    onClick={() => chooseTransportSuggestion(i, "to", s)}
+                                  >
+                                    {s.label}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                          <input
+                            className="rounded-xl border p-3 md:col-span-2"
+                            value={typeof r.km === "number" && Number.isFinite(r.km) ? String(r.km) : ""}
+                            onChange={(e) => {
+                              const raw = e.target.value.trim();
+                              if (raw === "") {
+                                setTransportRow(i, { km: null });
+                                return;
+                              }
+                              const parsed = Number(raw.replace(",", "."));
+                              setTransportRow(i, { km: Number.isFinite(parsed) ? parsed : null });
+                            }}
+                            placeholder="Entfernung (km)"
+                          />
+                          <input className="rounded-xl border p-3 md:col-span-2" value={r.time ?? ""} onChange={(e) => setTransportRow(i, { time: e.target.value })} placeholder="Zeit (hh:mm)" />
+                          <div className="md:col-span-12 flex justify-end">
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-xs"
+                              onClick={() => updateTransportRoute(i)}
+                              disabled={Boolean(transportRouteLoading[i])}
+                            >
+                              {transportRouteLoading[i] ? "Berechne…" : "Entfernung/Zeit berechnen"}
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -3091,12 +3438,64 @@ if (mode === "edit") {
           {safeUmsetzen.map((r, i) => (
             <div key={i} className="rounded-xl border p-4">
               <div className="grid gap-3 lg:grid-cols-12">
-                <input className="rounded-xl border p-3 lg:col-span-2" value={r.von ?? ""} onChange={(e) => setUmsetzenRow(i, { von: e.target.value })} placeholder="von" />
-                <input className="rounded-xl border p-3 lg:col-span-2" value={r.auf ?? ""} onChange={(e) => setUmsetzenRow(i, { auf: e.target.value })} placeholder="auf" />
-                <input className="rounded-xl border p-3 lg:col-span-2" value={r.entfernungM ?? ""} onChange={(e) => setUmsetzenRow(i, { entfernungM: e.target.value })} placeholder="Entfernung (m)" />
-                <input className="rounded-xl border p-3 lg:col-span-2" value={r.zeit ?? ""} onChange={(e) => setUmsetzenRow(i, { zeit: e.target.value })} placeholder="Zeit" />
-                <input className="rounded-xl border p-3 lg:col-span-2" value={r.begruendung ?? ""} onChange={(e) => setUmsetzenRow(i, { begruendung: e.target.value })} placeholder="Begründung" />
-                <input className="rounded-xl border p-3 lg:col-span-2" value={r.wartezeit ?? ""} onChange={(e) => setUmsetzenRow(i, { wartezeit: e.target.value })} placeholder="Wartezeiten / Veranlassung" />
+                <div className="lg:col-span-3 space-y-2">
+                  <input
+                    className="rounded-xl border p-3 w-full"
+                    value={r.von ?? ""}
+                    onChange={(e) => setUmsetzenLocationText(i, "von", e.target.value)}
+                    placeholder="von (Ort suchen)"
+                  />
+                  {(umsetzenSuggestions[umsetzenFieldKey(i, "von")] ?? []).length > 0 ? (
+                    <div className="rounded-lg border border-slate-200 bg-white p-1">
+                      {(umsetzenSuggestions[umsetzenFieldKey(i, "von")] ?? []).map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          className="block w-full rounded px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-50"
+                          onClick={() => chooseUmsetzenSuggestion(i, "von", s)}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="lg:col-span-3 space-y-2">
+                  <input
+                    className="rounded-xl border p-3 w-full"
+                    value={r.auf ?? ""}
+                    onChange={(e) => setUmsetzenLocationText(i, "auf", e.target.value)}
+                    placeholder="nach (Ort suchen)"
+                  />
+                  {(umsetzenSuggestions[umsetzenFieldKey(i, "auf")] ?? []).length > 0 ? (
+                    <div className="rounded-lg border border-slate-200 bg-white p-1">
+                      {(umsetzenSuggestions[umsetzenFieldKey(i, "auf")] ?? []).map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          className="block w-full rounded px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-50"
+                          onClick={() => chooseUmsetzenSuggestion(i, "auf", s)}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <input className="rounded-xl border p-3 lg:col-span-2" value={r.entfernungM ?? ""} onChange={(e) => setUmsetzenRow(i, { entfernungM: e.target.value })} placeholder="Entfernung (km)" />
+                <input className="rounded-xl border p-3 lg:col-span-2" value={r.zeit ?? ""} onChange={(e) => setUmsetzenRow(i, { zeit: e.target.value })} placeholder="Zeit (hh:mm)" />
+                <input className="rounded-xl border p-3 lg:col-span-1" value={r.begruendung ?? ""} onChange={(e) => setUmsetzenRow(i, { begruendung: e.target.value })} placeholder="Begründung" />
+                <input className="rounded-xl border p-3 lg:col-span-1" value={r.wartezeit ?? ""} onChange={(e) => setUmsetzenRow(i, { wartezeit: e.target.value })} placeholder="Wartezeit" />
+                <div className="lg:col-span-12 flex justify-end">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => updateUmsetzenRoute(i)}
+                    disabled={Boolean(umsetzenRouteLoading[i])}
+                  >
+                    {umsetzenRouteLoading[i] ? "Berechne…" : "Entfernung/Zeit berechnen"}
+                  </button>
+                </div>
               </div>
             </div>
           ))}

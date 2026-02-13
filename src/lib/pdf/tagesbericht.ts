@@ -159,7 +159,7 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
   const transportStartY = outH - 130;
   const transportRowH = 15;
 
-  const TCOL = { from: 590, to: 670, km: 750, time: 795 };
+  const TCOL = { from: 590, to: 675, km: 750, time: 795 };
 
   transportRows.slice(0, 2).forEach((r: any, i: number) => {
     const y = transportStartY - i * transportRowH;

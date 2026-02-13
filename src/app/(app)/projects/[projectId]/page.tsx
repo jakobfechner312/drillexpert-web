@@ -194,6 +194,15 @@ export default function ProjectDetailPage() {
   const [notesError, setNotesError] = useState<string | null>(null);
   const [notesOk, setNotesOk] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
+  const openNativePicker = (input: HTMLInputElement | null) => {
+    if (!input) return;
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    try {
+      pickerInput.showPicker?.();
+    } catch {
+      // Fallback: Browser opens picker natively when supported.
+    }
+  };
 
   const formatProjectDisplayName = (value: { name?: string | null; project_number?: string | null } | null | undefined) => {
     const nr = (value?.project_number ?? "").trim();
@@ -2073,6 +2082,8 @@ export default function ProjectDetailPage() {
                     className="w-full rounded-xl border p-2.5"
                     value={settingsForm.start_date ?? ""}
                     onChange={(e) => setSettingsForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                    onClick={(e) => openNativePicker(e.currentTarget)}
                   />
                 </label>
                 <label className="space-y-1">
@@ -2082,6 +2093,8 @@ export default function ProjectDetailPage() {
                     className="w-full rounded-xl border p-2.5"
                     value={settingsForm.end_date ?? ""}
                     onChange={(e) => setSettingsForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                    onClick={(e) => openNativePicker(e.currentTarget)}
                   />
                 </label>
               </div>

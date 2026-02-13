@@ -673,6 +673,16 @@ export default function SchichtenverzeichnisForm({
   mode = "create",
   stepper = false,
 }: SchichtenverzeichnisFormProps) {
+  const openNativePicker = (input: HTMLInputElement | null) => {
+    if (!input) return;
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    try {
+      pickerInput.showPicker?.();
+    } catch {
+      // Fallback: Browser opens picker natively when supported.
+    }
+  };
+
   type SaveScope = "unset" | "project" | "my_reports";
 
   const savingRef = useRef(false);
@@ -691,9 +701,7 @@ export default function SchichtenverzeichnisForm({
 
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
-  const [auftragOptions, setAuftragOptions] = useState<string[]>([]);
   const [projektNameOptions, setProjektNameOptions] = useState<string[]>([]);
-  const [auftragMode, setAuftragMode] = useState<"list" | "custom">("list");
   const [projektMode, setProjektMode] = useState<"list" | "custom">("list");
   const [schlitzweiteMode, setSchlitzweiteMode] = useState<"list" | "custom">("list");
   const [projectUiLoading, setProjectUiLoading] = useState(false);
@@ -1446,19 +1454,12 @@ export default function SchichtenverzeichnisForm({
   }, []);
 
   useEffect(() => {
-    const loadAuftragOptions = async () => {
+    const loadProjektNameOptions = async () => {
       const { data: rows, error } = await supabase
         .from("projects")
         .select("project_number,name")
         .order("created_at", { ascending: false });
       if (error) return;
-      const auftragValues = Array.from(
-        new Set(
-          (rows ?? [])
-            .map((row: { project_number?: string | null }) => String(row?.project_number ?? "").trim())
-            .filter(Boolean)
-        )
-      );
       const projektValues = Array.from(
         new Set(
           (rows ?? [])
@@ -1466,22 +1467,10 @@ export default function SchichtenverzeichnisForm({
             .filter(Boolean)
         )
       );
-      setAuftragOptions(auftragValues);
       setProjektNameOptions(projektValues);
     };
-    loadAuftragOptions();
+    loadProjektNameOptions();
   }, [supabase]);
-
-  useEffect(() => {
-    const current = String(data.auftrag_nr ?? "").trim();
-    if (!current) {
-      setAuftragMode("list");
-      return;
-    }
-    if (!auftragOptions.includes(current)) {
-      setAuftragMode("custom");
-    }
-  }, [data.auftrag_nr, auftragOptions]);
 
   useEffect(() => {
     const current = String(data.projekt_name ?? "").trim();
@@ -2230,7 +2219,6 @@ export default function SchichtenverzeichnisForm({
   const resetAllInputs = () => {
     if (!confirm("Alle Eingaben wirklich löschen?")) return;
     setData(initialData);
-    setAuftragMode("list");
     setProjektMode("list");
     setSchlitzweiteMode("list");
     setBohrungen([emptyBohrungEntry()]);
@@ -2420,43 +2408,12 @@ export default function SchichtenverzeichnisForm({
                   <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Auftrag‑Nr.
                   </span>
-                  <div className="grid gap-2">
-                    <select
-                      className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                      value={
-                        auftragMode === "custom"
-                          ? "__custom__"
-                          : String(data.auftrag_nr ?? "").trim()
-                            ? data.auftrag_nr
-                            : "__empty__"
-                      }
-                      onChange={(e) => {
-                        const selected = e.target.value;
-                        if (selected === "__custom__") {
-                          setAuftragMode("custom");
-                          return;
-                        }
-                        setAuftragMode("list");
-                        update("auftrag_nr", selected === "__empty__" ? "" : selected);
-                      }}
-                    >
-                      <option value="__empty__">Auftrag auswählen…</option>
-                      {auftragOptions.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                      <option value="__custom__">Eigene Auftrag-Nr. eingeben…</option>
-                    </select>
-                    {auftragMode === "custom" ? (
-                      <input
-                        className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                        placeholder="Eigene Auftrag-Nr."
-                        value={data.auftrag_nr ?? ""}
-                        onChange={(e) => update("auftrag_nr", e.target.value)}
-                      />
-                    ) : null}
-                  </div>
+                  <input
+                    className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                    placeholder="Auftrag-Nr."
+                    value={data.auftrag_nr ?? ""}
+                    onChange={(e) => update("auftrag_nr", e.target.value)}
+                  />
                 </div>
                 <Field label="Bohrmeister" value={data.bohrmeister} onChange={(v) => update("bohrmeister", v)} />
                 <Field label="Blatt" value={data.blatt_nr} onChange={(v) => update("blatt_nr", v)} />
@@ -2512,6 +2469,8 @@ export default function SchichtenverzeichnisForm({
                       className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
                       value={data.durchfuehrungszeit_von ?? ""}
                       onChange={(e) => update("durchfuehrungszeit_von", e.target.value)}
+                      onFocus={(e) => openNativePicker(e.currentTarget)}
+                      onClick={(e) => openNativePicker(e.currentTarget)}
                     />
                   </label>
                   <label className="space-y-1">
@@ -2523,6 +2482,8 @@ export default function SchichtenverzeichnisForm({
                       className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
                       value={data.durchfuehrungszeit_bis ?? ""}
                       onChange={(e) => update("durchfuehrungszeit_bis", e.target.value)}
+                      onFocus={(e) => openNativePicker(e.currentTarget)}
+                      onClick={(e) => openNativePicker(e.currentTarget)}
                     />
                   </label>
                 </div>
@@ -2736,6 +2697,8 @@ export default function SchichtenverzeichnisForm({
                         return next;
                       })
                     }
+                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                    onClick={(e) => openNativePicker(e.currentTarget)}
                   />
                 </label>
                 <label className="space-y-1">
@@ -2753,6 +2716,8 @@ export default function SchichtenverzeichnisForm({
                         return next;
                       })
                     }
+                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                    onClick={(e) => openNativePicker(e.currentTarget)}
                   />
                 </label>
                 <Field
@@ -3738,7 +3703,19 @@ export default function SchichtenverzeichnisForm({
         ? renderStep(
             <Card title="Proben / Übergabe">
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Übergeben am" value={data.uebergeben_am} onChange={(v) => update("uebergeben_am", v)} />
+                <label className="min-w-0 space-y-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Übergeben am
+                  </span>
+                  <input
+                    type="date"
+                    className="w-full max-w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                    value={toDateInputValue(data.uebergeben_am)}
+                    onChange={(e) => update("uebergeben_am", fromDateInputValue(e.target.value))}
+                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                    onClick={(e) => openNativePicker(e.currentTarget)}
+                  />
+                </label>
                 <Field label="Übergeben an" value={data.uebergeben_an} onChange={(v) => update("uebergeben_an", v)} />
               </div>
             </Card>
