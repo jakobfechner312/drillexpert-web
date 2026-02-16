@@ -16,7 +16,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Drillexpert",
   description: "Digitale Tagesberichte",
+  applicationName: "Drillexpert",
   manifest: "/manifest.json",
+  themeColor: "#0f6ca8",
   icons: {
     icon: [
       { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
@@ -28,6 +30,12 @@ export const metadata: Metadata = {
     ],
     apple: "/apple-touch-icon.png",
     shortcut: "/favicon-32x32.png",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-status-bar-style": "default",
+    "application-name": "Drillexpert",
   },
 };
 
