@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Briefcase, Calendar, ClipboardList, CloudSun, Crown, ExternalLink, FileText, Hash, Link2, List, MapPin, RefreshCcw, Settings, Trash2, Upload, User, Users } from "lucide-react";
 import { useParams } from "next/navigation";
@@ -122,6 +122,44 @@ const deriveReportDateRange = (rows: ReportRow[]) => {
   };
 };
 
+const ProjectMapEmbed = memo(function ProjectMapEmbed({
+  mapUrl,
+  mapTitle,
+  embedUrl,
+}: {
+  mapUrl: string;
+  mapTitle: string;
+  embedUrl: string;
+}) {
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200/70 bg-white p-3 shadow-sm">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-slate-800">{mapTitle || "Google My Maps"}</div>
+          <div className="mt-1 truncate text-xs text-slate-500">{mapUrl}</div>
+        </div>
+        <div className="ml-2 shrink-0">
+          <a href={mapUrl} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-xs">
+            In Google Maps öffnen
+          </a>
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-slate-200/70">
+        <div className="aspect-[4/3] w-full">
+          <iframe
+            title={mapTitle || "Google My Maps"}
+            src={embedUrl}
+            className="h-full w-full"
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            allowFullScreen
+          />
+        </div>
+      </div>
+    </div>
+  );
+});
+
 function parseProjectNotes(raw: string | null | undefined): ProjectNoteEntry[] {
   if (!raw) return [];
   const trimmed = raw.trim();
@@ -229,6 +267,7 @@ export default function ProjectDetailPage() {
   const [projectWeather, setProjectWeather] = useState<ProjectWeather | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+  const lastAutoWeatherUrlRef = useRef<string>("");
   const [imagePreviewUrls, setImagePreviewUrls] = useState<Record<string, string>>({});
   const customProgramStorageKey = `project_program_custom_${projectId}`;
   const [notesInput, setNotesInput] = useState("");
@@ -364,6 +403,14 @@ export default function ProjectDetailPage() {
     setNotesInput("");
     setNotesError(null);
     setNotesOk(null);
+    if (projectRow.mymaps_url) {
+      await loadProjectWeather(projectRow.mymaps_url, projectRow.mymaps_title ?? null);
+      lastAutoWeatherUrlRef.current = projectRow.mymaps_url;
+    } else {
+      setProjectWeather(null);
+      setWeatherError(null);
+      lastAutoWeatherUrlRef.current = "";
+    }
 
     // 2) Rolle im Projekt laden (owner / member)
     const { data: mem, error: memErr } = await supabase
@@ -547,16 +594,6 @@ export default function ProjectDetailPage() {
     }
   };
 
-  useEffect(() => {
-    const url = project?.mymaps_url?.trim();
-    if (!url) {
-      setProjectWeather(null);
-      setWeatherError(null);
-      return;
-    }
-    loadProjectWeather(url, project?.mymaps_title ?? project?.name ?? null);
-  }, [project?.mymaps_url, project?.mymaps_title, project?.name]);
-
   const saveSettings = async () => {
     const name = settingsForm.name?.trim();
     const projectNumber = settingsForm.project_number?.trim();
@@ -631,6 +668,8 @@ export default function ProjectDetailPage() {
         "start_date",
         "end_date",
         "notes",
+        "mymaps_url",
+        "mymaps_title",
       ].join(","))
       .single();
 
@@ -646,13 +685,16 @@ export default function ProjectDetailPage() {
     }
 
     const savedProject = data as unknown as Project;
-    setProject({
+    setProject((prev) => ({
+      ...(prev ?? {}),
       ...savedProject,
       program_custom: customProgram,
       status: normalizeProjectStatus(savedProject.status),
       start_date: toDateInputValue(savedProject.start_date) || null,
       end_date: toDateInputValue(savedProject.end_date) || null,
-    });
+      mymaps_url: savedProject.mymaps_url ?? prev?.mymaps_url ?? null,
+      mymaps_title: savedProject.mymaps_title ?? prev?.mymaps_title ?? null,
+    }));
     setSettingsOpen(false);
     setSavingSettings(false);
   };
@@ -855,6 +897,7 @@ export default function ProjectDetailPage() {
 
       const savedUrl = savedRow.mymaps_url?.trim() || urlToSave;
       const savedTitle = savedRow.mymaps_title?.trim() || resolved.title;
+      lastAutoWeatherUrlRef.current = savedUrl;
 
       setProject((prev) =>
         prev
@@ -903,6 +946,7 @@ export default function ProjectDetailPage() {
     }
     setProject((prev) => (prev ? { ...prev, mymaps_url: null, mymaps_title: null } : prev));
     setSettingsForm((prev) => ({ ...prev, mymaps_url: "", mymaps_title: "" }));
+    lastAutoWeatherUrlRef.current = "";
     setProjectWeather(null);
     setWeatherError(null);
     setMymapsUrlInput("");
@@ -1368,8 +1412,8 @@ export default function ProjectDetailPage() {
   }, [allUsers]);
 
   const myMapsEmbedUrl = useMemo(
-    () => getMymapsEmbedUrl(project?.mymaps_url, project?.mymaps_title ?? project?.name),
-    [project?.mymaps_url, project?.mymaps_title, project?.name]
+    () => getMymapsEmbedUrl(project?.mymaps_url, project?.mymaps_title),
+    [project?.mymaps_url, project?.mymaps_title]
   );
 
   const weatherCodeLabel = (code: number | null | undefined) => {
@@ -2000,42 +2044,13 @@ export default function ProjectDetailPage() {
               </div>
             )}
 
-            {project?.mymaps_url && (
-              <div className="mt-4 rounded-xl border border-slate-200/70 bg-white p-3 shadow-sm">
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-slate-800">
-                      {project.mymaps_title || "Google My Maps"}
-                    </div>
-                    <div className="mt-1 truncate text-xs text-slate-500">
-                      {project.mymaps_url}
-                    </div>
-                  </div>
-                  <div className="ml-2 shrink-0">
-                    <a
-                      href={project.mymaps_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-secondary btn-xs"
-                    >
-                      In Google Maps öffnen
-                    </a>
-                  </div>
-                </div>
-                <div className="overflow-hidden rounded-lg border border-slate-200/70">
-                  <div className="aspect-[4/3] w-full">
-                    <iframe
-                      title={project.mymaps_title || "Google My Maps"}
-                      src={myMapsEmbedUrl}
-                      className="h-full w-full"
-                      loading="lazy"
-                      referrerPolicy="no-referrer-when-downgrade"
-                      allowFullScreen
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+            {project?.mymaps_url ? (
+              <ProjectMapEmbed
+                mapUrl={project.mymaps_url}
+                mapTitle={project.mymaps_title || "Google My Maps"}
+                embedUrl={myMapsEmbedUrl}
+              />
+            ) : null}
           </div>
         </SectionCard>
       </div>

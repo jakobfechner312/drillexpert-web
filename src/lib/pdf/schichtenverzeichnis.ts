@@ -103,13 +103,17 @@ export async function generateSchichtenverzeichnisPdf(
 
   const hasRowData = Array.isArray(data?.schicht_rows) && data.schicht_rows.length > 0;
   const fallbackRowsPerPage = Math.max(1, Number(data?.schicht_rows_per_page) || 4);
+  // Keep page capacities aligned with the calibrated templates.
+  // If saved tuning values are too large, overflow rows would never paginate to extra sheets.
+  const maxRowsPage1 = 4;
+  const maxRowsPageN = 8;
   const rowsPerPagePage1 = Math.max(
     1,
-    Number(data?.schicht_rows_per_page_1) || fallbackRowsPerPage
+    Math.min(maxRowsPage1, Number(data?.schicht_rows_per_page_1) || fallbackRowsPerPage)
   );
   const rowsPerPagePageN = Math.max(
     1,
-    Number(data?.schicht_rows_per_page_2) || fallbackRowsPerPage
+    Math.min(maxRowsPageN, Number(data?.schicht_rows_per_page_2) || fallbackRowsPerPage)
   );
   const rowCount = hasRowData ? data.schicht_rows.length : 0;
   const remainingAfterPage1 = Math.max(0, rowCount - rowsPerPagePage1);

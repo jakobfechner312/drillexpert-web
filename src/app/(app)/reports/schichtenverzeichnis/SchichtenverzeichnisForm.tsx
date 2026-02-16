@@ -606,7 +606,7 @@ const normalizeBohrverfahren = (value: unknown): BohrungEntry["verfahren"] => {
 };
 const getDurchmesserOptionsForVerfahren = (verfahren: BohrungEntry["verfahren"]) => {
   if (verfahren === "greif") return GREIF_DURCHMESSER_OPTIONS;
-  if (verfahren === "ramm" || verfahren === "rotation") return RAMM_ROTATION_DURCHMESSER_OPTIONS;
+  if (verfahren === "ramm" || verfahren === "rotation" || verfahren === "voll") return RAMM_ROTATION_DURCHMESSER_OPTIONS;
   return BOHR_DURCHMESSER_OPTIONS;
 };
 const legacyBohrungenFromData = (values: FormData): BohrungEntry[] => {
