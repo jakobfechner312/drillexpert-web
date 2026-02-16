@@ -27,8 +27,8 @@ export async function middleware(req: NextRequest) {
 
   const pathname = req.nextUrl.pathname;
 
-  // ✅ Login & Auth-Routen IMMER erlauben
-  if (pathname.startsWith("/login")) return res;
+  // ✅ Öffentliche Routen für Auth-Einstieg / PWA-Start
+  if (pathname.startsWith("/login") || pathname.startsWith("/pwa-entry")) return res;
 
   // ✅ Wenn nicht eingeloggt -> login (alles außer /login)
   if (!user) {
