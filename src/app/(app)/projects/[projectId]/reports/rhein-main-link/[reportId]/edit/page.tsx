@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import TagesberichtForm from "@/app/(app)/reports/new/TagesberichtForm";
+import { isRheinMainLinkProject } from "@/lib/reportAccess";
 
 export default function EditProjectRheinMainLinkReportPage() {
   const params = useParams<{ projectId: string; reportId: string }>();
@@ -10,6 +11,9 @@ export default function EditProjectRheinMainLinkReportPage() {
 
   if (!projectId || !reportId) {
     return <div className="p-6">Fehlende Parameter…</div>;
+  }
+  if (!isRheinMainLinkProject(projectId)) {
+    return <div className="p-6">Rhein-Main-Link-Berichte sind nur im freigegebenen Projekt bearbeitbar.</div>;
   }
 
   return (

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/browser";
+import { RHEIN_MAIN_LINK_PROJECT_ID } from "@/lib/reportAccess";
 
 type ReportRow = {
   id: string;
@@ -199,7 +200,7 @@ export default function DashboardPage() {
                 </div>
               </Link>
               <Link
-                href="/reports/new/rhein-main-link"
+                href={`/projects/${RHEIN_MAIN_LINK_PROJECT_ID}/reports/rhein-main-link/new`}
                 className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow"
               >
                 <div className="text-sm font-semibold text-indigo-900">TB Rhein-Main-Link</div>

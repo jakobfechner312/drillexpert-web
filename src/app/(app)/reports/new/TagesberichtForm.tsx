@@ -18,6 +18,7 @@ import type {
   TransportRow,
 } from "@/types/tagesbericht";
 import { createDefaultTagesbericht } from "@/lib/defaultTagesbericht";
+import { RHEIN_MAIN_LINK_PROJECT_ID } from "@/lib/reportAccess";
 
 /** ---------- Helpers: empty rows (strict zu deinen Types) ---------- */
 
@@ -369,17 +370,19 @@ export default function TagesberichtForm({
   };
 
   type SaveScope = "unset" | "project" | "my_reports";
-  const [saveScope, setSaveScope] = useState<SaveScope>(projectId ? "project" : "unset");
-  const [initialProjectChoiceDone, setInitialProjectChoiceDone] = useState<boolean>(Boolean(projectId) || mode === "edit");
+  const isRmlReport = reportType === "tagesbericht_rhein_main_link";
+  const enforcedProjectId = isRmlReport ? RHEIN_MAIN_LINK_PROJECT_ID : null;
+  const [saveScope, setSaveScope] = useState<SaveScope>(projectId || enforcedProjectId ? "project" : "unset");
+  const [initialProjectChoiceDone, setInitialProjectChoiceDone] = useState<boolean>(Boolean(projectId) || Boolean(enforcedProjectId) || mode === "edit");
   const pendingSaveResolveRef = useRef<
   ((v: { scope: SaveScope; projectId: string | null } | undefined) => void) | null
   >(null);  
   
  // nur für den Picker (wenn KEIN projectId prop da ist)
-  const [localProjectId, setLocalProjectId] = useState<string | null>(null);
+  const [localProjectId, setLocalProjectId] = useState<string | null>(enforcedProjectId);
 
   // das ist der “echte” Projektwert, den du überall nutzt
-  const effectiveProjectId = projectId ?? localProjectId;
+  const effectiveProjectId = projectId ?? localProjectId ?? enforcedProjectId;
 
   
 
@@ -390,7 +393,14 @@ export default function TagesberichtForm({
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projects, setProjects] = useState<{ id: string; name: string; project_number?: string | null }[]>([]);
   const [projectUiLoading, setProjectUiLoading] = useState(false);
-  const [prefillProjectId, setPrefillProjectId] = useState<string | null>(projectId ?? null);
+  const [prefillProjectId, setPrefillProjectId] = useState<string | null>(projectId ?? enforcedProjectId ?? null);
+
+  useEffect(() => {
+    if (!enforcedProjectId) return;
+    setSaveScope("project");
+    setLocalProjectId(enforcedProjectId);
+    setInitialProjectChoiceDone(true);
+  }, [enforcedProjectId]);
 
   const loadMyProjects = useCallback(async () => {
     const supabase = createClient();
@@ -422,14 +432,19 @@ export default function TagesberichtForm({
   }, []);
 
   const requireProjectId = useCallback(async (): Promise<string | null> => {
+    if (enforcedProjectId) return enforcedProjectId;
     if (effectiveProjectId) return effectiveProjectId;
 
     await loadMyProjects();
     setProjectModalOpen(true);
     return null;
-   }, [effectiveProjectId, loadMyProjects]);
+   }, [effectiveProjectId, enforcedProjectId, loadMyProjects]);
 
   const ensureSaveTarget = useCallback(async (): Promise<{ scope: SaveScope; projectId: string | null } | null> => {
+    if (enforcedProjectId) {
+      return { scope: "project", projectId: enforcedProjectId };
+    }
+
     // If this form is opened inside a concrete project route, keep that project fixed.
     if (projectId) {
       return { scope: "project", projectId };
@@ -453,7 +468,7 @@ export default function TagesberichtForm({
 
     pendingSaveResolveRef.current = null;
     return result ?? null;
-  }, [projectId, saveScope, localProjectId, loadMyProjects]);
+  }, [projectId, saveScope, localProjectId, loadMyProjects, enforcedProjectId]);
 
   const fetchProjectPrefill = useCallback(async (targetProjectId: string) => {
     const { data: proj, error } = await supabase
@@ -775,6 +790,7 @@ export default function TagesberichtForm({
 
   useEffect(() => {
     if (mode !== "create") return;
+    if (enforcedProjectId) return;
     if (projectId) return;
     if (hasDraftId) return;
     if (initialProjectChoiceDone) return;
@@ -784,7 +800,7 @@ export default function TagesberichtForm({
       setProjectModalOpen(true);
     };
     void boot();
-  }, [mode, projectId, hasDraftId, initialProjectChoiceDone, loadMyProjects]);
+  }, [mode, projectId, hasDraftId, initialProjectChoiceDone, loadMyProjects, enforcedProjectId]);
 
   useEffect(() => {
     if (mode !== "create") return;
@@ -898,7 +914,7 @@ export default function TagesberichtForm({
       const user = userRes.user;
       if (!user) return alert("Nicht eingeloggt.");
 
-      const pid = effectiveProjectId ?? null;
+      const pid = enforcedProjectId ?? effectiveProjectId ?? null;
 
       const currentReport = reportRef.current;
       const reportForSave =
@@ -944,6 +960,7 @@ export default function TagesberichtForm({
         if (!target) return;
 
         const { scope, projectId: pid } = target;
+        const finalProjectId = enforcedProjectId ?? (scope === "project" ? pid ?? null : null);
 
         // ✅ DB-seitig: gleicher Key für denselben Save-Vorgang
         if (!reportSaveKeyRef.current) {
@@ -951,7 +968,7 @@ export default function TagesberichtForm({
         }
 
         const currentReport = reportRef.current;
-        const projectScoped = scope === "project" ? pid ?? null : null;
+        const projectScoped = finalProjectId;
         const reportForSave = await hydrateReportWithProject(currentReport, projectScoped);
         if (projectScoped && prefillProjectId && prefillProjectId !== projectScoped) {
           console.warn("[PROJECT PREFILL GUARD] prefill project changed before save", {
@@ -980,11 +997,11 @@ if (mode === "edit") {
 
   const { error } = await supabase
     .from("reports")
-    .update({
+      .update({
       title,
       data: reportForSave,
       status: "final",
-      project_id: pid,
+      project_id: finalProjectId,
     })
     .eq("id", reportId);
 
@@ -1009,7 +1026,7 @@ if (mode === "edit") {
 
   const payload = {
     user_id: user.id,
-    project_id: scope === "project" ? pid : null,
+    project_id: finalProjectId,
     report_type: reportType,
     title,
     data: reportForSave,
@@ -1059,6 +1076,7 @@ if (mode === "edit") {
     effectiveProjectId,
     hydrateReportWithProject,
     mode,
+    enforcedProjectId,
     prefillProjectId,
     reportId,
     reportTitleLabel,

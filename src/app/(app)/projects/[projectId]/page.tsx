@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Briefcase, Calendar, ClipboardList, CloudSun, Crown, ExternalLink, FileText, Hash, Link2, List, MapPin, RefreshCcw, Settings, Trash2, Upload, User, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
+import { isRheinMainLinkProject } from "@/lib/reportAccess";
 
 type Project = {
   id: string;
@@ -1465,18 +1466,22 @@ export default function ProjectDetailPage() {
                 Einstellungen
               </span>
             </button>
-            <Link
-              href={`/projects/${projectId}/reports/new`}
-              className="btn btn-secondary"
-            >
-              + Tagesbericht
-            </Link>
-            <Link
-              href={`/projects/${projectId}/reports/rhein-main-link/new`}
-              className="btn btn-secondary"
-            >
-              + TB Rhein-Main-Link
-            </Link>
+            {!isRheinMainLinkProject(projectId) ? (
+              <Link
+                href={`/projects/${projectId}/reports/new`}
+                className="btn btn-secondary"
+              >
+                + Tagesbericht
+              </Link>
+            ) : null}
+            {isRheinMainLinkProject(projectId) ? (
+              <Link
+                href={`/projects/${projectId}/reports/rhein-main-link/new`}
+                className="btn btn-secondary"
+              >
+                + TB Rhein-Main-Link
+              </Link>
+            ) : null}
             <Link
               href={`/projects/${projectId}/reports/schichtenverzeichnis/step`}
               className="btn btn-secondary"

@@ -2,12 +2,14 @@
 
 import { useParams } from "next/navigation";
 import TagesberichtForm from "@/app/(app)/reports/new/TagesberichtForm";
+import { RHEIN_MAIN_LINK_PROJECT_ID } from "@/lib/reportAccess";
 
 export default function EditRheinMainLinkReportPage() {
   const params = useParams<{ reportId: string }>();
 
   return (
     <TagesberichtForm
+      projectId={RHEIN_MAIN_LINK_PROJECT_ID}
       reportId={params.reportId}
       mode="edit"
       stepper
