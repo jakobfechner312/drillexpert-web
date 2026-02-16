@@ -164,6 +164,7 @@ const buildRowFieldOffsetState = (
 const MAX_FESTSTELLUNGEN_CHARS = 200;
 const MAX_GROUNDWATER_ROWS = 50;
 const BOHR_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509", "700", "880", "1.180", "1.500"] as const;
+const RAMM_ROTATION_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
 const GREIF_DURCHMESSER_OPTIONS = ["700", "880", "1.180", "1.500"] as const;
 const SCHLITZWEITE_OPTIONS = ["0,5", "0,75", "1", "1,5", "1,75", "2", "2,25", "2,5"] as const;
 const KIES_KOERNUNG_OPTIONS = ["0,71-1,25", "1,0-2,0", "2,0-3,15", "3,15-5,6", "5,6-8", "8,0-16"] as const;
@@ -216,20 +217,20 @@ const FILTER_PAIR_CONFIG: Array<{
     bisLabel: "Tondichtung bis",
   },
   {
-    id: "gegenfilter",
-    title: "Gegenfilter",
-    vonKey: "gegenfilter_von",
-    bisKey: "gegenfilter_bis",
-    vonLabel: "Gegenfilter von",
-    bisLabel: "Gegenfilter bis",
-  },
-  {
     id: "tondichtung_2",
     title: "Tondichtung (unten)",
     vonKey: "tondichtung_von_2",
     bisKey: "tondichtung_bis_2",
     vonLabel: "Tondichtung von (unten)",
     bisLabel: "Tondichtung bis (unten)",
+  },
+  {
+    id: "gegenfilter",
+    title: "Gegenfilter",
+    vonKey: "gegenfilter_von",
+    bisKey: "gegenfilter_bis",
+    vonLabel: "Gegenfilter von",
+    bisLabel: "Gegenfilter bis",
   },
   {
     id: "zement_bent",
@@ -602,6 +603,11 @@ const normalizeBohrverfahren = (value: unknown): BohrungEntry["verfahren"] => {
   if (raw === "ek_dks") return "ek_dks";
   if (raw === "voll") return "voll";
   return "ramm";
+};
+const getDurchmesserOptionsForVerfahren = (verfahren: BohrungEntry["verfahren"]) => {
+  if (verfahren === "greif") return GREIF_DURCHMESSER_OPTIONS;
+  if (verfahren === "ramm" || verfahren === "rotation") return RAMM_ROTATION_DURCHMESSER_OPTIONS;
+  return BOHR_DURCHMESSER_OPTIONS;
 };
 const legacyBohrungenFromData = (values: FormData): BohrungEntry[] => {
   const rows: BohrungEntry[] = [
@@ -2769,6 +2775,7 @@ export default function SchichtenverzeichnisForm({
                                 const next = [...prev];
                                 const nextVerfahren = normalizeBohrverfahren(e.target.value);
                                 const currentDurchmesser = next[idx].verrohr_durchmesser ?? "";
+                                const nextDurchmesserOptions = getDurchmesserOptionsForVerfahren(nextVerfahren);
                                 const isGreifDurchmesser = GREIF_DURCHMESSER_OPTIONS.includes(
                                   currentDurchmesser as (typeof GREIF_DURCHMESSER_OPTIONS)[number]
                                 );
@@ -2782,7 +2789,9 @@ export default function SchichtenverzeichnisForm({
                                       ? isGreifDurchmesser
                                         ? currentDurchmesser
                                         : ""
-                                      : next[idx].verrohr_durchmesser,
+                                      : nextDurchmesserOptions.includes(currentDurchmesser)
+                                      ? currentDurchmesser
+                                      : "",
                                 };
                                 return next;
                               })
@@ -2837,10 +2846,7 @@ export default function SchichtenverzeichnisForm({
                             }
                           >
                             <option value="">Bitte wählen…</option>
-                            {(entry.verfahren === "greif"
-                              ? GREIF_DURCHMESSER_OPTIONS
-                              : BOHR_DURCHMESSER_OPTIONS
-                            ).map((opt) => (
+                            {getDurchmesserOptionsForVerfahren(entry.verfahren).map((opt) => (
                               <option key={opt} value={opt}>
                                 {opt}
                               </option>

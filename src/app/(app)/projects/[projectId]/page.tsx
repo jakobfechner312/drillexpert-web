@@ -85,6 +85,43 @@ type ProjectWeather = {
   };
 };
 
+const STATUS_OPTIONS = ["laufend", "abgeschlossen"] as const;
+type ProjectStatus = (typeof STATUS_OPTIONS)[number];
+
+const normalizeProjectStatus = (value: string | null | undefined): ProjectStatus => {
+  return value === "abgeschlossen" ? "abgeschlossen" : "laufend";
+};
+
+const toDateInputValue = (value: string | null | undefined): string => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const isoPrefix = raw.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+  if (isoPrefix) return isoPrefix;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+const deriveReportDateRange = (rows: ReportRow[]) => {
+  if (rows.length === 0) return { startDate: "", endDate: "" };
+  let minTs = Number.POSITIVE_INFINITY;
+  let maxTs = Number.NEGATIVE_INFINITY;
+  rows.forEach((row) => {
+    const ts = new Date(row.created_at).getTime();
+    if (Number.isNaN(ts)) return;
+    if (ts < minTs) minTs = ts;
+    if (ts > maxTs) maxTs = ts;
+  });
+  if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) return { startDate: "", endDate: "" };
+  return {
+    startDate: toDateInputValue(new Date(minTs).toISOString()),
+    endDate: toDateInputValue(new Date(maxTs).toISOString()),
+  };
+};
+
 function parseProjectNotes(raw: string | null | undefined): ProjectNoteEntry[] {
   if (!raw) return [];
   const trimmed = raw.trim();
@@ -160,7 +197,7 @@ export default function ProjectDetailPage() {
     program_surface: false,
     program_ramming: false,
     program_custom: "",
-    status: "geplant",
+    status: "laufend",
     start_date: "",
     end_date: "",
     notes: "",
@@ -169,6 +206,7 @@ export default function ProjectDetailPage() {
   });
 
   const [reports, setReports] = useState<ReportRow[]>([]);
+  const reportDateRange = useMemo(() => deriveReportDateRange(reports), [reports]);
   const [err, setErr] = useState<string | null>(null);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -201,22 +239,6 @@ export default function ProjectDetailPage() {
   const [notesOk, setNotesOk] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
   const [archivingProject, setArchivingProject] = useState(false);
-  const openNativePicker = (input: HTMLInputElement | null) => {
-    if (!input) return;
-    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
-    try {
-      pickerInput.showPicker?.();
-    } catch {
-      // Fallback: Browser opens picker natively when supported.
-    }
-  };
-  const getTodayDateInputValue = () => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, "0");
-    const d = String(now.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  };
 
   const formatProjectDisplayName = (value: { name?: string | null; project_number?: string | null } | null | undefined) => {
     const nr = (value?.project_number ?? "").trim();
@@ -305,6 +327,9 @@ export default function ProjectDetailPage() {
     const projectWithCustomProgram: Project = {
       ...projectRow,
       program_custom: storedCustomProgram,
+      status: normalizeProjectStatus(projectRow.status),
+      start_date: toDateInputValue(projectRow.start_date) || null,
+      end_date: toDateInputValue(projectRow.end_date) || null,
     };
     setProject(projectWithCustomProgram);
     setSettingsForm((prev) => ({
@@ -327,9 +352,9 @@ export default function ProjectDetailPage() {
       program_surface: Boolean(projectWithCustomProgram.program_surface),
       program_ramming: Boolean(projectWithCustomProgram.program_ramming),
       program_custom: projectWithCustomProgram.program_custom ?? "",
-      status: projectWithCustomProgram.status ?? "geplant",
-      start_date: projectWithCustomProgram.start_date ?? "",
-      end_date: projectWithCustomProgram.end_date ?? "",
+      status: normalizeProjectStatus(projectWithCustomProgram.status),
+      start_date: toDateInputValue(projectWithCustomProgram.start_date),
+      end_date: toDateInputValue(projectWithCustomProgram.end_date),
       notes: projectWithCustomProgram.notes ?? "",
       mymaps_url: projectWithCustomProgram.mymaps_url ?? "",
       mymaps_title: projectWithCustomProgram.mymaps_title ?? "",
@@ -436,6 +461,58 @@ export default function ProjectDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  useEffect(() => {
+    if (loading) return;
+    const nextStart = reportDateRange.startDate;
+    const nextEnd = reportDateRange.endDate;
+    const nextStatus = normalizeProjectStatus(project?.status);
+    const normalizedProjectStart = toDateInputValue(project?.start_date);
+    const normalizedProjectEnd = toDateInputValue(project?.end_date);
+
+    setSettingsForm((prev) => {
+      if (
+        prev.status === normalizeProjectStatus(prev.status) &&
+        (prev.start_date ?? "") === nextStart &&
+        (prev.end_date ?? "") === nextEnd
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        status: normalizeProjectStatus(prev.status),
+        start_date: nextStart,
+        end_date: nextEnd,
+      };
+    });
+
+    setProject((prev) => {
+      if (!prev) return prev;
+      const prevStart = toDateInputValue(prev.start_date);
+      const prevEnd = toDateInputValue(prev.end_date);
+      if (prev.status === nextStatus && prevStart === nextStart && prevEnd === nextEnd) return prev;
+      return {
+        ...prev,
+        status: nextStatus,
+        start_date: nextStart || null,
+        end_date: nextEnd || null,
+      };
+    });
+
+    if (!projectId) return;
+    if (normalizedProjectStart === nextStart && normalizedProjectEnd === nextEnd && project?.status === nextStatus) {
+      return;
+    }
+
+    void supabase
+      .from("projects")
+      .update({
+        status: nextStatus,
+        start_date: nextStart || null,
+        end_date: nextEnd || null,
+      })
+      .eq("id", projectId);
+  }, [loading, project?.end_date, project?.start_date, project?.status, projectId, reportDateRange.endDate, reportDateRange.startDate, supabase]);
+
   const loadProjectWeather = async (mymapsUrl: string, placeHint?: string | null) => {
     if (!mymapsUrl) {
       setProjectWeather(null);
@@ -478,7 +555,6 @@ export default function ProjectDetailPage() {
       return;
     }
     loadProjectWeather(url, project?.mymaps_title ?? project?.name ?? null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.mymaps_url, project?.mymaps_title, project?.name]);
 
   const saveSettings = async () => {
@@ -518,9 +594,9 @@ export default function ProjectDetailPage() {
       program_borehole: Boolean(settingsForm.program_borehole),
       program_surface: Boolean(settingsForm.program_surface),
       program_ramming: Boolean(settingsForm.program_ramming),
-      status: settingsForm.status || null,
-      start_date: settingsForm.start_date || null,
-      end_date: settingsForm.end_date || null,
+      status: normalizeProjectStatus(settingsForm.status),
+      start_date: reportDateRange.startDate || null,
+      end_date: reportDateRange.endDate || null,
       // IMPORTANT:
       // Keep maps link/title out of the generic settings save.
       // They are managed only by the dedicated maps save/remove actions
@@ -569,9 +645,13 @@ export default function ProjectDetailPage() {
       else localStorage.removeItem(customProgramStorageKey);
     }
 
+    const savedProject = data as unknown as Project;
     setProject({
-      ...(data as unknown as Project),
+      ...savedProject,
       program_custom: customProgram,
+      status: normalizeProjectStatus(savedProject.status),
+      start_date: toDateInputValue(savedProject.start_date) || null,
+      end_date: toDateInputValue(savedProject.end_date) || null,
     });
     setSettingsOpen(false);
     setSavingSettings(false);
@@ -1551,7 +1631,7 @@ export default function ProjectDetailPage() {
           action={
             <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
               <ClipboardList className="h-4 w-4" aria-hidden="true" />
-              Status: {project.status ?? "—"}
+              Status: {normalizeProjectStatus(project.status)}
             </span>
           }
         >
@@ -1625,8 +1705,13 @@ export default function ProjectDetailPage() {
                 Zeitraum
               </div>
               <div className="mt-2 text-xs text-slate-500">
-                {project.start_date ? new Date(project.start_date).toLocaleDateString() : "—"} bis{" "}
-                {project.end_date ? new Date(project.end_date).toLocaleDateString() : "—"}
+                {toDateInputValue(project.start_date)
+                  ? new Date(toDateInputValue(project.start_date)).toLocaleDateString()
+                  : "—"}{" "}
+                bis{" "}
+                {toDateInputValue(project.end_date)
+                  ? new Date(toDateInputValue(project.end_date)).toLocaleDateString()
+                  : "—"}
               </div>
             </button>
             <button
@@ -2467,10 +2552,12 @@ export default function ProjectDetailPage() {
                   <span className="text-sm text-gray-600">Status</span>
                   <select
                     className="w-full rounded-xl border p-2.5"
-                    value={settingsForm.status ?? "geplant"}
-                    onChange={(e) => setSettingsForm((prev) => ({ ...prev, status: e.target.value }))}
+                    value={normalizeProjectStatus(settingsForm.status)}
+                    onChange={(e) =>
+                      setSettingsForm((prev) => ({ ...prev, status: normalizeProjectStatus(e.target.value) }))
+                    }
                   >
-                    {["geplant", "laufend", "pausiert", "abgeschlossen"].map((s) => (
+                    {STATUS_OPTIONS.map((s) => (
                       <option key={s} value={s}>
                         {s}
                       </option>
@@ -2479,55 +2566,28 @@ export default function ProjectDetailPage() {
                 </label>
                 <label className="space-y-1">
                   <span className="text-sm text-gray-600">Startdatum</span>
-                  <div className="flex gap-2">
-                    <input
-                      type="date"
-                      className="w-full rounded-xl border p-2.5"
-                      value={settingsForm.start_date ?? ""}
-                      onChange={(e) => setSettingsForm((prev) => ({ ...prev, start_date: e.target.value }))}
-                      onFocus={(e) => openNativePicker(e.currentTarget)}
-                      onClick={(e) => openNativePicker(e.currentTarget)}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-secondary shrink-0"
-                      onClick={() =>
-                        setSettingsForm((prev) => ({
-                          ...prev,
-                          start_date: getTodayDateInputValue(),
-                        }))
-                      }
-                    >
-                      Heute
-                    </button>
-                  </div>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border p-2.5 bg-slate-100 text-slate-600"
+                    value={settingsForm.start_date ?? ""}
+                    readOnly
+                    disabled
+                  />
                 </label>
                 <label className="space-y-1">
                   <span className="text-sm text-gray-600">Enddatum</span>
-                  <div className="flex gap-2">
-                    <input
-                      type="date"
-                      className="w-full rounded-xl border p-2.5"
-                      value={settingsForm.end_date ?? ""}
-                      onChange={(e) => setSettingsForm((prev) => ({ ...prev, end_date: e.target.value }))}
-                      onFocus={(e) => openNativePicker(e.currentTarget)}
-                      onClick={(e) => openNativePicker(e.currentTarget)}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-secondary shrink-0"
-                      onClick={() =>
-                        setSettingsForm((prev) => ({
-                          ...prev,
-                          end_date: getTodayDateInputValue(),
-                        }))
-                      }
-                    >
-                      Heute
-                    </button>
-                  </div>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border p-2.5 bg-slate-100 text-slate-600"
+                    value={settingsForm.end_date ?? ""}
+                    readOnly
+                    disabled
+                  />
                 </label>
               </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Startdatum = Datum des ersten Berichts, Enddatum = Datum des zuletzt erstellten Berichts.
+              </p>
             </div>
             ) : null}
 
