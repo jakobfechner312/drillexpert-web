@@ -42,5 +42,7 @@ export async function middleware(req: NextRequest) {
 
 // ✅ matcher: ignoriert static files, api, images etc.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api|.*\\.(?:png|jpg|jpeg|svg|webp|css|js)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|api|.*\\.(?:png|jpg|jpeg|svg|webp|css|js|json|webmanifest|ico|txt|xml)$).*)",
+  ],
 };
