@@ -335,57 +335,31 @@ export default function ProjectDetailPage() {
       setRole((mem as any)?.role_in_project ?? null);
     }
 
-    // 3) Team laden
+    // 3) Team laden (für alle Projektmitglieder sichtbar via RPC)
     setTeamLoading(true);
     setTeamError(null);
-    const { data: members, error: membersErr } = await supabase
-      .from("project_members")
-      .select("user_id, role_in_project")
-      .eq("project_id", projectId);
+    const { data: visibleMembers, error: visibleMembersErr } = await supabase.rpc(
+      "list_project_visible_members",
+      { p_project_id: projectId }
+    );
 
-    const ownerId = projectRow.owner_id ?? null;
-    const baseMembers = (members ?? []) as Array<{ user_id: string; role_in_project: string | null }>;
-    const hasOwnerRow = ownerId ? baseMembers.some((m) => m.user_id === ownerId) : false;
-    const withOwner = ownerId && !hasOwnerRow ? [...baseMembers, { user_id: ownerId, role_in_project: "owner" }] : baseMembers;
-
-    if (membersErr) {
-      setTeamError("Team laden fehlgeschlagen: " + membersErr.message);
+    if (visibleMembersErr) {
+      setTeamError("Team laden fehlgeschlagen: " + visibleMembersErr.message);
+      const ownerId = projectRow.owner_id ?? null;
       setTeamMembers(
         ownerId
           ? [{ user_id: ownerId, role_in_project: "owner", profiles: null }]
           : []
       );
-      setTeamLoading(false);
     } else {
-      const ids = Array.from(new Set(withOwner.map((m) => m.user_id)));
-      let emailMap = new Map<string, { email?: string | null }>();
-
-      const { data: emails, error: emailsErr } = await supabase.rpc("get_project_member_emails", {
-        p_project_id: projectId,
-      });
-      if (!emailsErr && Array.isArray(emails)) {
-        emailMap = new Map(emails.map((row: any) => [row.user_id as string, { email: row.email }]));
-      } else {
-        const { data: profiles, error: profilesErr } = await supabase
-          .from("profiles")
-          .select("id,email")
-          .in("id", ids);
-        if (profilesErr) {
-          setTeamError("Profile laden fehlgeschlagen: " + profilesErr.message);
-        } else {
-          emailMap = new Map((profiles ?? []).map((p: any) => [p.id as string, { email: p.email }]));
-        }
-      }
-
-      setTeamMembers(
-        withOwner.map((m) => ({
-          ...m,
-          profiles: emailMap.get(m.user_id) ?? null,
-        })) as TeamMember[]
-      );
-
-      setTeamLoading(false);
+      const mappedMembers = (visibleMembers ?? []).map((row: any) => ({
+        user_id: String(row.user_id ?? ""),
+        role_in_project: String(row.role_in_project ?? "member"),
+        profiles: { email: row.email ? String(row.email) : null },
+      })) as TeamMember[];
+      setTeamMembers(mappedMembers.filter((m) => Boolean(m.user_id)));
     }
+    setTeamLoading(false);
 
     // 4) Addierbare Nutzer per RPC laden (RLS-sicher)
     setUsersLoading(true);
@@ -2145,11 +2119,15 @@ export default function ProjectDetailPage() {
       {settingsOpen && (
         <div
           className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4"
-          onClick={() => setSettingsOpen(false)}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setSettingsOpen(false);
+            }
+          }}
         >
           <div
             className="mx-auto my-4 flex w-full max-w-3xl max-h-[calc(100vh-2rem)] flex-col rounded-2xl bg-white shadow"
-            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
               <div>

@@ -205,15 +205,18 @@ export async function generateSchichtenverzeichnisPdf(
   const buildBohrungen = () => {
     const normalizeType = (value: unknown) => {
       const raw = String(value ?? "").trim().toLowerCase();
+      if (raw === "greif") return "greif";
       if (raw === "rotation") return "rotation";
       if (raw === "ek_dks") return "ek_dks";
       if (raw === "voll") return "voll";
       return "ramm";
     };
     const parseDiameter = (value: string) => {
-      const cleaned = String(value ?? "")
-        .replace(",", ".")
-        .replace(/[^\d.]/g, "");
+      const raw = String(value ?? "").trim();
+      const normalizedRaw = /^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(raw)
+        ? raw.replace(/\./g, "").replace(",", ".")
+        : raw.replace(",", ".");
+      const cleaned = normalizedRaw.replace(/[^\d.]/g, "");
       const parsed = Number(cleaned);
       return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
     };
@@ -279,6 +282,7 @@ export async function generateSchichtenverzeichnisPdf(
     const rows = buildBohrungen().slice(0, 6);
     const labelMap: Record<string, string> = {
       ramm: "Rammkernbohrung",
+      greif: "Greifverbohrung",
       rotation: "Rotationskernbohrung",
       ek_dks: "EK-DK-S",
       voll: "Vollbohrung",

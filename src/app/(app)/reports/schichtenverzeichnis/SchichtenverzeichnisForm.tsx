@@ -18,7 +18,7 @@ type SptEntry = {
   schlag_3: string;
 };
 type BohrungEntry = {
-  verfahren: "ramm" | "rotation" | "ek_dks" | "voll";
+  verfahren: "ramm" | "greif" | "rotation" | "ek_dks" | "voll";
   bohrung_bis: string;
   verrohrt_bis: string;
   verrohr_durchmesser: string;
@@ -163,11 +163,12 @@ const buildRowFieldOffsetState = (
 
 const MAX_FESTSTELLUNGEN_CHARS = 200;
 const MAX_GROUNDWATER_ROWS = 50;
-const BOHR_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
+const BOHR_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509", "700", "880", "1.180", "1.500"] as const;
+const GREIF_DURCHMESSER_OPTIONS = ["700", "880", "1.180", "1.500"] as const;
 const SCHLITZWEITE_OPTIONS = ["0,5", "0,75", "1", "1,5", "1,75", "2", "2,25", "2,5"] as const;
-const KIES_KOERNUNG_OPTIONS = ["0,0-0,71", "0,71-1,25", "1,0-2,0", "2,0-3,15", "3,15-5,6", "5,6-8", "8,0-16"] as const;
-const SCHICHT_E_OPTIONS = ["--", "-", "0", "+", "++"] as const;
-const SCHICHT_C_OPTIONS = ["leicht", "mittel", "schwer", "individuell"] as const;
+const KIES_KOERNUNG_OPTIONS = ["0,71-1,25", "1,0-2,0", "2,0-3,15", "3,15-5,6", "5,6-8", "8,0-16"] as const;
+const SCHICHT_E_OPTIONS = ["0", "+", "++"] as const;
+const SCHICHT_C_OPTIONS = ["leicht", "mittel", "schwer"] as const;
 const SCHICHT_D_COLOR_DEFAULT = "#8b5a2b";
 const SCHICHT_D_TINT_DEFAULT = "gruen";
 const PEGEL_DURCHMESSER_OPTIONS = [
@@ -186,6 +187,9 @@ const PEGEL_DURCHMESSER_OPTIONS = [
   "DN700",
   "DN800",
 ] as const;
+const PEGEL_DURCHMESSER_BASE_OPTIONS = ['2"', '3"', '4"', '5"', '6"', '8"', "DN100", "DN200"] as const;
+const PEGEL_DURCHMESSER_ROTATION_OPTIONS = ['2"', '3"'] as const;
+const PEGEL_DURCHMESSER_GREIF_EXTRA_OPTIONS = ["DN300", "DN400", "DN500", "DN600", "DN700", "DN800"] as const;
 const GRUNDWASSERSTAND_OPTIONS = ["angebohrt", "eingespiegelt", "Bohrende", "im Pegel"] as const;
 const FILTER_PAIR_CONFIG: Array<{
   id: string;
@@ -346,7 +350,9 @@ const initialData: FormData = {
   vollrohr_stahl_lage: "unterflur",
   vollrohr_stahl: "",
   betonsockel: "",
+  kompaktkappe: "",
   kies_koernung: "",
+  gegenfilter_koernung: "",
   filterkies_von: "",
   filterkies_bis: "",
   tondichtung_von: "",
@@ -568,6 +574,7 @@ const emptyBohrungEntry = (): BohrungEntry => ({
 });
 const normalizeBohrverfahren = (value: unknown): BohrungEntry["verfahren"] => {
   const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "greif") return "greif";
   if (raw === "rotation") return "rotation";
   if (raw === "ek_dks") return "ek_dks";
   if (raw === "voll") return "voll";
@@ -706,6 +713,8 @@ export default function SchichtenverzeichnisForm({
   const [projektNameOptions, setProjektNameOptions] = useState<string[]>([]);
   const [projektMode, setProjektMode] = useState<"list" | "custom">("list");
   const [schlitzweiteMode, setSchlitzweiteMode] = useState<"list" | "custom">("list");
+  const [kiesKoernungMode, setKiesKoernungMode] = useState<"list" | "custom">("list");
+  const [gegenfilterKoernungMode, setGegenfilterKoernungMode] = useState<"list" | "custom">("list");
   const [projectUiLoading, setProjectUiLoading] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
@@ -1006,9 +1015,10 @@ export default function SchichtenverzeichnisForm({
           data.passavant,
           data.seba,
           data.betonsockel,
+          data.kompaktkappe,
           data.kies_koernung,
         ]),
-        total: 11,
+        total: 12,
       },
       {
         filled: filterRows.reduce((acc, row) => acc + countFilled(Object.values(row)), 0),
@@ -1111,6 +1121,36 @@ export default function SchichtenverzeichnisForm({
       verrohr_durch_4: voll?.verrohr_durchmesser ?? "",
     };
   }, [normalizedBohrungenForPayload]);
+  const pegelDurchmesserAllowedOptions = useMemo(() => {
+    const usedVerfahren = new Set(
+      bohrungen
+        .map((entry) => normalizeBohrverfahren(entry.verfahren))
+        .filter(Boolean)
+    );
+    if (usedVerfahren.size === 0) return [...PEGEL_DURCHMESSER_BASE_OPTIONS];
+
+    const allow = new Set<string>();
+    if (usedVerfahren.has("ramm") || usedVerfahren.has("voll")) {
+      PEGEL_DURCHMESSER_BASE_OPTIONS.forEach((opt) => allow.add(opt));
+    }
+    if (usedVerfahren.has("rotation")) {
+      PEGEL_DURCHMESSER_ROTATION_OPTIONS.forEach((opt) => allow.add(opt));
+    }
+    if (usedVerfahren.has("greif")) {
+      PEGEL_DURCHMESSER_BASE_OPTIONS.forEach((opt) => allow.add(opt));
+      PEGEL_DURCHMESSER_GREIF_EXTRA_OPTIONS.forEach((opt) => allow.add(opt));
+    }
+
+    return PEGEL_DURCHMESSER_OPTIONS.filter((opt) => allow.has(opt));
+  }, [bohrungen]);
+
+  useEffect(() => {
+    const current = String(data.pegel_durchmesser ?? "").trim();
+    if (!current) return;
+    if (!pegelDurchmesserAllowedOptions.includes(current as (typeof PEGEL_DURCHMESSER_OPTIONS)[number])) {
+      setData((prev) => ({ ...prev, pegel_durchmesser: "" }));
+    }
+  }, [data.pegel_durchmesser, pegelDurchmesserAllowedOptions]);
   const normalizedFilterRowsForPayload = useMemo(() => {
     const rows = filterRows
       .map((row) => ({
@@ -1534,7 +1574,63 @@ export default function SchichtenverzeichnisForm({
   }, [data.sw]);
 
   useEffect(() => {
+    const current = String(data.kies_koernung ?? "").trim();
+    if (!current) {
+      setKiesKoernungMode("list");
+      return;
+    }
+    if (!KIES_KOERNUNG_OPTIONS.includes(current as (typeof KIES_KOERNUNG_OPTIONS)[number])) {
+      setKiesKoernungMode("custom");
+    } else {
+      setKiesKoernungMode("list");
+    }
+  }, [data.kies_koernung]);
+
+  useEffect(() => {
+    const current = String(data.gegenfilter_koernung ?? "").trim();
+    if (!current) {
+      setGegenfilterKoernungMode("list");
+      return;
+    }
+    if (!KIES_KOERNUNG_OPTIONS.includes(current as (typeof KIES_KOERNUNG_OPTIONS)[number])) {
+      setGegenfilterKoernungMode("custom");
+    } else {
+      setGegenfilterKoernungMode("list");
+    }
+  }, [data.gegenfilter_koernung]);
+
+  const hasRequiredDurchfuehrungszeit = useMemo(
+    () =>
+      Boolean(String(data.durchfuehrungszeit_von ?? "").trim()) &&
+      Boolean(String(data.durchfuehrungszeit_bis ?? "").trim()),
+    [data.durchfuehrungszeit_von, data.durchfuehrungszeit_bis]
+  );
+  const ensureRequiredDurchfuehrungszeit = useCallback(() => {
+    if (hasRequiredDurchfuehrungszeit) return true;
+    alert('Pflichtfeld fehlt: "Durchführung von" und "Durchführung bis" müssen ausgefüllt sein.');
+    if (useStepper) setStepIndex(0);
+    return false;
+  }, [hasRequiredDurchfuehrungszeit, useStepper]);
+  const hasRequiredSchichtfelder = useMemo(
+    () =>
+      schichtRows.every(
+        (row) =>
+          Boolean(String(row.ansatzpunkt_bis ?? "").trim()) &&
+          Boolean(String(row.a1 ?? "").trim())
+      ),
+    [schichtRows]
+  );
+  const ensureRequiredSchichtfelder = useCallback(() => {
+    if (hasRequiredSchichtfelder) return true;
+    alert('Pflichtfeld fehlt: In jeder Schichtzeile müssen "Bis unter Ansatzpunkt (m)" und "a1 (Benennung)" ausgefüllt sein.');
+    if (useStepper) setStepIndex(5);
+    return false;
+  }, [hasRequiredSchichtfelder, useStepper]);
+
+  useEffect(() => {
     setSaveDraftHandler(async () => {
+      if (!ensureRequiredDurchfuehrungszeit()) return;
+      if (!ensureRequiredSchichtfelder()) return;
       const { data: userRes } = await supabase.auth.getUser();
       const user = userRes.user;
       if (!user) return alert("Nicht eingeloggt.");
@@ -1594,6 +1690,8 @@ export default function SchichtenverzeichnisForm({
       savingRef.current = true;
 
       try {
+        if (!ensureRequiredDurchfuehrungszeit()) return;
+        if (!ensureRequiredSchichtfelder()) return;
         const { data: userRes } = await supabase.auth.getUser();
         const user = userRes.user;
         if (!user) return alert("Nicht eingeloggt.");
@@ -1698,6 +1796,8 @@ export default function SchichtenverzeichnisForm({
     schichtRowOffsetsPage2,
     effectiveProjectId,
     ensureSaveTarget,
+    ensureRequiredDurchfuehrungszeit,
+    ensureRequiredSchichtfelder,
     setSaveDraftHandler,
     setSaveReportHandler,
     supabase,
@@ -2015,6 +2115,8 @@ export default function SchichtenverzeichnisForm({
   };
 
   const openPdf = async () => {
+    if (!ensureRequiredDurchfuehrungszeit()) return;
+    if (!ensureRequiredSchichtfelder()) return;
     const previewWindow = window.open("", "_blank");
     setLoading(true);
     try {
@@ -2051,6 +2153,8 @@ export default function SchichtenverzeichnisForm({
   };
 
   const downloadPdfToLocal = async () => {
+    if (!ensureRequiredDurchfuehrungszeit()) return;
+    if (!ensureRequiredSchichtfelder()) return;
     setLoading(true);
     try {
       saveOffsetsSnapshot();
@@ -2508,6 +2612,7 @@ export default function SchichtenverzeichnisForm({
                       onChange={(e) => update("durchfuehrungszeit_von", e.target.value)}
                       onFocus={(e) => openNativePicker(e.currentTarget)}
                       onClick={(e) => openNativePicker(e.currentTarget)}
+                      required
                     />
                   </label>
                   <label className="space-y-1">
@@ -2521,6 +2626,7 @@ export default function SchichtenverzeichnisForm({
                       onChange={(e) => update("durchfuehrungszeit_bis", e.target.value)}
                       onFocus={(e) => openNativePicker(e.currentTarget)}
                       onClick={(e) => openNativePicker(e.currentTarget)}
+                      required
                     />
                   </label>
                 </div>
@@ -2577,12 +2683,20 @@ export default function SchichtenverzeichnisForm({
                               setBohrungen((prev) => {
                                 const next = [...prev];
                                 const nextVerfahren = normalizeBohrverfahren(e.target.value);
+                                const currentDurchmesser = next[idx].verrohr_durchmesser ?? "";
+                                const isGreifDurchmesser = GREIF_DURCHMESSER_OPTIONS.includes(
+                                  currentDurchmesser as (typeof GREIF_DURCHMESSER_OPTIONS)[number]
+                                );
                                 next[idx] = {
                                   ...next[idx],
                                   verfahren: nextVerfahren,
                                   verrohr_durchmesser:
                                     nextVerfahren === "ek_dks"
                                       ? "146"
+                                      : nextVerfahren === "greif"
+                                      ? isGreifDurchmesser
+                                        ? currentDurchmesser
+                                        : ""
                                       : next[idx].verrohr_durchmesser,
                                 };
                                 return next;
@@ -2590,6 +2704,7 @@ export default function SchichtenverzeichnisForm({
                             }
                           >
                             <option value="ramm">Rammkernbohrung</option>
+                            <option value="greif">Greifverbohrung</option>
                             <option value="rotation">Rotationskernbohrung</option>
                             <option value="ek_dks">EK-DK-S</option>
                             <option value="voll">Vollbohrung</option>
@@ -2637,7 +2752,10 @@ export default function SchichtenverzeichnisForm({
                             }
                           >
                             <option value="">Bitte wählen…</option>
-                            {BOHR_DURCHMESSER_OPTIONS.map((opt) => (
+                            {(entry.verfahren === "greif"
+                              ? GREIF_DURCHMESSER_OPTIONS
+                              : BOHR_DURCHMESSER_OPTIONS
+                            ).map((opt) => (
                               <option key={opt} value={opt}>
                                 {opt}
                               </option>
@@ -2813,23 +2931,17 @@ export default function SchichtenverzeichnisForm({
                       onChange={(e) => update("pegel_durchmesser", e.target.value)}
                     >
                       <option value="">Pegel Ø</option>
-                      {PEGEL_DURCHMESSER_OPTIONS.map((opt) => (
+                      {pegelDurchmesserAllowedOptions.map((opt) => (
                         <option key={opt} value={opt}>
                           {opt}
                         </option>
                       ))}
-                      {data.pegel_durchmesser &&
-                      !PEGEL_DURCHMESSER_OPTIONS.includes(
-                        data.pegel_durchmesser as (typeof PEGEL_DURCHMESSER_OPTIONS)[number]
-                      ) ? (
-                        <option value={data.pegel_durchmesser}>{data.pegel_durchmesser}</option>
-                      ) : null}
                     </select>
                   </label>
                   {data.pegel_durchmesser ? (
                     <>
                       <Field label="GOK" value={data.rok} onChange={(v) => update("rok", v)} />
-                      <Field label="Sumpf (m)" value={data.sumpf} onChange={(v) => update("sumpf", v)} />
+                      <Field label="Sumpfrohr (m)" value={data.sumpf} onChange={(v) => update("sumpf", v)} />
                       <Field label="Filterrohr (m)" value={data.filter_rohr} onChange={(v) => update("filter_rohr", v)} />
                       <label className="space-y-1">
                         <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -2870,14 +2982,20 @@ export default function SchichtenverzeichnisForm({
                       <Field label="Vollrohr PVC (m)" value={data.vollrohr_pvc} onChange={(v) => update("vollrohr_pvc", v)} />
                       <div className="space-y-2">
                         <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          Stahlrohr Lage
+                          Oberflächenabschluss
                         </span>
                         <div className="grid gap-2 sm:grid-cols-2">
                           <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                             <input
                               type="checkbox"
                               checked={vollrohrStahlLage === "ueberflur"}
-                              onChange={() => update("vollrohr_stahl_lage", "ueberflur")}
+                              onChange={() =>
+                                setData((prev) => ({
+                                  ...prev,
+                                  vollrohr_stahl_lage: "ueberflur",
+                                  passavant: "",
+                                }))
+                              }
                             />
                             Überflur
                           </label>
@@ -2890,6 +3008,7 @@ export default function SchichtenverzeichnisForm({
                                   ...prev,
                                   vollrohr_stahl_lage: "unterflur",
                                   vollrohr_stahl: "",
+                                  betonsockel: "",
                                 }));
                               }}
                             />
@@ -2912,16 +3031,18 @@ export default function SchichtenverzeichnisForm({
               </Card>
 
               {data.pegel_durchmesser ? (
-                <Card title="Passavant / Seba / Beton">
+                <Card title="Passavant / Seba / Beton / Kompaktkappe">
                   <div className="grid gap-3 lg:grid-cols-2">
-                    <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(data.passavant?.trim())}
-                        onChange={(e) => toggleMark("passavant", e.target.checked)}
-                      />
-                      Passavant
-                    </label>
+                    {vollrohrStahlLage !== "ueberflur" ? (
+                      <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(data.passavant?.trim())}
+                          onChange={(e) => toggleMark("passavant", e.target.checked)}
+                        />
+                        Passavant
+                      </label>
+                    ) : null}
                     <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                       <input
                         type="checkbox"
@@ -2930,13 +3051,23 @@ export default function SchichtenverzeichnisForm({
                       />
                       Seba
                     </label>
+                    {vollrohrStahlLage !== "unterflur" ? (
+                      <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(data.betonsockel?.trim())}
+                          onChange={(e) => toggleMark("betonsockel", e.target.checked)}
+                        />
+                        Betonsockel
+                      </label>
+                    ) : null}
                     <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                       <input
                         type="checkbox"
-                        checked={Boolean(data.betonsockel?.trim())}
-                        onChange={(e) => toggleMark("betonsockel", e.target.checked)}
+                        checked={Boolean(data.kompaktkappe?.trim())}
+                        onChange={(e) => toggleMark("kompaktkappe", e.target.checked)}
                       />
-                      Betonsockel
+                      Kompaktkappe
                     </label>
                   </div>
                 </Card>
@@ -3025,8 +3156,16 @@ export default function SchichtenverzeichnisForm({
                               </span>
                               <select
                                 className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                                value={data.kies_koernung ?? ""}
-                                onChange={(e) => update("kies_koernung", e.target.value)}
+                                value={kiesKoernungMode === "custom" ? "__custom__" : data.kies_koernung || ""}
+                                onChange={(e) => {
+                                  if (e.target.value === "__custom__") {
+                                    setKiesKoernungMode("custom");
+                                    update("kies_koernung", "");
+                                    return;
+                                  }
+                                  setKiesKoernungMode("list");
+                                  update("kies_koernung", e.target.value);
+                                }}
                               >
                                 <option value="">Bitte wählen…</option>
                                 {KIES_KOERNUNG_OPTIONS.map((opt) => (
@@ -3034,13 +3173,58 @@ export default function SchichtenverzeichnisForm({
                                     {opt}
                                   </option>
                                 ))}
-                                {data.kies_koernung &&
-                                !KIES_KOERNUNG_OPTIONS.includes(
-                                  data.kies_koernung as (typeof KIES_KOERNUNG_OPTIONS)[number]
-                                ) ? (
-                                  <option value={data.kies_koernung}>{data.kies_koernung}</option>
-                                ) : null}
+                                <option value="__custom__">Eigene Körnung…</option>
                               </select>
+                              {kiesKoernungMode === "custom" ? (
+                                <input
+                                  className="mt-2 h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                                  placeholder="Eigene Kies-Körnung"
+                                  value={data.kies_koernung ?? ""}
+                                  onChange={(e) => update("kies_koernung", e.target.value)}
+                                />
+                              ) : null}
+                            </label>
+                          </div>
+                        ) : null}
+                        {cfg.id === "gegenfilter" ? (
+                          <div className="mt-3">
+                            <label className="space-y-1">
+                              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                Kies-Körnung
+                              </span>
+                              <select
+                                className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                                value={
+                                  gegenfilterKoernungMode === "custom"
+                                    ? "__custom__"
+                                    : data.gegenfilter_koernung || ""
+                                }
+                                onChange={(e) => {
+                                  if (e.target.value === "__custom__") {
+                                    setGegenfilterKoernungMode("custom");
+                                    update("gegenfilter_koernung", "");
+                                    return;
+                                  }
+                                  setGegenfilterKoernungMode("list");
+                                  update("gegenfilter_koernung", e.target.value);
+                                }}
+                              >
+                                <option value="">Bitte wählen…</option>
+                                {KIES_KOERNUNG_OPTIONS.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                                <option value="__custom__">Eigene Körnung…</option>
+                              </select>
+                              {gegenfilterKoernungMode === "custom" ? (
+                                <input
+                                  className="mt-2 h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                                  placeholder="Eigene Kies-Körnung"
+                                  value={data.gegenfilter_koernung ?? ""}
+                                  onChange={(e) => update("gegenfilter_koernung", e.target.value)}
+                                />
+                              ) : null}
                             </label>
                           </div>
                         ) : null}
@@ -3179,7 +3363,7 @@ export default function SchichtenverzeichnisForm({
                       Schichtbeschreibung
                     </div>
                     <label className="col-span-full 2xl:col-span-4 border-b border-slate-200 px-3 py-2">
-                      a1 Benennung
+                      a1) Benennung
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.a1}
@@ -3193,7 +3377,7 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="col-span-full 2xl:col-span-4 border-b border-slate-200 px-3 py-2">
-                      a2 Bemerkung
+                      a2) Bemerkung
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.a2}
@@ -3207,7 +3391,7 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="border-b border-r border-slate-200 px-3 py-2">
-                      b Bohrgut
+                      b) Bohrgut
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.b}
@@ -3221,14 +3405,23 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="border-b border-r border-slate-200 px-3 py-2">
-                      c Bohrvorgang
+                      c) Bohrvorgang
                       <select
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                        value={row.c}
+                        value={
+                          row.c === ""
+                            ? ""
+                            : SCHICHT_C_OPTIONS.includes(row.c as (typeof SCHICHT_C_OPTIONS)[number])
+                              ? row.c
+                              : "__custom__"
+                        }
                         onChange={(e) =>
                           setSchichtRows((prev) => {
                             const next = [...prev];
-                            next[idx] = { ...next[idx], c: e.target.value };
+                            next[idx] = {
+                              ...next[idx],
+                              c: e.target.value === "__custom__" ? "individuell" : e.target.value,
+                            };
                             return next;
                           })
                         }
@@ -3239,10 +3432,29 @@ export default function SchichtenverzeichnisForm({
                             {opt}
                           </option>
                         ))}
+                        <option value="__custom__">individuell</option>
                       </select>
+                      {(
+                        row.c === "individuell" ||
+                        (!SCHICHT_C_OPTIONS.includes(row.c as (typeof SCHICHT_C_OPTIONS)[number]) &&
+                          row.c !== "")
+                      ) ? (
+                        <input
+                          className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                          value={row.c === "individuell" ? "" : row.c}
+                          onChange={(e) =>
+                            setSchichtRows((prev) => {
+                              const next = [...prev];
+                              next[idx] = { ...next[idx], c: e.target.value };
+                              return next;
+                            })
+                          }
+                          placeholder="Individueller Bohrvorgang"
+                        />
+                      ) : null}
                     </label>
                     <label className="border-b border-r border-slate-200 px-3 py-2">
-                      d Farbe
+                      d) Farbe
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.d}
@@ -3258,7 +3470,7 @@ export default function SchichtenverzeichnisForm({
                     </label>
                     <div className="hidden 2xl:block border-b border-slate-200 px-3 py-2" />
                     <label className="border-r border-slate-200 px-3 py-2">
-                      f Ortsüblich
+                      f) Ortsüblich
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.f}
@@ -3272,7 +3484,7 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="border-r border-slate-200 px-3 py-2">
-                      g Geologisch
+                      g) Geologisch
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.g}
@@ -3286,7 +3498,7 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="border-r border-slate-200 px-3 py-2">
-                      h Gruppe
+                      h) Gruppe
                       <input
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.h}
@@ -3300,7 +3512,7 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="px-3 py-2">
-                      e Kalkgehalt
+                      e) Kalkgehalt
                       <select
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.e}
@@ -3811,7 +4023,10 @@ export default function SchichtenverzeichnisForm({
             <button
               type="button"
               className="btn btn-primary"
-              onClick={() => setStepIndex((i) => Math.min(steps.length - 1, i + 1))}
+              onClick={() => {
+                if (stepIndex === 5 && !ensureRequiredSchichtfelder()) return;
+                setStepIndex((i) => Math.min(steps.length - 1, i + 1));
+              }}
               disabled={stepIndex >= steps.length - 1}
             >
               Weiter
