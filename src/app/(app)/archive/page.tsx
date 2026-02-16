@@ -59,13 +59,15 @@ export default function ArchivePage() {
     }
 
     const memberProjects = ((members ?? []) as ProjectMemberRow[])
-      .map((row) => row.project)
-      .filter(Boolean)
-      .map((project: { id?: string; name?: string }) => ({
-        id: String(project.id ?? ""),
-        name: String(project.name ?? ""),
-      }))
-      .filter((project) => project.id.length > 0);
+      .flatMap((row) => {
+        if (!row.project?.id) return [];
+        return [
+          {
+            id: String(row.project.id),
+            name: String(row.project.name ?? ""),
+          },
+        ];
+      });
     const projectIdList = memberProjects.map((project) => project.id);
     setProjectNames(
       Object.fromEntries(memberProjects.map((project) => [project.id, project.name]))
