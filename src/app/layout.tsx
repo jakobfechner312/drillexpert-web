@@ -16,16 +16,18 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Drillexpert",
   description: "Digitale Tagesberichte",
-  manifest: "/manifest.webmanifest",
+  manifest: "/manifest.webmanifest?v=20260216",
   icons: {
     icon: [
-      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
-      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/favicon-16x16.png?v=20260216", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png?v=20260216", sizes: "32x32", type: "image/png" },
+      { url: "/icon-192x192.png?v=20260216", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512x512.png?v=20260216", sizes: "512x512", type: "image/png" },
+      { url: "/android-chrome-192x192.png?v=20260216", sizes: "192x192", type: "image/png" },
+      { url: "/android-chrome-512x512.png?v=20260216", sizes: "512x512", type: "image/png" },
     ],
-    apple: "/apple-touch-icon.png",
-    shortcut: "/favicon-32x32.png",
+    apple: "/apple-touch-icon.png?v=20260216",
+    shortcut: "/favicon-32x32.png?v=20260216",
   },
 };
 
