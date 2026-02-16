@@ -305,6 +305,15 @@ const formatDepthNumeric = (value: number): string => {
   const fixed = Number.isInteger(value) ? value.toString() : value.toFixed(2).replace(/\.?0+$/, "");
   return fixed.replace(".", ",");
 };
+const SPT_SEGMENT_DEPTH_M = 0.15;
+const computeSptBisFromEntry = (entry: Partial<SptEntry> | null | undefined): string => {
+  const fromValue = parseDepthNumeric(entry?.von_m);
+  if (fromValue == null) return "";
+  const filledSegments = [entry?.schlag_1, entry?.schlag_2, entry?.schlag_3].filter(
+    (value) => String(value ?? "").trim() !== ""
+  ).length;
+  return formatDepthNumeric(fromValue + filledSegments * SPT_SEGMENT_DEPTH_M);
+};
 
 const initialData: FormData = {
   auftrag_nr: "",
@@ -368,6 +377,7 @@ const initialData: FormData = {
   probe_gp: "",
   probe_kp: "",
   probe_sp: "",
+  probe_bg: "",
   probe_wp: "",
   probe_ki: "",
   probe_bkb: "",
@@ -421,6 +431,7 @@ const normalizeProbeType = (value: string | undefined | null) => {
   const normalized = String(value ?? "").trim().toUpperCase();
   if (normalized === "EP") return "EP";
   if (normalized === "UP") return "UP";
+  if (normalized === "BG") return "BG";
   return "GP";
 };
 const computeProbeKiFromBohrungen = (rows: Array<Pick<BohrungEntry, "bohrung_bis">>) => {
@@ -443,7 +454,7 @@ const normalizeSptEntries = (row: Partial<SchichtRow> | null | undefined): SptEn
   const explicit = Array.isArray(row?.spt_eintraege)
     ? row.spt_eintraege.map((entry) => ({
         von_m: String(entry?.von_m ?? ""),
-        bis_m: String(entry?.bis_m ?? ""),
+        bis_m: computeSptBisFromEntry(entry) || String(entry?.bis_m ?? ""),
         schlag_1: String(entry?.schlag_1 ?? ""),
         schlag_2: String(entry?.schlag_2 ?? ""),
         schlag_3: String(entry?.schlag_3 ?? ""),
@@ -456,7 +467,12 @@ const normalizeSptEntries = (row: Partial<SchichtRow> | null | undefined): SptEn
   return [
     {
       von_m: "",
-      bis_m: "",
+      bis_m: computeSptBisFromEntry({
+        von_m: "",
+        schlag_1: String(row?.spt_schlag_1 ?? ""),
+        schlag_2: String(row?.spt_schlag_2 ?? ""),
+        schlag_3: String(row?.spt_schlag_3 ?? ""),
+      }),
       schlag_1: String(row?.spt_schlag_1 ?? ""),
       schlag_2: String(row?.spt_schlag_2 ?? ""),
       schlag_3: String(row?.spt_schlag_3 ?? ""),
@@ -2073,7 +2089,16 @@ export default function SchichtenverzeichnisForm({
     bohrungen: normalizedBohrungenForPayload,
     filter_rows: normalizedFilterRowsForPayload,
     grundwasser_rows: grundwasserRows,
-    schicht_rows: schichtRows,
+    schicht_rows: schichtRows.map((row) => {
+      const entries = Array.isArray(row.spt_eintraege) ? row.spt_eintraege : [];
+      return {
+        ...row,
+        spt_eintraege: entries.map((entry) => ({
+          ...entry,
+          bis_m: computeSptBisFromEntry(entry),
+        })),
+      };
+    }),
     schicht_row_height: Number(schichtRowHeight) || 200,
     schicht_start_offset_page_1: Number(schichtStartOffsetPage1) || 0,
     schicht_start_offset_page_2: Number(schichtStartOffsetPage2) || 0,
@@ -2339,7 +2364,7 @@ export default function SchichtenverzeichnisForm({
         proben_nr: `P-${idx + 1}`,
         proben_tiefe: "3,2",
         proben_tiefen: ["0,0 - 2,3", "3,2", "4,1 - 5,0"],
-        proben_arten: ["GP", "EP", "UP"],
+        proben_arten: ["GP", "EP", "UP", "BG"],
         spt_eintraege:
           idx === 0
             ? [
@@ -3267,7 +3292,7 @@ export default function SchichtenverzeichnisForm({
                 </div>
               </div>
               <div className="rounded-lg border border-slate-200 p-2">
-                <div className="text-xs font-semibold text-slate-700">Feststellungen</div>
+                <div className="text-xs font-semibold text-slate-700">Feststellungen beim Bohren</div>
                 <div className="mt-1 text-xs">
                   Feststellungen beim Bohren: Wasserführung; Bohrwerkzeuge; SPT; Sonstiges
                 </div>
@@ -3537,7 +3562,7 @@ export default function SchichtenverzeichnisForm({
               </div>
               </div>
               <div className="rounded-xl border border-slate-200 p-3 h-full flex flex-col">
-                <div className="text-xs font-semibold text-slate-600">Feststellungen</div>
+                <div className="text-xs font-semibold text-slate-600">Feststellungen beim Bohren</div>
                 <textarea
                   className="mt-2 h-28 min-h-[96px] max-h-40 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   value={row.feststellungen}
@@ -3664,6 +3689,10 @@ export default function SchichtenverzeichnisForm({
                             key={sptIndex}
                             className="rounded-md border border-slate-200 bg-white p-2"
                           >
+                            {(() => {
+                              const computedBis = computeSptBisFromEntry(entry);
+                              return (
+                                <>
                             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                               SPT {sptIndex + 1}
                             </div>
@@ -3679,7 +3708,11 @@ export default function SchichtenverzeichnisForm({
                                       ? [...next[idx].spt_eintraege]
                                       : [emptySptEntry()];
                                     const current = entries[sptIndex] ?? emptySptEntry();
-                                    entries[sptIndex] = { ...current, von_m: e.target.value };
+                                    const nextEntry = { ...current, von_m: e.target.value };
+                                    entries[sptIndex] = {
+                                      ...nextEntry,
+                                      bis_m: computeSptBisFromEntry(nextEntry),
+                                    };
                                     const first = entries[0] ?? emptySptEntry();
                                     next[idx] = {
                                       ...next[idx],
@@ -3694,31 +3727,9 @@ export default function SchichtenverzeichnisForm({
                                 }
                               />
                               <span className="text-[10px] font-semibold text-slate-500">bis</span>
-                              <input
-                                className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                                placeholder="bis (m)"
-                                value={entry?.bis_m ?? ""}
-                                onChange={(e) =>
-                                  setSchichtRows((prev) => {
-                                    const next = [...prev];
-                                    const entries = Array.isArray(next[idx].spt_eintraege)
-                                      ? [...next[idx].spt_eintraege]
-                                      : [emptySptEntry()];
-                                    const current = entries[sptIndex] ?? emptySptEntry();
-                                    entries[sptIndex] = { ...current, bis_m: e.target.value };
-                                    const first = entries[0] ?? emptySptEntry();
-                                    next[idx] = {
-                                      ...next[idx],
-                                      spt_gemacht: entries.length > 0,
-                                      spt_eintraege: entries,
-                                      spt_schlag_1: first.schlag_1,
-                                      spt_schlag_2: first.schlag_2,
-                                      spt_schlag_3: first.schlag_3,
-                                    };
-                                    return next;
-                                  })
-                                }
-                              />
+                              <div className="h-8 rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-xs text-slate-700 flex items-center">
+                                {computedBis || "automatisch"}
+                              </div>
                               <span className="text-[10px] text-slate-500">m</span>
                             </div>
                             <div className="grid grid-cols-3 gap-2">
@@ -3733,7 +3744,11 @@ export default function SchichtenverzeichnisForm({
                                       ? [...next[idx].spt_eintraege]
                                       : [emptySptEntry()];
                                     const current = entries[sptIndex] ?? emptySptEntry();
-                                    entries[sptIndex] = { ...current, schlag_1: e.target.value };
+                                    const nextEntry = { ...current, schlag_1: e.target.value };
+                                    entries[sptIndex] = {
+                                      ...nextEntry,
+                                      bis_m: computeSptBisFromEntry(nextEntry),
+                                    };
                                     const first = entries[0] ?? emptySptEntry();
                                     next[idx] = {
                                       ...next[idx],
@@ -3758,7 +3773,11 @@ export default function SchichtenverzeichnisForm({
                                       ? [...next[idx].spt_eintraege]
                                       : [emptySptEntry()];
                                     const current = entries[sptIndex] ?? emptySptEntry();
-                                    entries[sptIndex] = { ...current, schlag_2: e.target.value };
+                                    const nextEntry = { ...current, schlag_2: e.target.value };
+                                    entries[sptIndex] = {
+                                      ...nextEntry,
+                                      bis_m: computeSptBisFromEntry(nextEntry),
+                                    };
                                     const first = entries[0] ?? emptySptEntry();
                                     next[idx] = {
                                       ...next[idx],
@@ -3783,7 +3802,11 @@ export default function SchichtenverzeichnisForm({
                                       ? [...next[idx].spt_eintraege]
                                       : [emptySptEntry()];
                                     const current = entries[sptIndex] ?? emptySptEntry();
-                                    entries[sptIndex] = { ...current, schlag_3: e.target.value };
+                                    const nextEntry = { ...current, schlag_3: e.target.value };
+                                    entries[sptIndex] = {
+                                      ...nextEntry,
+                                      bis_m: computeSptBisFromEntry(nextEntry),
+                                    };
                                     const first = entries[0] ?? emptySptEntry();
                                     next[idx] = {
                                       ...next[idx],
@@ -3798,6 +3821,9 @@ export default function SchichtenverzeichnisForm({
                                 }
                               />
                             </div>
+                                </>
+                              );
+                            })()}
                           </div>
                         ))}
                     </div>
@@ -3895,6 +3921,7 @@ export default function SchichtenverzeichnisForm({
                           <option value="GP">GP</option>
                           <option value="EP">EP</option>
                           <option value="UP">UP</option>
+                          <option value="BG">BG</option>
                         </select>
                         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                           <input

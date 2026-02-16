@@ -48,6 +48,7 @@ export const DEFAULT_FIELD_OFFSETS_PAGE_1: Record<string, { x: number; y: number
   probe_gp: { x: 0, y: 0 },
   probe_kp: { x: 0, y: 0 },
   probe_sp: { x: 0, y: 0 },
+  probe_bg: { x: 0, y: 0 },
   probe_wp: { x: 0, y: -25 },
   probe_ki: { x: 0, y: -25 },
   probe_bkb: { x: 0, y: -25 },

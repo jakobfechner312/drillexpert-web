@@ -144,21 +144,30 @@ export default function DashboardPage() {
 
       {!loading && !err && (
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <Link
+            href="/projects"
+            className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow"
+          >
             <div className="text-xs uppercase tracking-wider text-slate-500">Projekte</div>
             <div className="mt-2 text-3xl font-semibold text-slate-900">{projects.length}</div>
             <p className="mt-1 text-xs text-slate-500">Mitgliedschaften</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          </Link>
+          <Link
+            href="/reports"
+            className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow"
+          >
             <div className="text-xs uppercase tracking-wider text-slate-500">Berichte</div>
             <div className="mt-2 text-3xl font-semibold text-slate-900">{reports.length}</div>
             <p className="mt-1 text-xs text-slate-500">Zuletzt bearbeitet</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          </Link>
+          <Link
+            href="/drafts"
+            className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow"
+          >
             <div className="text-xs uppercase tracking-wider text-slate-500">Entwürfe</div>
             <div className="mt-2 text-3xl font-semibold text-slate-900">{drafts.length}</div>
             <p className="mt-1 text-xs text-slate-500">Lokale & Cloud</p>
-          </div>
+          </Link>
         </div>
       )}
 

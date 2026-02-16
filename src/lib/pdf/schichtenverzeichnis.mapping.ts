@@ -66,6 +66,7 @@ export const SV_FIELDS: SchichtenverzeichnisField[] = [
   { key: "probe_gp", label: "GP", page: 1, x: 140, y: 35, size: 13, width: 20, aliases: ["gp"] },
   { key: "probe_kp", label: "KP", page: 1, x: 190, y: 35, size: 13, width: 20, aliases: ["kp"] },
   { key: "probe_sp", label: "SP", page: 1, x: 245, y: 35, size: 13, width: 20, aliases: ["sp"] },
+  { key: "probe_bg", label: "BG", page: 1, x: 425, y: 20, size: 13, width: 20, aliases: ["bg"] },
   { key: "probe_wp", label: "WP", page: 1, x: 262, y: 64, size: 13, width: 20, aliases: ["wp"] },
   { key: "probe_ki", label: "Ki/m", page: 1, x: 340, y: 62, size: 13, width: 20, aliases: ["ki"] },
   { key: "probe_bkb", label: "BKB", page: 1, x: 383, y: 64, size: 13, width: 20, aliases: ["bkb"] },

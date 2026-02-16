@@ -14,8 +14,22 @@ const unescapeHtmlLike = (value: string) =>
     .replace(/\\u0026/gi, "&")
     .replace(/&amp;/gi, "&");
 
+const decodeRepeated = (value: string, rounds = 3) => {
+  let out = value;
+  for (let i = 0; i < rounds; i += 1) {
+    try {
+      const next = decodeURIComponent(out);
+      if (next === out) break;
+      out = next;
+    } catch {
+      break;
+    }
+  }
+  return out;
+};
+
 const extractCoordsFromText = (text: string): { lat: number; lon: number } | null => {
-  const normalized = unescapeHtmlLike(text);
+  const normalized = decodeRepeated(unescapeHtmlLike(text));
   const patterns: RegExp[] = [
     /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i,
     /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/i,
@@ -38,6 +52,18 @@ const extractCoordsFromText = (text: string): { lat: number; lon: number } | nul
     if (lat != null && lon != null) return { lat, lon };
   }
   return null;
+};
+
+const parseCoordPair = (value: string | null | undefined): { lat: number; lon: number } | null => {
+  if (!value) return null;
+  const cleaned = decodeRepeated(value).trim();
+  const match = cleaned.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const lat = readNumber(match[1]);
+  const lon = readNumber(match[2]);
+  if (lat == null || lon == null) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon };
 };
 
 const extractGoogleMapsUrlFromHtml = (html: string): string | null => {
@@ -99,6 +125,18 @@ export async function GET(request: Request) {
   }
 
   try {
+    const decodedInput = decodeRepeated(url);
+    const llMatch = decodedInput.match(/[?&#]ll=([^&#]+)/i);
+    if (llMatch?.[1]) {
+      const coords = parseCoordPair(llMatch[1]);
+      if (coords) {
+        return NextResponse.json({
+          title: "Google Maps",
+          resolvedUrl: `https://www.google.com/maps?q=${coords.lat},${coords.lon}`,
+        });
+      }
+    }
+
     const current = await followShortLink(url);
 
     const res = await fetch(current, {

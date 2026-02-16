@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import { ChevronDown, Menu, X } from "lucide-react";
 
 export default function AppShell({
   title = "Drillexpert",
@@ -19,11 +19,56 @@ export default function AppShell({
 }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [topbarHiddenMobile, setTopbarHiddenMobile] = useState(false);
   const showFloatingNavToggle = pathname.startsWith("/reports");
 
   useEffect(() => {
     setSidebarOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    let lastY = 0;
+    let ticking = false;
+
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const y = window.scrollY || 0;
+        const mobile = window.innerWidth < 1024;
+        if (!mobile) {
+          setTopbarHiddenMobile(false);
+          lastY = y;
+          ticking = false;
+          return;
+        }
+
+        if (y <= 16) {
+          setTopbarHiddenMobile(false);
+          lastY = y;
+          ticking = false;
+          return;
+        }
+
+        const delta = y - lastY;
+        if (delta > 8 && y > 80) {
+          setTopbarHiddenMobile(true);
+        } else if (delta < -8) {
+          setTopbarHiddenMobile(false);
+        }
+
+        lastY = y;
+        ticking = false;
+      });
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-base-bg text-base-ink">
@@ -31,6 +76,7 @@ export default function AppShell({
         title={title}
         subtitle={subtitle}
         sidebarOpen={sidebarOpen}
+        topbarHiddenMobile={topbarHiddenMobile}
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
       />
       <AppLayout sidebarOpen={sidebarOpen} onCloseSidebar={() => setSidebarOpen(false)}>
@@ -54,11 +100,13 @@ function AppTopbar({
   title,
   subtitle,
   sidebarOpen,
+  topbarHiddenMobile,
   onToggleSidebar,
 }: {
   title?: string;
   subtitle?: string;
   sidebarOpen: boolean;
+  topbarHiddenMobile: boolean;
   onToggleSidebar: () => void;
 }) {
   const { triggerSaveDraft, triggerSaveReport } = useDraftActions();
@@ -139,7 +187,12 @@ function AppTopbar({
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-base-border bg-white/80 backdrop-blur">
+    <header
+      className={[
+        "sticky top-0 z-50 border-b border-base-border bg-white/80 backdrop-blur transition-transform duration-300",
+        topbarHiddenMobile ? "-translate-y-full lg:translate-y-0" : "translate-y-0",
+      ].join(" ")}
+    >
       <div className="mx-auto flex max-w-[2200px] flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <button
@@ -347,6 +400,138 @@ function SidebarReports() {
   );
 }
 
+type SidebarProjectItem = {
+  id: string;
+  name: string;
+  project_number: string | null;
+};
+
+function SidebarProjects() {
+  const pathname = usePathname();
+  const supabase = useMemo(() => createClient(), []);
+  const [projects, setProjects] = useState<SidebarProjectItem[]>([]);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const active = pathname.startsWith("/projects");
+
+  useEffect(() => {
+    let mounted = true;
+    const loadProjects = async () => {
+      const { data: userRes } = await supabase.auth.getUser();
+      const userId = userRes?.user?.id;
+      if (!userId) {
+        if (mounted) setProjects([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("project_members")
+        .select("project:projects(id,name,project_number,created_at)")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false, referencedTable: "projects" });
+
+      if (error || !mounted) return;
+
+      const rows = (data ?? []) as Array<{
+        project?: {
+          id?: string | null;
+          name?: string | null;
+          project_number?: string | null;
+        } | null;
+      }>;
+
+      const mapped = rows
+        .map((row) => ({
+          id: row.project?.id ?? "",
+          name: row.project?.name ?? "",
+          project_number: row.project?.project_number ?? null,
+        }))
+        .filter((row) => Boolean(row.id))
+        .slice(0, 12);
+
+      setProjects(mapped);
+    };
+
+    loadProjects();
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
+
+  const formatProjectLabel = (project: SidebarProjectItem) => {
+    const nr = (project.project_number ?? "").trim();
+    const name = (project.name ?? "").trim();
+    if (nr && name) return `${nr} - ${name}`;
+    return name || nr || "Projekt";
+  };
+
+  const renderProjectLinks = (className = "") => (
+    <div className={className}>
+      <SidebarLink href="/projects" label="Alle Projekte" />
+      {projects.length > 0 ? (
+        <div className="max-h-60 space-y-1 overflow-y-auto pr-1">
+          {projects.map((project) => {
+            const href = `/projects/${project.id}`;
+            const projectActive = pathname === href || pathname.startsWith(`${href}/`);
+            return (
+              <Link
+                key={project.id}
+                href={href}
+                className={[
+                  "block rounded-xl px-3 py-2 text-sm transition",
+                  projectActive ? "bg-drill-50 font-medium" : "hover:bg-base-bg",
+                ].join(" ")}
+              >
+                {formatProjectLabel(project)}
+              </Link>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <>
+      <div className="lg:hidden">
+        <button
+          type="button"
+          className={[
+            "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition",
+            active ? "bg-drill-50 font-medium" : "hover:bg-base-bg",
+          ].join(" ")}
+          onClick={() => setMobileOpen((prev) => !prev)}
+          aria-expanded={mobileOpen}
+        >
+          <span>Meine Projekte</span>
+          <ChevronDown
+            className={["h-4 w-4 transition-transform", mobileOpen ? "rotate-180" : ""].join(" ")}
+            aria-hidden="true"
+          />
+        </button>
+        {mobileOpen ? renderProjectLinks("ml-2 mt-1 space-y-1") : null}
+      </div>
+
+      <div className="group hidden lg:block">
+        <Link
+          href="/projects"
+          className={[
+            "block rounded-xl px-3 py-2 text-sm transition",
+            active ? "bg-drill-50 font-medium" : "hover:bg-base-bg",
+          ].join(" ")}
+        >
+          Meine Projekte
+        </Link>
+        {renderProjectLinks(
+          [
+            "ml-2 mt-1 hidden space-y-1",
+            active ? "lg:block" : "lg:group-hover:block",
+          ].join(" ")
+        )}
+      </div>
+    </>
+  );
+}
+
 function SidebarNav() {
   return (
     <nav className="rounded-2xl border border-base-border bg-white p-3 shadow-soft">
@@ -355,7 +540,7 @@ function SidebarNav() {
       </div>
 
       <SidebarLink href="/dashboard" label="Dashboard" />
-      <SidebarLink href="/projects" label="Meine Projekte" />
+      <SidebarProjects />
       <SidebarReports />
       <SidebarLink href="/drafts" label="Meine Entwürfe" />
       <SidebarLink href="/settings" label="Einstellungen" />

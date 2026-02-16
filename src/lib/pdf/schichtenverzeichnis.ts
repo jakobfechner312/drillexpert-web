@@ -412,11 +412,35 @@ export async function generateSchichtenverzeichnisPdf(
     const normalized = value.trim().toUpperCase();
     if (normalized === "EP") return "EP";
     if (normalized === "UP") return "UP";
+    if (normalized === "BG") return "BG";
     return "GP";
+  };
+  const parseDepthNumeric = (value: unknown): number | null => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return null;
+    if (/[a-zA-Z]/.test(raw)) return null;
+    const normalized = raw.replace(",", ".");
+    const match = normalized.match(/-?\d+(?:\.\d+)?/);
+    if (!match) return null;
+    const parsed = Number(match[0]);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const formatDepthNumeric = (value: number): string => {
+    const fixed = Number.isInteger(value) ? value.toString() : value.toFixed(2).replace(/\.?0+$/, "");
+    return fixed.replace(".", ",");
+  };
+  const computeSptBisFromEntry = (entry: { von_m?: string; schlag_1?: string; schlag_2?: string; schlag_3?: string }) => {
+    const fromValue = parseDepthNumeric(entry?.von_m);
+    if (fromValue == null) return "";
+    const filledSegments = [entry?.schlag_1, entry?.schlag_2, entry?.schlag_3].filter(
+      (value) => String(value ?? "").trim() !== ""
+    ).length;
+    return formatDepthNumeric(fromValue + filledSegments * 0.15);
   };
   const getProbeCounterBucket = (probeArt: string) => {
     if (probeArt === "EP") return "KP";
     if (probeArt === "UP") return "SP";
+    if (probeArt === "BG") return "BG";
     return "GP";
   };
 
@@ -436,6 +460,7 @@ export async function generateSchichtenverzeichnisPdf(
     "probe_gp",
     "probe_kp",
     "probe_sp",
+    "probe_bg",
     "probe_spt",
   ]);
   const fieldOffsetsPage1 =
@@ -557,7 +582,7 @@ export async function generateSchichtenverzeichnisPdf(
     return normalized.slice(0, 4);
   };
 
-  const probeTotals = { GP: 0, KP: 0, SP: 0, SPT: 0 };
+  const probeTotals = { GP: 0, KP: 0, SP: 0, BG: 0, SPT: 0 };
   const addProbeTotal = (probeArtRaw: unknown) => {
     const art = normalizeProbeArt(String(probeArtRaw ?? "GP"));
     const bucket = getProbeCounterBucket(art);
@@ -568,7 +593,7 @@ export async function generateSchichtenverzeichnisPdf(
       ? row.spt_eintraege
           .map((entry: any) => ({
             von_m: String(entry?.von_m ?? "").trim(),
-            bis_m: String(entry?.bis_m ?? "").trim(),
+            bis_m: computeSptBisFromEntry(entry) || String(entry?.bis_m ?? "").trim(),
             schlag_1: String(entry?.schlag_1 ?? "").trim(),
             schlag_2: String(entry?.schlag_2 ?? "").trim(),
             schlag_3: String(entry?.schlag_3 ?? "").trim(),
@@ -580,7 +605,7 @@ export async function generateSchichtenverzeichnisPdf(
     return [
       {
         von_m: "",
-        bis_m: "",
+        bis_m: computeSptBisFromEntry(row),
         schlag_1: String(row?.spt_schlag_1 ?? "").trim(),
         schlag_2: String(row?.spt_schlag_2 ?? "").trim(),
         schlag_3: String(row?.spt_schlag_3 ?? "").trim(),
@@ -643,6 +668,7 @@ export async function generateSchichtenverzeichnisPdf(
     if (field.key === "probe_gp") value = probeTotals.GP > 0 ? String(probeTotals.GP) : "";
     if (field.key === "probe_kp") value = probeTotals.KP > 0 ? String(probeTotals.KP) : "";
     if (field.key === "probe_sp") value = probeTotals.SP > 0 ? String(probeTotals.SP) : "";
+    if (field.key === "probe_bg") value = probeTotals.BG > 0 ? String(probeTotals.BG) : "";
     if (field.key === "probe_spt") value = probeTotals.SPT > 0 ? String(probeTotals.SPT) : "";
     if (field.key === "probe_wp") value = "";
     if (field.key === "probe_bkb") value = "";
@@ -654,6 +680,13 @@ export async function generateSchichtenverzeichnisPdf(
     const y = field.y + (pageIndex === 0 ? getPage1FieldOffset(field.key, "y") : 0);
     drawText(pageIndex, text, x, y, field.size ?? 10);
   });
+  const probeBgField = fieldMap.get("probe_bg");
+  if (probeBgField) {
+    const pageIndex = Math.max(0, Math.min(pages.length - 1, probeBgField.page - 1));
+    const x = probeBgField.x + 15 + (pageIndex === 0 ? getPage1FieldOffset("probe_bg", "x") : 0);
+    const y = probeBgField.y + (pageIndex === 0 ? getPage1FieldOffset("probe_bg", "y") : 0);
+    drawStaticText(pageIndex, "BG", x, y, 10);
+  }
 
   // Marker-style highlighting instead of "x" for selected checkboxes.
   if (String(data?.passavant ?? "").trim()) {

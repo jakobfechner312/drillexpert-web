@@ -25,6 +25,7 @@ type Project = {
   program_borehole?: boolean | null;
   program_surface?: boolean | null;
   program_ramming?: boolean | null;
+  program_custom?: string | null;
   status?: string | null;
   start_date?: string | null;
   end_date?: string | null;
@@ -157,6 +158,7 @@ export default function ProjectDetailPage() {
     program_borehole: false,
     program_surface: false,
     program_ramming: false,
+    program_custom: "",
     status: "geplant",
     start_date: "",
     end_date: "",
@@ -188,6 +190,8 @@ export default function ProjectDetailPage() {
   const [projectWeather, setProjectWeather] = useState<ProjectWeather | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<Record<string, string>>({});
+  const customProgramStorageKey = `project_program_custom_${projectId}`;
   const [notesInput, setNotesInput] = useState("");
   const notesInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [projectNotes, setProjectNotes] = useState<ProjectNoteEntry[]>([]);
@@ -287,32 +291,39 @@ export default function ProjectDetailPage() {
       return;
     }
     const projectRow = proj as unknown as Project;
-    setProject(projectRow);
+    const storedCustomProgram =
+      typeof window !== "undefined" ? localStorage.getItem(customProgramStorageKey)?.trim() ?? "" : "";
+    const projectWithCustomProgram: Project = {
+      ...projectRow,
+      program_custom: storedCustomProgram,
+    };
+    setProject(projectWithCustomProgram);
     setSettingsForm((prev) => ({
       ...prev,
-      id: projectRow.id,
-      name: projectRow.name ?? "",
-      project_number: projectRow.project_number ?? "",
-      client_name: projectRow.client_name ?? "",
-      client_address: projectRow.client_address ?? "",
-      client_contact: projectRow.client_contact ?? "",
-      client_phone: projectRow.client_phone ?? "",
-      client_mobile: projectRow.client_mobile ?? "",
-      client_email: projectRow.client_email ?? "",
-      stakeholder_name: projectRow.stakeholder_name ?? "",
-      stakeholder_contact: projectRow.stakeholder_contact ?? "",
-      stakeholder_phone: projectRow.stakeholder_phone ?? "",
-      stakeholder_mobile: projectRow.stakeholder_mobile ?? "",
-      stakeholder_email: projectRow.stakeholder_email ?? "",
-      program_borehole: Boolean(projectRow.program_borehole),
-      program_surface: Boolean(projectRow.program_surface),
-      program_ramming: Boolean(projectRow.program_ramming),
-      status: projectRow.status ?? "geplant",
-      start_date: projectRow.start_date ?? "",
-      end_date: projectRow.end_date ?? "",
-      notes: projectRow.notes ?? "",
-      mymaps_url: projectRow.mymaps_url ?? "",
-      mymaps_title: projectRow.mymaps_title ?? "",
+      id: projectWithCustomProgram.id,
+      name: projectWithCustomProgram.name ?? "",
+      project_number: projectWithCustomProgram.project_number ?? "",
+      client_name: projectWithCustomProgram.client_name ?? "",
+      client_address: projectWithCustomProgram.client_address ?? "",
+      client_contact: projectWithCustomProgram.client_contact ?? "",
+      client_phone: projectWithCustomProgram.client_phone ?? "",
+      client_mobile: projectWithCustomProgram.client_mobile ?? "",
+      client_email: projectWithCustomProgram.client_email ?? "",
+      stakeholder_name: projectWithCustomProgram.stakeholder_name ?? "",
+      stakeholder_contact: projectWithCustomProgram.stakeholder_contact ?? "",
+      stakeholder_phone: projectWithCustomProgram.stakeholder_phone ?? "",
+      stakeholder_mobile: projectWithCustomProgram.stakeholder_mobile ?? "",
+      stakeholder_email: projectWithCustomProgram.stakeholder_email ?? "",
+      program_borehole: Boolean(projectWithCustomProgram.program_borehole),
+      program_surface: Boolean(projectWithCustomProgram.program_surface),
+      program_ramming: Boolean(projectWithCustomProgram.program_ramming),
+      program_custom: projectWithCustomProgram.program_custom ?? "",
+      status: projectWithCustomProgram.status ?? "geplant",
+      start_date: projectWithCustomProgram.start_date ?? "",
+      end_date: projectWithCustomProgram.end_date ?? "",
+      notes: projectWithCustomProgram.notes ?? "",
+      mymaps_url: projectWithCustomProgram.mymaps_url ?? "",
+      mymaps_title: projectWithCustomProgram.mymaps_title ?? "",
     }));
     setMymapsUrlInput(projectRow.mymaps_url ?? "");
     setProjectNotes(parseProjectNotes(projectRow.notes));
@@ -479,6 +490,7 @@ export default function ProjectDetailPage() {
 
     setSettingsError(null);
     setSavingSettings(true);
+    const customProgram = settingsForm.program_custom?.trim() || "";
     const payload = {
       name,
       project_number: projectNumber,
@@ -542,7 +554,15 @@ export default function ProjectDetailPage() {
       return;
     }
 
-    setProject(data as unknown as Project);
+    if (typeof window !== "undefined") {
+      if (customProgram) localStorage.setItem(customProgramStorageKey, customProgram);
+      else localStorage.removeItem(customProgramStorageKey);
+    }
+
+    setProject({
+      ...(data as unknown as Project),
+      program_custom: customProgram,
+    });
     setSettingsOpen(false);
     setSavingSettings(false);
   };
@@ -1376,6 +1396,40 @@ export default function ProjectDetailPage() {
     });
   }, [reports, files, filter]);
 
+  useEffect(() => {
+    const imageNames = files.map((f) => f.name).filter((name) => isImageFile(name));
+    if (imageNames.length === 0) {
+      setImagePreviewUrls({});
+      return;
+    }
+
+    let active = true;
+    const loadPreviews = async () => {
+      const entries = await Promise.all(
+        imageNames.map(async (name) => {
+          const { data, error } = await supabase.storage
+            .from("dropData")
+            .createSignedUrl(`${projectId}/${name}`, 60 * 30);
+          if (error || !data?.signedUrl) return [name, ""] as const;
+          return [name, data.signedUrl] as const;
+        })
+      );
+      if (!active) return;
+      setImagePreviewUrls((prev) => {
+        const next: Record<string, string> = {};
+        entries.forEach(([name, url]) => {
+          if (url) next[name] = url;
+        });
+        return { ...prev, ...next };
+      });
+    };
+
+    loadPreviews();
+    return () => {
+      active = false;
+    };
+  }, [files, projectId, supabase]);
+
   return (
     <div className="page-shell space-y-6">
       <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm overflow-hidden">
@@ -1509,6 +1563,7 @@ export default function ProjectDetailPage() {
                   project.program_borehole ? "Bohrlochsondierung" : null,
                   project.program_surface ? "Oberflächensondierung" : null,
                   project.program_ramming ? "Rammsondierung" : null,
+                  project.program_custom?.trim() ? project.program_custom.trim() : null,
                 ]
                   .filter(Boolean)
                   .join(" • ") || "—"}
@@ -2083,9 +2138,27 @@ export default function ProjectDetailPage() {
                   ) : (
                     <li key={`f-${item.name}`} className="flex items-center justify-between gap-3 p-3">
                       <div className="min-w-0 flex items-center gap-3">
-                        <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl text-[10px] font-semibold ring-1 ${fileBadgeClass(item.name)}`}>
-                          {fileBadge(item.name)}
-                        </span>
+                        {item.isImage ? (
+                          <div className="h-36 w-36 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                            {imagePreviewUrls[item.name] ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={imagePreviewUrls[item.name]}
+                                alt={item.name}
+                                className="h-full w-full object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold text-slate-500">
+                                IMG
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl text-[10px] font-semibold ring-1 ${fileBadgeClass(item.name)}`}>
+                            {fileBadge(item.name)}
+                          </span>
+                        )}
                         <div className="min-w-0">
                           <div className="truncate font-medium text-slate-800">{item.name}</div>
                           <div className="mt-1 text-xs text-slate-500">
@@ -2314,6 +2387,20 @@ export default function ProjectDetailPage() {
                   </label>
                 ))}
               </div>
+              <label className="mt-3 block space-y-1">
+                <span className="text-xs text-slate-600">Eigenes Programm</span>
+                <input
+                  className="w-full rounded-xl border p-2.5"
+                  value={settingsForm.program_custom ?? ""}
+                  onChange={(e) =>
+                    setSettingsForm((prev) => ({
+                      ...prev,
+                      program_custom: e.target.value,
+                    }))
+                  }
+                  placeholder="z. B. Kernbohrung Spezial"
+                />
+              </label>
             </div>
             ) : null}
 
