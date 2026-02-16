@@ -1,0 +1,257 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/browser";
+
+type ArchivedProject = {
+  id: string;
+  name: string;
+  project_number?: string | null;
+  client_name?: string | null;
+  status?: string | null;
+  owner_id?: string | null;
+};
+
+type ArchivedReport = {
+  id: string;
+  title: string;
+  created_at: string;
+  report_type?: string | null;
+  project_id?: string | null;
+  status?: string | null;
+};
+
+type ProjectMemberRow = {
+  project: { id?: string | null; name?: string | null } | null;
+};
+
+export default function ArchivePage() {
+  const supabase = useMemo(() => createClient(), []);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ArchivedProject[]>([]);
+  const [reports, setReports] = useState<ArchivedReport[]>([]);
+  const [projectNames, setProjectNames] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+
+    const { data: userRes, error: userErr } = await supabase.auth.getUser();
+    const user = userRes?.user;
+    if (userErr || !user) {
+      setErr("Nicht eingeloggt.");
+      setLoading(false);
+      return;
+    }
+    setCurrentUserId(user.id);
+
+    const { data: members, error: membersErr } = await supabase
+      .from("project_members")
+      .select("project:projects(id,name)")
+      .eq("user_id", user.id);
+    if (membersErr) {
+      setErr("Projektzuordnung laden fehlgeschlagen: " + membersErr.message);
+      setLoading(false);
+      return;
+    }
+
+    const memberProjects = ((members ?? []) as ProjectMemberRow[])
+      .map((row) => row.project)
+      .filter(Boolean)
+      .map((project: { id?: string; name?: string }) => ({
+        id: String(project.id ?? ""),
+        name: String(project.name ?? ""),
+      }))
+      .filter((project) => project.id.length > 0);
+    const projectIdList = memberProjects.map((project) => project.id);
+    setProjectNames(
+      Object.fromEntries(memberProjects.map((project) => [project.id, project.name]))
+    );
+
+    let archivedProjects: ArchivedProject[] = [];
+    if (projectIdList.length > 0) {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("id,name,project_number,client_name,status,owner_id")
+        .in("id", projectIdList)
+        .eq("status", "archived")
+        .order("created_at", { ascending: false });
+      if (error) {
+        setErr("Archivierte Projekte laden fehlgeschlagen: " + error.message);
+        setLoading(false);
+        return;
+      }
+      archivedProjects = (data ?? []) as ArchivedProject[];
+    }
+
+    const ownArchivedReportsReq = supabase
+      .from("reports")
+      .select("id,title,created_at,report_type,project_id,status")
+      .eq("user_id", user.id)
+      .eq("status", "archived")
+      .order("created_at", { ascending: false });
+
+    const ownReportsRes = await ownArchivedReportsReq;
+
+    if (ownReportsRes.error) {
+      setErr(ownReportsRes.error.message || "Archivierte Berichte laden fehlgeschlagen.");
+      setLoading(false);
+      return;
+    }
+
+    const reportMap = new Map<string, ArchivedReport>();
+    (ownReportsRes.data ?? []).forEach((report) => {
+      reportMap.set(report.id, report);
+    });
+
+    setProjects(archivedProjects);
+    setReports(
+      Array.from(reportMap.values()).sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )
+    );
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  const unarchiveProject = async (projectId: string) => {
+    const project = projects.find((row) => row.id === projectId);
+    if (!project) return;
+    if (!currentUserId || project.owner_id !== currentUserId) {
+      setErr("Nur der Projekt-Owner kann dieses Projekt wiederherstellen.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("projects")
+      .update({ status: "laufend" })
+      .eq("id", projectId);
+    if (error) {
+      setErr("Projekt wiederherstellen fehlgeschlagen: " + error.message);
+      return;
+    }
+    setProjects((prev) => prev.filter((project) => project.id !== projectId));
+  };
+
+  const unarchiveReport = async (reportId: string) => {
+    const { error } = await supabase
+      .from("reports")
+      .update({ status: "final" })
+      .eq("id", reportId);
+    if (error) {
+      setErr("Bericht wiederherstellen fehlgeschlagen: " + error.message);
+      return;
+    }
+    setReports((prev) => prev.filter((report) => report.id !== reportId));
+  };
+
+  const reportTypeLabel = (type: string | null | undefined) => {
+    if (type === "schichtenverzeichnis") return "Schichtenverzeichnis";
+    if (type === "tagesbericht_rhein_main_link") return "TB Rhein-Main-Link";
+    return "Tagesbericht";
+  };
+
+  return (
+    <div className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 py-5 sm:px-6 lg:px-8 space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Archiv</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          Hier findest du archivierte Projekte und Berichte.
+        </p>
+      </div>
+
+      {loading ? <p className="text-sm text-slate-600">Lade…</p> : null}
+      {err ? <p className="text-sm text-red-600">{err}</p> : null}
+
+      {!loading ? (
+        <>
+          <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-slate-900">Archivierte Projekte</h2>
+              <span className="text-xs text-slate-500">{projects.length} Einträge</span>
+            </div>
+            {projects.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">Keine archivierten Projekte.</p>
+            ) : (
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {projects.map((project) => (
+                  <div key={project.id} className="rounded-xl border border-slate-200 p-3">
+                    <div className="font-medium text-slate-900">
+                      {project.project_number ? `${project.project_number} - ${project.name}` : project.name}
+                    </div>
+                    {project.client_name ? (
+                      <div className="mt-1 text-xs text-slate-500">Auftraggeber: {project.client_name}</div>
+                    ) : null}
+                    <div className="mt-3 flex items-center gap-2">
+                      <Link href={`/projects/${project.id}`} className="btn btn-secondary btn-xs">
+                        Öffnen
+                      </Link>
+                      {currentUserId && project.owner_id === currentUserId ? (
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-xs"
+                          onClick={() => unarchiveProject(project.id)}
+                        >
+                          Wiederherstellen
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-500">Nur Owner kann wiederherstellen</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-slate-900">Archivierte Berichte</h2>
+              <span className="text-xs text-slate-500">{reports.length} Einträge</span>
+            </div>
+            {reports.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">Keine archivierten Berichte.</p>
+            ) : (
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {reports.map((report) => (
+                  <div key={report.id} className="rounded-xl border border-slate-200 p-3">
+                    <div className="font-medium text-slate-900 break-words">{report.title}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {new Date(report.created_at).toLocaleString()}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Typ: {reportTypeLabel(report.report_type)}
+                    </div>
+                    {report.project_id ? (
+                      <div className="mt-1 text-xs text-slate-500">
+                        Projekt: {projectNames[report.project_id] ?? report.project_id}
+                      </div>
+                    ) : null}
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-xs"
+                        onClick={() => unarchiveReport(report.id)}
+                      >
+                        Wiederherstellen
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      ) : null}
+    </div>
+  );
+}

@@ -11,6 +11,7 @@ type Project = {
   created_at: string;
   project_number?: string | null;
   client_name?: string | null;
+  status?: string | null;
 };
 
 export default function ProjectsPage() {
@@ -51,7 +52,7 @@ export default function ProjectsPage() {
       // Projekte über Membership holen (sauber, keine Testdaten)
       const { data, error } = await supabase
         .from("project_members")
-        .select("project:projects(id,name,created_at,project_number,client_name)")
+        .select("project:projects(id,name,created_at,project_number,client_name,status)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false, referencedTable: "projects" });
 
@@ -63,7 +64,7 @@ export default function ProjectsPage() {
 
       const mapped = (data ?? [])
         .map((row: any) => row.project)
-        .filter(Boolean) as Project[];
+        .filter((project: Project | null | undefined) => Boolean(project && project.status !== "archived")) as Project[];
 
       setProjects(mapped);
       setLoading(false);

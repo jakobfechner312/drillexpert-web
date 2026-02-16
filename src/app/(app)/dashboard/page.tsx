@@ -21,6 +21,7 @@ type DraftRow = {
 type ProjectRow = {
   id: string;
   name: string;
+  status?: string | null;
 };
 
 type ProjectMemberSelectRow = {
@@ -53,12 +54,13 @@ export default function DashboardPage() {
       const [projRes, repRes, draftRes] = await Promise.all([
         supabase
           .from("project_members")
-          .select("project:projects(id,name)")
+          .select("project:projects(id,name,status)")
           .eq("user_id", user.id),
         supabase
           .from("reports")
           .select("id,title,created_at,report_type")
           .eq("user_id", user.id)
+          .or("status.is.null,status.neq.archived")
           .order("created_at", { ascending: false })
           .limit(6),
         supabase
@@ -85,7 +87,7 @@ export default function DashboardPage() {
           if (!row.project) return [];
           return Array.isArray(row.project) ? row.project : [row.project];
         })
-        .filter((p) => Boolean(p?.id && p?.name));
+        .filter((p) => Boolean(p?.id && p?.name && p?.status !== "archived"));
 
       setProjects(projMapped);
       setReports((repRes.data ?? []) as ReportRow[]);

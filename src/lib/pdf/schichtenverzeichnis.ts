@@ -695,9 +695,13 @@ export async function generateSchichtenverzeichnisPdf(
   if (String(data?.seba ?? "").trim()) {
     drawHighlight(0, 512, 590, 28, 8);
   }
+  if (String(data?.kompaktkappe ?? "").trim()) {
+    drawHighlight(0, 540, 590, 62, 8);
+  }
   if (String(data?.betonsockel ?? "").trim()) {
     drawHighlight(0, 507, 572, 40, 8);
   }
+  drawStaticText(0, "/ Kompakt.", 540, 590, 9);
 
   const filterRows = buildFilterRows().slice(0, 2);
   if (filterRows.length > 0) {

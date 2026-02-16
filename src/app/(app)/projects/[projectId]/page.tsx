@@ -200,6 +200,7 @@ export default function ProjectDetailPage() {
   const [notesError, setNotesError] = useState<string | null>(null);
   const [notesOk, setNotesOk] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
+  const [archivingProject, setArchivingProject] = useState(false);
   const openNativePicker = (input: HTMLInputElement | null) => {
     if (!input) return;
     const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
@@ -208,6 +209,13 @@ export default function ProjectDetailPage() {
     } catch {
       // Fallback: Browser opens picker natively when supported.
     }
+  };
+  const getTodayDateInputValue = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
   };
 
   const formatProjectDisplayName = (value: { name?: string | null; project_number?: string | null } | null | undefined) => {
@@ -395,6 +403,7 @@ export default function ProjectDetailPage() {
       .from("reports")
       .select("id,title,created_at,user_id,status,report_type")
       .eq("project_id", projectId)
+      .or("status.is.null,status.neq.archived")
       .order("created_at", { ascending: false });
 
     if (repsErr) {
@@ -902,6 +911,19 @@ export default function ProjectDetailPage() {
     }
     setReports((prev) => prev.filter((x) => x.id !== reportId));
   };
+  const archiveReport = async (reportId: string) => {
+    if (!confirm("Bericht wirklich archivieren?")) return;
+
+    const { error } = await supabase
+      .from("reports")
+      .update({ status: "archived" })
+      .eq("id", reportId);
+    if (error) {
+      alert("Archivieren fehlgeschlagen: " + error.message);
+      return;
+    }
+    setReports((prev) => prev.filter((x) => x.id !== reportId));
+  };
 
   const deleteFile = async (name: string) => {
     if (!confirm("Datei wirklich löschen?")) return;
@@ -981,6 +1003,25 @@ export default function ProjectDetailPage() {
       window.location.href = "/projects";
     } finally {
       setDeletingProject(false);
+    }
+  };
+  const archiveProject = async () => {
+    if (!isOwner || !project) return;
+    if (!confirm("Projekt wirklich archivieren? Es erscheint dann nur noch im Archiv.")) return;
+
+    setArchivingProject(true);
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update({ status: "archived" })
+        .eq("id", projectId);
+      if (error) {
+        alert("Projekt archivieren fehlgeschlagen: " + error.message);
+        return;
+      }
+      window.location.href = "/archive";
+    } finally {
+      setArchivingProject(false);
     }
   };
 
@@ -1492,11 +1533,11 @@ export default function ProjectDetailPage() {
               <button
                 type="button"
                 className="btn btn-danger"
-                onClick={deleteProject}
-                disabled={deletingProject}
-                title="Projekt dauerhaft löschen"
+                onClick={archiveProject}
+                disabled={archivingProject}
+                title="Projekt archivieren"
               >
-                {deletingProject ? "Lösche…" : "Projekt löschen"}
+                {archivingProject ? "Archiviert…" : "Projekt archivieren"}
               </button>
             ) : null}
           </div>
@@ -2131,6 +2172,15 @@ export default function ProjectDetailPage() {
                           {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
                             <button
                               type="button"
+                              className="btn btn-secondary btn-xs"
+                              onClick={() => archiveReport(item.id)}
+                            >
+                              Archivieren
+                            </button>
+                          )}
+                          {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
+                            <button
+                              type="button"
                               className="btn btn-danger btn-xs"
                               onClick={() => deleteReport(item.id)}
                             >
@@ -2429,25 +2479,53 @@ export default function ProjectDetailPage() {
                 </label>
                 <label className="space-y-1">
                   <span className="text-sm text-gray-600">Startdatum</span>
-                  <input
-                    type="date"
-                    className="w-full rounded-xl border p-2.5"
-                    value={settingsForm.start_date ?? ""}
-                    onChange={(e) => setSettingsForm((prev) => ({ ...prev, start_date: e.target.value }))}
-                    onFocus={(e) => openNativePicker(e.currentTarget)}
-                    onClick={(e) => openNativePicker(e.currentTarget)}
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      className="w-full rounded-xl border p-2.5"
+                      value={settingsForm.start_date ?? ""}
+                      onChange={(e) => setSettingsForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                      onFocus={(e) => openNativePicker(e.currentTarget)}
+                      onClick={(e) => openNativePicker(e.currentTarget)}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary shrink-0"
+                      onClick={() =>
+                        setSettingsForm((prev) => ({
+                          ...prev,
+                          start_date: getTodayDateInputValue(),
+                        }))
+                      }
+                    >
+                      Heute
+                    </button>
+                  </div>
                 </label>
                 <label className="space-y-1">
                   <span className="text-sm text-gray-600">Enddatum</span>
-                  <input
-                    type="date"
-                    className="w-full rounded-xl border p-2.5"
-                    value={settingsForm.end_date ?? ""}
-                    onChange={(e) => setSettingsForm((prev) => ({ ...prev, end_date: e.target.value }))}
-                    onFocus={(e) => openNativePicker(e.currentTarget)}
-                    onClick={(e) => openNativePicker(e.currentTarget)}
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      className="w-full rounded-xl border p-2.5"
+                      value={settingsForm.end_date ?? ""}
+                      onChange={(e) => setSettingsForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                      onFocus={(e) => openNativePicker(e.currentTarget)}
+                      onClick={(e) => openNativePicker(e.currentTarget)}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary shrink-0"
+                      onClick={() =>
+                        setSettingsForm((prev) => ({
+                          ...prev,
+                          end_date: getTodayDateInputValue(),
+                        }))
+                      }
+                    >
+                      Heute
+                    </button>
+                  </div>
                 </label>
               </div>
             </div>

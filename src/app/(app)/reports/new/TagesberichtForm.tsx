@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/browser";
 import { useDraftActions } from "@/components/DraftActions";
-import { useMemo, useRef, useEffect, useState, useCallback } from "react";
+import { useMemo, useRef, useEffect, useState, useCallback, type SetStateAction } from "react";
 import SignatureCanvas from "react-signature-canvas";
 import { usePathname, useSearchParams } from "next/navigation";
 
@@ -650,6 +650,19 @@ export default function TagesberichtForm({
     [isRml]
   );
   const [stepIndex, setStepIndex] = useState(0);
+  const setStepIndexKeepingScroll = useCallback((next: SetStateAction<number>) => {
+    if (typeof window === "undefined") {
+      setStepIndex(next);
+      return;
+    }
+    const currentY = window.scrollY;
+    setStepIndex(next);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: currentY, behavior: "auto" });
+      });
+    });
+  }, []);
   const openNativePicker = (input: HTMLInputElement | null) => {
     if (!input) return;
     const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
@@ -658,6 +671,13 @@ export default function TagesberichtForm({
     } catch {
       // Fallback: Browser opens picker natively when supported.
     }
+  };
+  const getTodayDateInputValue = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
   };
 
   const MAX_CUSTOM_WORK_CYCLES = 6;
@@ -898,7 +918,7 @@ export default function TagesberichtForm({
   }, [effectiveProjectId, mode, hasDraftId]);
 
   // ================== DRAFT + REPORT SAVE HANDLERS ==================
-  const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
+  const { setSaveDraftHandler, setSaveReportHandler, triggerSaveReport } = useDraftActions();
 
   useEffect(() => {
     console.log("[Form] register save handlers");
@@ -981,10 +1001,36 @@ export default function TagesberichtForm({
         console.log("[SAVE] currentReport.vehicles", currentReport.vehicles);
         console.log("[SAVE] currentReport.worker0 name", currentReport.workers?.[0]?.name);
 
-        const title =
-          reportForSave?.project?.trim()
-            ? `${reportTitleLabel} – ${reportForSave.project} (${reportForSave.date})`
-            : `${reportTitleLabel} (${reportForSave?.date ?? ""})`;
+        const normalizeTitlePart = (value: unknown) => String(value ?? "").trim().replace(/\s+/g, " ");
+        let title: string;
+        if (reportType === "tagesbericht") {
+          const auftragsnummer = normalizeTitlePart(reportForSave?.aNr);
+          const name = normalizeTitlePart(reportForSave?.signatures?.drillerName);
+          const datum = normalizeTitlePart(reportForSave?.date);
+
+          if (!auftragsnummer) {
+            alert('Pflichtfeld fehlt: "Auftragsnummer" muss vor dem Speichern ausgefüllt sein.');
+            if (useStepper) setStepIndex(0);
+            return;
+          }
+          if (!name) {
+            alert('Pflichtfeld fehlt: "Name" (Unterschrift Bohrmeister) muss vor dem Speichern ausgefüllt sein.');
+            if (useStepper) setStepIndex(8);
+            return;
+          }
+          if (!datum) {
+            alert('Pflichtfeld fehlt: "Datum" muss vor dem Speichern ausgefüllt sein.');
+            if (useStepper) setStepIndex(0);
+            return;
+          }
+
+          title = `${auftragsnummer}_${name}_${datum}`;
+        } else {
+          title =
+            reportForSave?.project?.trim()
+              ? `${reportTitleLabel} – ${reportForSave.project} (${reportForSave.date})`
+              : `${reportTitleLabel} (${reportForSave?.date ?? ""})`;
+        }
 
         // ===============================
 // EDIT → UPDATE
@@ -995,7 +1041,7 @@ if (mode === "edit") {
     return;
   }
 
-  const { error } = await supabase
+  const { data: updatedReport, error } = await supabase
     .from("reports")
       .update({
       title,
@@ -1003,11 +1049,17 @@ if (mode === "edit") {
       status: "final",
       project_id: finalProjectId,
     })
-    .eq("id", reportId);
+    .eq("id", reportId)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     console.error(error);
     alert("Bericht aktualisieren fehlgeschlagen: " + error.message);
+    return;
+  }
+  if (!updatedReport?.id) {
+    alert("Bericht wurde nicht aktualisiert. Bitte Seite neu laden und erneut speichern.");
     return;
   }
 
@@ -1082,6 +1134,7 @@ if (mode === "edit") {
     reportTitleLabel,
     reportType,
     saveScope,
+    useStepper,
   ]);
   // ========================================================
 
@@ -2408,14 +2461,23 @@ if (mode === "edit") {
                 <div className="grid gap-3">
                   <label className="space-y-1">
                     <span className="text-sm text-slate-600">Datum</span>
-                    <input
-                      type="date"
-                      className="w-full rounded-xl border p-3"
-                      value={report.date ?? ""}
-                      onChange={(e) => update("date", e.target.value)}
-                      onFocus={(e) => openNativePicker(e.currentTarget)}
-                      onClick={(e) => openNativePicker(e.currentTarget)}
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        className="w-full rounded-xl border p-3"
+                        value={report.date ?? ""}
+                        onChange={(e) => update("date", e.target.value)}
+                        onFocus={(e) => openNativePicker(e.currentTarget)}
+                        onClick={(e) => openNativePicker(e.currentTarget)}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary shrink-0"
+                        onClick={() => update("date", getTodayDateInputValue())}
+                      >
+                        Heute
+                      </button>
+                    </div>
                   </label>
                   <label className="space-y-1">
                     <span className="text-sm text-slate-600">Projekt</span>
@@ -2425,6 +2487,16 @@ if (mode === "edit") {
                       onChange={(e) => update("project", e.target.value)}
                     />
                   </label>
+                  {reportType !== "tagesbericht_rhein_main_link" ? (
+                    <label className="space-y-1">
+                      <span className="text-sm text-slate-600">Auftragsnummer</span>
+                      <input
+                        className="w-full rounded-xl border p-3"
+                        value={report.aNr ?? ""}
+                        onChange={(e) => update("aNr", e.target.value)}
+                      />
+                    </label>
+                  ) : null}
                   {reportType === "tagesbericht_rhein_main_link" ? (
                     <label className="space-y-1">
                       <span className="text-sm text-slate-600">Firma</span>
@@ -2519,11 +2591,7 @@ if (mode === "edit") {
                         <span className="text-sm text-slate-600">Fahrzeuge</span>
                         <input className="w-full rounded-xl border p-3" value={report.vehicles ?? ""} onChange={(e) => update("vehicles", e.target.value)} />
                       </label>
-                      <label className="space-y-1">
-                        <span className="text-sm text-slate-600">A.Nr.</span>
-                        <input className="w-full rounded-xl border p-3" value={report.aNr ?? ""} onChange={(e) => update("aNr", e.target.value)} />
-                      </label>
-                      <label className="space-y-1 md:col-span-2">
+                      <label className="space-y-1 md:col-span-3">
                         <span className="text-sm text-slate-600">Gerät</span>
                         <input className="w-full rounded-xl border p-3" value={report.device ?? ""} onChange={(e) => update("device", e.target.value)} />
                       </label>
@@ -4111,20 +4179,6 @@ if (mode === "edit") {
           <button
             type="button"
             className="btn btn-secondary"
-            onClick={saveDraftToLocalStorage}
-          >
-            Entwurf speichern (lokal)
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={downloadPdfToLocal}
-          >
-            PDF lokal speichern
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
             onClick={fillTestData}
           >
             Testdaten füllen
@@ -4149,10 +4203,19 @@ if (mode === "edit") {
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
+              onClick={() => setStepIndexKeepingScroll((i) => Math.max(0, i - 1))}
               disabled={stepIndex === 0}
             >
               Zurück
+            </button>
+            <button
+              type="button"
+              className="btn border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={() => {
+                void triggerSaveReport();
+              }}
+            >
+              Final speichern
             </button>
             <button
               type="button"
@@ -4178,7 +4241,7 @@ if (mode === "edit") {
                     return;
                   }
                 }
-                setStepIndex((i) => Math.min(steps.length - 1, i + 1));
+                setStepIndexKeepingScroll((i) => Math.min(steps.length - 1, i + 1));
               }}
               disabled={stepIndex >= steps.length - 1}
             >

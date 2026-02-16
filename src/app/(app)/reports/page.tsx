@@ -32,6 +32,17 @@ export default function MyReportsPage() {
     }
     setReports((prev) => prev.filter((x) => x.id !== reportId));
   };
+  const archiveReport = async (reportId: string) => {
+    const { error } = await supabase
+      .from("reports")
+      .update({ status: "archived" })
+      .eq("id", reportId);
+    if (error) {
+      setErr("Archivieren fehlgeschlagen: " + error.message);
+      return;
+    }
+    setReports((prev) => prev.filter((x) => x.id !== reportId));
+  };
 
   const load = async () => {
     setLoading(true);
@@ -50,6 +61,7 @@ export default function MyReportsPage() {
       .from("reports")
       .select("id,title,created_at,status,report_type")
       .is("project_id", null)
+      .or("status.is.null,status.neq.archived")
       .order("created_at", { ascending: false });
 
     if (repsErr) {
@@ -220,7 +232,7 @@ export default function MyReportsPage() {
                       </span>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-4">
                       <Link
                         href={
                           r.report_type === "schichtenverzeichnis"
@@ -247,6 +259,13 @@ export default function MyReportsPage() {
                       >
                         Bearbeiten
                       </Link>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-xs w-full"
+                        onClick={() => archiveReport(r.id)}
+                      >
+                        Archivieren
+                      </button>
                       <button
                         type="button"
                         className="btn btn-danger btn-xs w-full"

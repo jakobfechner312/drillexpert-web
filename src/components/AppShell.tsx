@@ -23,7 +23,10 @@ export default function AppShell({
   const showFloatingNavToggle = pathname.startsWith("/reports");
 
   useEffect(() => {
-    setSidebarOpen(false);
+    const timer = setTimeout(() => {
+      setSidebarOpen(false);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [pathname]);
 
   useEffect(() => {
@@ -404,6 +407,7 @@ type SidebarProjectItem = {
   id: string;
   name: string;
   project_number: string | null;
+  status?: string | null;
 };
 
 function SidebarProjects() {
@@ -425,7 +429,7 @@ function SidebarProjects() {
 
       const { data, error } = await supabase
         .from("project_members")
-        .select("project:projects(id,name,project_number,created_at)")
+        .select("project:projects(id,name,project_number,status,created_at)")
         .eq("user_id", userId)
         .order("created_at", { ascending: false, referencedTable: "projects" });
 
@@ -436,6 +440,7 @@ function SidebarProjects() {
           id?: string | null;
           name?: string | null;
           project_number?: string | null;
+          status?: string | null;
         } | null;
       }>;
 
@@ -444,8 +449,9 @@ function SidebarProjects() {
           id: row.project?.id ?? "",
           name: row.project?.name ?? "",
           project_number: row.project?.project_number ?? null,
+          status: row.project?.status ?? null,
         }))
-        .filter((row) => Boolean(row.id))
+        .filter((row) => Boolean(row.id) && row.status !== "archived")
         .slice(0, 12);
 
       setProjects(mapped);
@@ -544,6 +550,7 @@ function SidebarNav() {
       <SidebarReports />
       <SidebarLink href="/drafts" label="Meine Entwürfe" />
       <SidebarLink href="/settings" label="Einstellungen" />
+      <SidebarLink href="/archive" label="Archiv" />
 
       <div className="mt-4 rounded-xl bg-drill-50 p-3">
         <div className="text-sm font-semibold">Quick Tips</div>

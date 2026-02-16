@@ -13,16 +13,19 @@ export default function ProjectReportsPage() {
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState<"all" | "tagesbericht" | "tagesbericht_rhein_main_link" | "schichtenverzeichnis">("all");
   const [query, setQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadReports = async () => {
       const { data, error } = await supabase
         .from("reports")
-        .select("id, title, created_at, user_id, report_type")
+        .select("id, title, created_at, user_id, report_type, status")
         .eq("project_id", projectId)
+        .or("status.is.null,status.neq.archived")
         .order("created_at", { ascending: false });
 
-      if (!error) setReports(data ?? []);
+      if (error) setError("Berichte laden fehlgeschlagen: " + error.message);
+      else setReports(data ?? []);
       setLoading(false);
     };
 
@@ -50,6 +53,7 @@ export default function ProjectReportsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Berichte</h1>
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <button

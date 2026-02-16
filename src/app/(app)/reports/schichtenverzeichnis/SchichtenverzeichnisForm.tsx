@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { createClient } from "@/lib/supabase/browser";
 import { useDraftActions } from "@/components/DraftActions";
 import { SV_FIELDS } from "@/lib/pdf/schichtenverzeichnis.mapping";
@@ -281,6 +281,13 @@ const fromDateInputValue = (value: string | undefined | null) => {
   const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) return `${iso[3]}.${iso[2]}.${iso[1]}`;
   return raw;
+};
+const getTodayDateInputValue = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 };
 const toTimeInputValue = (value: string | undefined | null) => {
   const raw = String(value ?? "").trim();
@@ -813,6 +820,19 @@ export default function SchichtenverzeichnisForm({
     []
   );
   const [stepIndex, setStepIndex] = useState(0);
+  const setStepIndexKeepingScroll = useCallback((next: SetStateAction<number>) => {
+    if (typeof window === "undefined") {
+      setStepIndex(next);
+      return;
+    }
+    const currentY = window.scrollY;
+    setStepIndex(next);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: currentY, behavior: "auto" });
+      });
+    });
+  }, []);
   const page1PdfFields = useMemo(
     () =>
       SV_FIELDS.filter((field) => field.page === 1).map((field) => ({
@@ -1192,7 +1212,7 @@ export default function SchichtenverzeichnisForm({
   }, [normalizedFilterRowsForPayload]);
 
   const supabase = useMemo(() => createClient(), []);
-  const { setSaveDraftHandler, setSaveReportHandler } = useDraftActions();
+  const { setSaveDraftHandler, setSaveReportHandler, triggerSaveReport } = useDraftActions();
 
   const fetchProjectPrefill = useCallback(
     async (targetProjectId: string) => {
@@ -1720,10 +1740,26 @@ export default function SchichtenverzeichnisForm({
           reportSaveKeyRef.current = crypto.randomUUID();
         }
 
-        const title =
-          data.projekt_name?.trim()
-            ? `Schichtenverzeichnis – ${data.projekt_name}${data.datum ? ` (${data.datum})` : ""}`
-            : `Schichtenverzeichnis (${data.datum ?? ""})`;
+        const normalizeTitlePart = (value: unknown) => String(value ?? "").trim().replace(/\s+/g, " ");
+        const auftragsnummer = normalizeTitlePart(data.auftrag_nr);
+        const name = normalizeTitlePart(data.bohrmeister);
+        const bohrung = normalizeTitlePart(data.bohrung_nr);
+        if (!auftragsnummer) {
+          alert('Pflichtfeld fehlt: "Auftrag-Nr." muss vor dem Speichern ausgefüllt sein.');
+          if (useStepper) setStepIndex(0);
+          return;
+        }
+        if (!name) {
+          alert('Pflichtfeld fehlt: "Bohrmeister" (Name) muss vor dem Speichern ausgefüllt sein.');
+          if (useStepper) setStepIndex(0);
+          return;
+        }
+        if (!bohrung) {
+          alert('Pflichtfeld fehlt: "Bohrung Nr." muss vor dem Speichern ausgefüllt sein.');
+          if (useStepper) setStepIndex(1);
+          return;
+        }
+        const title = `${auftragsnummer}_${name}_${bohrung}`;
 
         const reportData = buildReportDataPayload();
         debugPayloadParity("save", reportData);
@@ -1734,7 +1770,7 @@ export default function SchichtenverzeichnisForm({
             return;
           }
 
-          const { error } = await supabase
+          const { data: updatedReport, error } = await supabase
             .from("reports")
             .update({
               title,
@@ -1742,11 +1778,17 @@ export default function SchichtenverzeichnisForm({
               status: "final",
               project_id: scope === "project" ? projectId : null,
             })
-            .eq("id", reportId);
+            .eq("id", reportId)
+            .select("id")
+            .maybeSingle();
 
           if (error) {
             console.error(error);
             alert("Bericht aktualisieren fehlgeschlagen: " + error.message);
+            return;
+          }
+          if (!updatedReport?.id) {
+            alert("Bericht wurde nicht aktualisiert. Bitte Seite neu laden und erneut speichern.");
             return;
           }
 
@@ -2630,29 +2672,47 @@ export default function SchichtenverzeichnisForm({
                     <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                       Durchführung von
                     </span>
-                    <input
-                      type="date"
-                      className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                      value={data.durchfuehrungszeit_von ?? ""}
-                      onChange={(e) => update("durchfuehrungszeit_von", e.target.value)}
-                      onFocus={(e) => openNativePicker(e.currentTarget)}
-                      onClick={(e) => openNativePicker(e.currentTarget)}
-                      required
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                        value={data.durchfuehrungszeit_von ?? ""}
+                        onChange={(e) => update("durchfuehrungszeit_von", e.target.value)}
+                        onFocus={(e) => openNativePicker(e.currentTarget)}
+                        onClick={(e) => openNativePicker(e.currentTarget)}
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary shrink-0"
+                        onClick={() => update("durchfuehrungszeit_von", getTodayDateInputValue())}
+                      >
+                        Heute
+                      </button>
+                    </div>
                   </label>
                   <label className="space-y-1">
                     <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                       Durchführung bis
                     </span>
-                    <input
-                      type="date"
-                      className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                      value={data.durchfuehrungszeit_bis ?? ""}
-                      onChange={(e) => update("durchfuehrungszeit_bis", e.target.value)}
-                      onFocus={(e) => openNativePicker(e.currentTarget)}
-                      onClick={(e) => openNativePicker(e.currentTarget)}
-                      required
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                        value={data.durchfuehrungszeit_bis ?? ""}
+                        onChange={(e) => update("durchfuehrungszeit_bis", e.target.value)}
+                        onFocus={(e) => openNativePicker(e.currentTarget)}
+                        onClick={(e) => openNativePicker(e.currentTarget)}
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary shrink-0"
+                        onClick={() => update("durchfuehrungszeit_bis", getTodayDateInputValue())}
+                      >
+                        Heute
+                      </button>
+                    </div>
                   </label>
                 </div>
               </div>
@@ -2866,20 +2926,35 @@ export default function SchichtenverzeichnisForm({
                   <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Datum
                   </span>
-                  <input
-                    type="date"
-                    className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                    value={toDateInputValue(row.datum)}
-                    onChange={(e) =>
-                      setGrundwasserRows((prev) => {
-                        const next = [...prev];
-                        next[idx] = { ...next[idx], datum: fromDateInputValue(e.target.value) };
-                        return next;
-                      })
-                    }
-                    onFocus={(e) => openNativePicker(e.currentTarget)}
-                    onClick={(e) => openNativePicker(e.currentTarget)}
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                      value={toDateInputValue(row.datum)}
+                      onChange={(e) =>
+                        setGrundwasserRows((prev) => {
+                          const next = [...prev];
+                          next[idx] = { ...next[idx], datum: fromDateInputValue(e.target.value) };
+                          return next;
+                        })
+                      }
+                      onFocus={(e) => openNativePicker(e.currentTarget)}
+                      onClick={(e) => openNativePicker(e.currentTarget)}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary shrink-0"
+                      onClick={() =>
+                        setGrundwasserRows((prev) => {
+                          const next = [...prev];
+                          next[idx] = { ...next[idx], datum: fromDateInputValue(getTodayDateInputValue()) };
+                          return next;
+                        })
+                      }
+                    >
+                      Heute
+                    </button>
+                  </div>
                 </label>
                 <label className="space-y-1">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -3983,14 +4058,23 @@ export default function SchichtenverzeichnisForm({
                   <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Übergeben am
                   </span>
-                  <input
-                    type="date"
-                    className="w-full max-w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                    value={toDateInputValue(data.uebergeben_am)}
-                    onChange={(e) => update("uebergeben_am", fromDateInputValue(e.target.value))}
-                    onFocus={(e) => openNativePicker(e.currentTarget)}
-                    onClick={(e) => openNativePicker(e.currentTarget)}
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      className="w-full max-w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                      value={toDateInputValue(data.uebergeben_am)}
+                      onChange={(e) => update("uebergeben_am", fromDateInputValue(e.target.value))}
+                      onFocus={(e) => openNativePicker(e.currentTarget)}
+                      onClick={(e) => openNativePicker(e.currentTarget)}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary shrink-0"
+                      onClick={() => update("uebergeben_am", fromDateInputValue(getTodayDateInputValue()))}
+                    >
+                      Heute
+                    </button>
+                  </div>
                 </label>
                 <Field label="Übergeben an" value={data.uebergeben_an} onChange={(v) => update("uebergeben_an", v)} />
               </div>
@@ -4042,17 +4126,26 @@ export default function SchichtenverzeichnisForm({
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
+              onClick={() => setStepIndexKeepingScroll((i) => Math.max(0, i - 1))}
               disabled={stepIndex === 0}
             >
               Zurück
             </button>
             <button
               type="button"
+              className="btn border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={() => {
+                void triggerSaveReport();
+              }}
+            >
+              Final speichern
+            </button>
+            <button
+              type="button"
               className="btn btn-primary"
               onClick={() => {
                 if (stepIndex === 5 && !ensureRequiredSchichtfelder()) return;
-                setStepIndex((i) => Math.min(steps.length - 1, i + 1));
+                setStepIndexKeepingScroll((i) => Math.min(steps.length - 1, i + 1));
               }}
               disabled={stepIndex >= steps.length - 1}
             >
