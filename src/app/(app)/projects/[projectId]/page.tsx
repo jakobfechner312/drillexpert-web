@@ -820,6 +820,7 @@ export default function ProjectDetailPage() {
     try {
       const url = new URL(rawUrl);
       const host = url.hostname.toLowerCase();
+      const mid = url.searchParams.get("mid")?.trim() ?? "";
       const isShortHost =
         host === "maps.app.goo.gl" ||
         host.endsWith(".maps.app.goo.gl") ||
@@ -832,8 +833,9 @@ export default function ProjectDetailPage() {
       if (!/google\./i.test(host)) return rawUrl;
       if (/\/maps\/embed/i.test(url.pathname)) return url.toString();
       if (/\/maps\/d\//i.test(url.pathname)) {
+        if (mid) return `https://www.google.com/maps/d/embed?mid=${encodeURIComponent(mid)}`;
         if (url.pathname.includes("/embed")) return url.toString();
-        url.pathname = url.pathname.replace("/edit", "/embed");
+        url.pathname = "/maps/d/embed";
         return url.toString();
       }
 
@@ -2119,7 +2121,7 @@ export default function ProjectDetailPage() {
       {settingsOpen && (
         <div
           className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4"
-          onMouseDown={(e) => {
+          onClick={(e) => {
             if (e.target === e.currentTarget) {
               setSettingsOpen(false);
             }
@@ -2127,7 +2129,7 @@ export default function ProjectDetailPage() {
         >
           <div
             className="mx-auto my-4 flex w-full max-w-3xl max-h-[calc(100vh-2rem)] flex-col rounded-2xl bg-white shadow"
-            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
               <div>

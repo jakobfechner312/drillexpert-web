@@ -31,9 +31,23 @@ const unescapeHtmlLike = (value: string) =>
     .replace(/\\u0026/gi, "&")
     .replace(/&amp;/gi, "&");
 
+const decodeRepeated = (value: string, rounds = 3) => {
+  let out = value;
+  for (let i = 0; i < rounds; i += 1) {
+    try {
+      const next = decodeURIComponent(out);
+      if (next === out) break;
+      out = next;
+    } catch {
+      break;
+    }
+  }
+  return out;
+};
+
 const parseCoordPair = (value: string | null): { lat: number; lon: number } | null => {
   if (!value) return null;
-  const cleaned = decodeURIComponent(value).trim();
+  const cleaned = decodeRepeated(value).trim();
   const match = cleaned.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
   if (!match) return null;
   const lat = readNumber(match[1]);
@@ -43,7 +57,76 @@ const parseCoordPair = (value: string | null): { lat: number; lon: number } | nu
   return { lat, lon };
 };
 
+const extractMidFromMapsUrl = (rawUrl: string): string | null => {
+  const decoded = decodeRepeated(rawUrl);
+  const match = decoded.match(/[?&#]mid=([^&#]+)/i);
+  if (match?.[1]) return match[1].trim();
+  try {
+    const parsed = new URL(rawUrl);
+    const mid = parsed.searchParams.get("mid")?.trim() ?? "";
+    return mid || null;
+  } catch {
+    return null;
+  }
+};
+
+const extractCoordsFromKml = (kml: string): { lat: number; lon: number } | null => {
+  const normalized = unescapeHtmlLike(kml);
+  const centerMatch = normalized.match(
+    /<gx:LatLonQuad>\s*<coordinates>\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s+/i
+  );
+  if (centerMatch) {
+    const lon = readNumber(centerMatch[1]);
+    const lat = readNumber(centerMatch[2]);
+    if (lat != null && lon != null) return { lat, lon };
+  }
+
+  const coordinatesMatch = normalized.match(
+    /<coordinates>\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*(?:,\s*-?\d+(?:\.\d+)?)?/i
+  );
+  if (!coordinatesMatch) return null;
+  const lon = readNumber(coordinatesMatch[1]);
+  const lat = readNumber(coordinatesMatch[2]);
+  if (lat == null || lon == null) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon };
+};
+
+const fetchCoordsFromMymapsMid = async (mid: string): Promise<{ lat: number; lon: number } | null> => {
+  if (!mid) return null;
+  const kmlUrl = new URL("https://www.google.com/maps/d/kml");
+  kmlUrl.searchParams.set("mid", mid);
+  kmlUrl.searchParams.set("forcekml", "1");
+
+  try {
+    const res = await fetch(kmlUrl.toString(), {
+      cache: "no-store",
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "accept-language": "de-DE,de;q=0.9,en;q=0.8",
+      },
+    });
+    if (!res.ok) return null;
+    const kml = await res.text();
+    return extractCoordsFromKml(kml);
+  } catch {
+    return null;
+  }
+};
+
 const extractCoordsFromMapsUrl = (rawUrl: string): { lat: number; lon: number } | null => {
+  const rawDecoded = decodeRepeated(rawUrl);
+  const llMatch = rawDecoded.match(/[?&#]ll=([^&#]+)/i);
+  if (llMatch?.[1]) {
+    const pair = parseCoordPair(llMatch[1]);
+    if (pair) return pair;
+  }
+  const centerMatch = rawDecoded.match(/[?&#]center=([^&#]+)/i);
+  if (centerMatch?.[1]) {
+    const pair = parseCoordPair(centerMatch[1]);
+    if (pair) return pair;
+  }
   try {
     const url = new URL(rawUrl);
     const combinedRaw = `${url.pathname}${url.search}${url.hash}`;
@@ -234,7 +317,13 @@ export async function GET(request: Request) {
   }
 
   const resolvedUrl = await resolveMapsUrl(mymapsUrl);
-  let coords = extractCoordsFromMapsUrl(resolvedUrl);
+  let coords = extractCoordsFromMapsUrl(mymapsUrl) ?? extractCoordsFromMapsUrl(resolvedUrl);
+  if (!coords) {
+    const mid = extractMidFromMapsUrl(mymapsUrl) ?? extractMidFromMapsUrl(resolvedUrl);
+    if (mid) {
+      coords = await fetchCoordsFromMymapsMid(mid);
+    }
+  }
   if (!coords) {
     try {
       const res = await fetch(resolvedUrl, {
@@ -247,9 +336,6 @@ export async function GET(request: Request) {
       if (res.ok) {
         const html = await res.text();
         coords = extractCoordsFromText(html);
-        if (coords) {
-          // got coordinates directly from shared-page payload
-        }
         const place = extractPlaceTitleFromHtml(html);
         if (!coords && place) {
           const geocoded = await geocodePlaceName(place);
@@ -260,11 +346,9 @@ export async function GET(request: Request) {
       // ignore; handled by final error below
     }
   }
-  if (!coords) {
-    if (placeHint) {
-      const hinted = await geocodePlaceName(placeHint);
-      if (hinted) coords = hinted;
-    }
+  if (!coords && placeHint) {
+    const hinted = await geocodePlaceName(placeHint);
+    if (hinted) coords = hinted;
   }
   if (!coords) {
     return NextResponse.json(
