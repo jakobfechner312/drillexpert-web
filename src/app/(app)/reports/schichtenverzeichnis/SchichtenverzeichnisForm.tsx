@@ -2789,7 +2789,7 @@ export default function SchichtenverzeichnisForm({
                                       ? isGreifDurchmesser
                                         ? currentDurchmesser
                                         : ""
-                                      : nextDurchmesserOptions.includes(currentDurchmesser)
+                                      : (nextDurchmesserOptions as readonly string[]).includes(currentDurchmesser)
                                       ? currentDurchmesser
                                       : "",
                                 };
