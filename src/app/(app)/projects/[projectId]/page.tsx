@@ -861,6 +861,16 @@ export default function ProjectDetailPage() {
     };
   };
 
+  const hasMyMapsLayerInfo = (rawUrl: string) => {
+    try {
+      const parsed = new URL(rawUrl);
+      const mid = parsed.searchParams.get("mid")?.trim();
+      return Boolean(mid) || /\/maps\/d\//i.test(parsed.pathname);
+    } catch {
+      return false;
+    }
+  };
+
   const saveMymapsLink = async () => {
     const url = normalizeMapsInput(mymapsUrlInput);
     if (!url) {
@@ -876,7 +886,7 @@ export default function ProjectDetailPage() {
     setMymapsSaving(true);
     try {
       const resolved = await resolveMymapsMeta(url);
-      const urlToSave = url;
+      const urlToSave = hasMyMapsLayerInfo(url) ? url : (resolved.resolvedUrl || url);
       const { data: savedRow, error } = await supabase
         .from("projects")
         .update({ mymaps_url: urlToSave, mymaps_title: resolved.title })
@@ -1412,8 +1422,20 @@ export default function ProjectDetailPage() {
   }, [allUsers]);
 
   const myMapsEmbedUrl = useMemo(
-    () => getMymapsEmbedUrl(project?.mymaps_url, project?.mymaps_title),
-    [project?.mymaps_url, project?.mymaps_title]
+    () => {
+      const rawUrl = String(project?.mymaps_url ?? "").trim();
+      if (!rawUrl) return "";
+      if (hasMyMapsLayerInfo(rawUrl)) {
+        return getMymapsEmbedUrl(rawUrl, project?.mymaps_title);
+      }
+      const lat = Number(projectWeather?.latitude);
+      const lon = Number(projectWeather?.longitude);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        return `https://www.google.com/maps?q=${lat},${lon}&z=15&output=embed`;
+      }
+      return getMymapsEmbedUrl(rawUrl, project?.mymaps_title);
+    },
+    [project?.mymaps_title, project?.mymaps_url, projectWeather?.latitude, projectWeather?.longitude]
   );
 
   const weatherCodeLabel = (code: number | null | undefined) => {

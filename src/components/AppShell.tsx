@@ -266,7 +266,7 @@ function AppTopbar({
 
               <button
                 type="button"
-                className="btn btn-primary hidden sm:inline-flex"
+                className="btn hidden border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-700 sm:inline-flex"
                 onClick={triggerSaveReport}
               >
                 Speichern
@@ -290,7 +290,7 @@ function AppTopbar({
             </button>
             <button
               type="button"
-              className="btn btn-primary flex-1 justify-center"
+              className="btn flex-1 justify-center border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-700"
               onClick={triggerSaveReport}
             >
               Speichern

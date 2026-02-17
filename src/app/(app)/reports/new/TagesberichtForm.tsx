@@ -396,6 +396,33 @@ export default function TagesberichtForm({
   const [prefillProjectId, setPrefillProjectId] = useState<string | null>(projectId ?? enforcedProjectId ?? null);
 
   useEffect(() => {
+    if (mode !== "create") return;
+    let mounted = true;
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!mounted) return;
+      const fullName = String(
+        ((data?.user?.user_metadata as { full_name?: unknown } | undefined)?.full_name ?? "")
+      ).trim();
+      if (!fullName) return;
+      setReport((prev) => {
+        const currentName = String(prev?.signatures?.drillerName ?? "").trim();
+        if (currentName) return prev;
+        return {
+          ...prev,
+          signatures: {
+            ...(prev.signatures ?? {}),
+            drillerName: fullName,
+          },
+        };
+      });
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [mode, supabase]);
+
+  useEffect(() => {
     if (!enforcedProjectId) return;
     setSaveScope("project");
     setLocalProjectId(enforcedProjectId);
@@ -2348,7 +2375,7 @@ if (mode === "edit") {
       ) : null}
       {projectModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-3 sm:items-center sm:p-4">
-          <div className="w-full max-w-lg rounded-3xl border border-sky-100 bg-white p-4 shadow-[0_24px_60px_-24px_rgba(2,132,199,0.45)] sm:p-5">
+          <div className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-sky-100 bg-white p-4 shadow-[0_24px_60px_-24px_rgba(2,132,199,0.45)] sm:p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-xl font-semibold text-sky-900">Projekt auswählen</h3>
@@ -2369,83 +2396,85 @@ if (mode === "edit") {
                 Schließen
               </button>
             </div>
-            <div className="mt-3">
-              <button
-                type="button"
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-sky-200 hover:bg-sky-50/50"
-                onClick={() => {
-                  setSaveScope("my_reports");
-                  setLocalProjectId(null);
-                  setInitialProjectChoiceDone(true);
-                  setProjectModalOpen(false);
-                  pendingSaveResolveRef.current?.({ scope: "my_reports", projectId: null });
-                  pendingSaveResolveRef.current = null;
-                }}
-              >
-                <div className="font-medium">Meine Berichte</div>
-                <div className="text-xs text-slate-500">Speichert ohne Projekt-Zuordnung</div>
-              </button>
-            </div>
-
-            <div className="mt-3 space-y-4">
-              {/* 🔹 NEUES PROJEKT ANLEGEN */}
-              <div className="rounded-2xl border border-sky-100 bg-gradient-to-b from-sky-50/70 to-white p-3.5 sm:p-4">
-                <div className="text-sm font-semibold text-slate-800">Neues Projekt</div>
-
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                  <input
-                    className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm focus:border-sky-300 focus:outline-none"
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    placeholder="z.B. Baustelle Freiburg Nord"
-                  />
-                  <button
-                    type="button"
-                    className="rounded-xl border border-sky-200 bg-sky-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-                    disabled={creatingProject}
-                    onClick={createProject}
-                  >
-                    {creatingProject ? "Erstelle…" : "+ Anlegen"}
-                  </button>
-                </div>
-
-                <p className="mt-2 text-xs text-slate-500">
-                  Legt das Projekt an und wählt es automatisch aus.
-                </p>
+            <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
+              <div>
+                <button
+                  type="button"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-sky-200 hover:bg-sky-50/50"
+                  onClick={() => {
+                    setSaveScope("my_reports");
+                    setLocalProjectId(null);
+                    setInitialProjectChoiceDone(true);
+                    setProjectModalOpen(false);
+                    pendingSaveResolveRef.current?.({ scope: "my_reports", projectId: null });
+                    pendingSaveResolveRef.current = null;
+                  }}
+                >
+                  <div className="font-medium">Meine Berichte</div>
+                  <div className="text-xs text-slate-500">Speichert ohne Projekt-Zuordnung</div>
+                </button>
               </div>
 
-              {/* 🔹 PROJEKT-LISTE */}
-              {projectUiLoading ? (
-                <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">Lade Projekte…</p>
-              ) : projects.length === 0 ? (
-                <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">Noch keine Projekte vorhanden.</p>
-              ) : (
-                <div className="space-y-2">
-                  {projects.map((p) => (
+              <div className="mt-3 space-y-4">
+                {/* 🔹 NEUES PROJEKT ANLEGEN */}
+                <div className="rounded-2xl border border-sky-100 bg-gradient-to-b from-sky-50/70 to-white p-3.5 sm:p-4">
+                  <div className="text-sm font-semibold text-slate-800">Neues Projekt</div>
+
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                    <input
+                      className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm focus:border-sky-300 focus:outline-none"
+                      value={newProjectName}
+                      onChange={(e) => setNewProjectName(e.target.value)}
+                      placeholder="z.B. Baustelle Freiburg Nord"
+                    />
                     <button
-                      key={p.id}
                       type="button"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-sky-200 hover:bg-sky-50/50"
-                      onClick={() => {
-                        setSaveScope("project");
-                        setLocalProjectId(p.id);
-                        setInitialProjectChoiceDone(true);
-                        void applyProjectPrefill(p.id, true);
-                        setProjectModalOpen(false);
-                        pendingSaveResolveRef.current?.({ scope: "project", projectId: p.id });
-                        pendingSaveResolveRef.current = null;
-                      }}
+                      className="rounded-xl border border-sky-200 bg-sky-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+                      disabled={creatingProject}
+                      onClick={createProject}
                     >
-                      <div className="font-medium">
-                        {String(p.project_number ?? "").trim()
-                          ? `${String(p.project_number).trim()} - ${p.name}`
-                          : p.name}
-                      </div>
-                      <div className="text-xs text-slate-500">{p.id}</div>
+                      {creatingProject ? "Erstelle…" : "+ Anlegen"}
                     </button>
-                  ))}
+                  </div>
+
+                  <p className="mt-2 text-xs text-slate-500">
+                    Legt das Projekt an und wählt es automatisch aus.
+                  </p>
                 </div>
-              )}
+
+                {/* 🔹 PROJEKT-LISTE */}
+                {projectUiLoading ? (
+                  <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">Lade Projekte…</p>
+                ) : projects.length === 0 ? (
+                  <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">Noch keine Projekte vorhanden.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {projects.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-sky-200 hover:bg-sky-50/50"
+                        onClick={() => {
+                          setSaveScope("project");
+                          setLocalProjectId(p.id);
+                          setInitialProjectChoiceDone(true);
+                          void applyProjectPrefill(p.id, true);
+                          setProjectModalOpen(false);
+                          pendingSaveResolveRef.current?.({ scope: "project", projectId: p.id });
+                          pendingSaveResolveRef.current = null;
+                        }}
+                      >
+                        <div className="font-medium">
+                          {String(p.project_number ?? "").trim()
+                            ? `${String(p.project_number).trim()} - ${p.name}`
+                            : p.name}
+                        </div>
+                        <div className="text-xs text-slate-500">{p.id}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -4215,7 +4244,7 @@ if (mode === "edit") {
                 void triggerSaveReport();
               }}
             >
-              Final speichern
+              Speichern
             </button>
             <button
               type="button"
