@@ -2160,8 +2160,23 @@ export default function SchichtenverzeichnisForm({
     grundwasser_rows: grundwasserRows,
     schicht_rows: schichtRows.map((row) => {
       const entries = Array.isArray(row.spt_eintraege) ? row.spt_eintraege : [];
+      const rawDepths = Array.isArray(row.proben_tiefen)
+        ? row.proben_tiefen.map((value) => String(value ?? ""))
+        : [String(row.proben_tiefe ?? "")];
+      const normalizedDepths = (rawDepths.length ? rawDepths : [""]).slice(0, 10);
+      const rawTypes = Array.isArray(row.proben_arten) ? row.proben_arten : [];
+      const fallbackType = normalizeProbeType(rawTypes[0] ?? row.proben_art);
+      const normalizedTypes = normalizedDepths.map((_, idx) =>
+        normalizeProbeType(rawTypes[idx] ?? fallbackType)
+      );
+      const firstNonEmptyDepth =
+        normalizedDepths.find((value) => value.trim() !== "") ?? String(row.proben_tiefe ?? "");
       return {
         ...row,
+        proben_tiefen: normalizedDepths,
+        proben_arten: normalizedTypes,
+        proben_art: normalizedTypes[0] ?? fallbackType,
+        proben_tiefe: firstNonEmptyDepth,
         spt_eintraege: entries.map((entry) => ({
           ...entry,
           bis_m: computeSptBisFromEntry(entry),

@@ -957,11 +957,13 @@ export async function generateSchichtenverzeichnisPdf(
               const lineY = yTop - i * lineHeight;
               drawText(pageIndex, textLine, x, lineY, fixedSize);
               const rawType = String(sourceTypes[i] ?? row?.proben_art ?? "").trim();
-              const artText = rawType ? normalizeProbeArt(rawType) : "";
+              // Keep probe art/number rendering robust for manually entered rows:
+              // if the type is missing, fall back to GP instead of skipping drawing.
+              const artText = normalizeProbeArt(rawType || "GP");
               if (artText && probenArtField) {
                 drawText(pageIndex, artText, artX, lineY, fixedSize);
               }
-              if (probenNrField && artText) {
+              if (probenNrField) {
                 const counterBucket = getProbeCounterBucket(artText);
                 const nextNr = (probeCounters[counterBucket] ?? 0) + 1;
                 probeCounters[counterBucket] = nextNr;

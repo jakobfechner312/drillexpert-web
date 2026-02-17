@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/browser";
-import { RHEIN_MAIN_LINK_PROJECT_ID } from "@/lib/reportAccess";
 
 type ReportRow = {
   id: string;
@@ -199,15 +198,6 @@ export default function DashboardPage() {
                 <div className="text-sm font-semibold text-sky-900">Tagesbericht</div>
                 <div className="mt-1 text-xs text-sky-700">
                   Tagesleistung, Bohrungen, Personal
-                </div>
-              </Link>
-              <Link
-                href={`/projects/${RHEIN_MAIN_LINK_PROJECT_ID}/reports/rhein-main-link/new`}
-                className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow"
-              >
-                <div className="text-sm font-semibold text-indigo-900">TB Rhein-Main-Link</div>
-                <div className="mt-1 text-xs text-indigo-700">
-                  Bautagesbericht auf TB_RML Vorlage
                 </div>
               </Link>
               <Link
