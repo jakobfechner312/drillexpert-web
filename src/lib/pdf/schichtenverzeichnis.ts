@@ -208,6 +208,17 @@ export async function generateSchichtenverzeichnisPdf(
     if (!page) return;
     page.drawText(text ?? "", { x, y, size, font, color: rgb(0, 0, 0) });
   };
+  const drawCircleMarker = (pageIndex: number, x: number, y: number, radius = 5.2) => {
+    const page = pages[pageIndex];
+    if (!page) return;
+    page.drawCircle({
+      x,
+      y,
+      size: radius,
+      borderWidth: 1.2,
+      borderColor: rgb(0, 0.35, 0.9),
+    });
+  };
   const buildBohrungen = () => {
     const normalizeType = (value: unknown) => {
       const raw = String(value ?? "").trim().toLowerCase();
@@ -692,6 +703,24 @@ export async function generateSchichtenverzeichnisPdf(
     const x = probeBgField.x + 15 + (pageIndex === 0 ? getPage1FieldOffset("probe_bg", "x") : 0);
     const y = probeBgField.y + (pageIndex === 0 ? getPage1FieldOffset("probe_bg", "y") : 0);
     drawStaticText(pageIndex, "BG", x, y, 10);
+  }
+  // Circle marker for Ki/m (l/v): circle "L" for liefern or "V" for vorhalten.
+  // Coordinates are aligned to the probe counters row, per user calibration.
+  const deliverKernkisten = String(data?.kernkisten_liefern ?? "").trim() !== "";
+  const holdKernkisten = String(data?.kernkisten_vorhalten ?? "").trim() !== "";
+  if (deliverKernkisten || holdKernkisten) {
+    const probeGpField = fieldMap.get("probe_gp");
+    if (probeGpField) {
+      const yBase =
+        probeGpField.y + (probeGpField.page === 1 ? getPage1FieldOffset("probe_gp", "y") : 0);
+      // Slight +3 shifts from text baseline to visual center of the letter.
+      const markerY = yBase + 3;
+      if (deliverKernkisten) {
+        drawCircleMarker(0, 393, markerY);
+      } else if (holdKernkisten) {
+        drawCircleMarker(0, 400, markerY);
+      }
+    }
   }
 
   // Marker-style highlighting instead of "x" for selected checkboxes.

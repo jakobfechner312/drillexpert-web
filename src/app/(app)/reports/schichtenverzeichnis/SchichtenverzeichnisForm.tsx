@@ -16,6 +16,9 @@ type SptEntry = {
   schlag_1: string;
   schlag_2: string;
   schlag_3: string;
+  schlag_1_cm: string;
+  schlag_2_cm: string;
+  schlag_3_cm: string;
 };
 type BohrungEntry = {
   verfahren: "ramm" | "greif" | "rotation" | "ek_dks" | "voll";
@@ -163,6 +166,8 @@ const buildRowFieldOffsetState = (
 
 const MAX_FESTSTELLUNGEN_CHARS = 200;
 const MAX_GROUNDWATER_ROWS = 50;
+const SPT_MAX_SCHLAEGE = 50;
+const SPT_DEFAULT_SEGMENT_CM = 15;
 const BOHR_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509", "700", "880", "1.180", "1.500"] as const;
 const RAMM_ROTATION_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
 const ROTATION_DURCHMESSER_OPTIONS = ["146"] as const;
@@ -331,13 +336,58 @@ const formatDepthNumeric = (value: number): string => {
   return fixed.replace(".", ",");
 };
 const SPT_SEGMENT_DEPTH_M = 0.15;
+const parseSptCm = (value: string | undefined | null): number | null => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const normalized = raw.replace(",", ".");
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  if (parsed < 0) return 0;
+  if (parsed > SPT_DEFAULT_SEGMENT_CM) return SPT_DEFAULT_SEGMENT_CM;
+  return parsed;
+};
+const normalizeSptSchlagInput = (value: string): string => {
+  const digitsOnly = value.replace(/[^\d]/g, "");
+  if (!digitsOnly) return "";
+  const parsed = Number(digitsOnly);
+  if (!Number.isFinite(parsed)) return "";
+  return String(Math.min(parsed, SPT_MAX_SCHLAEGE));
+};
+const normalizeSptCmInput = (value: string): string => {
+  const sanitized = value.replace(/[^\d,.]/g, "").replace(",", ".");
+  if (!sanitized) return "";
+  const parsed = Number(sanitized);
+  if (!Number.isFinite(parsed)) return "";
+  const clamped = Math.min(Math.max(parsed, 0), SPT_DEFAULT_SEGMENT_CM);
+  return String(clamped).replace(".", ",");
+};
+const getSptSegmentDepthCm = (
+  schlagValue: string | undefined | null,
+  cmOverride: string | undefined | null
+): number => {
+  const schlag = normalizeSptSchlagInput(String(schlagValue ?? ""));
+  if (!schlag) return 0;
+  if (schlag === String(SPT_MAX_SCHLAEGE)) {
+    return parseSptCm(cmOverride) ?? 0;
+  }
+  return SPT_DEFAULT_SEGMENT_CM;
+};
 const computeSptBisFromEntry = (entry: Partial<SptEntry> | null | undefined): string => {
   const fromValue = parseDepthNumeric(entry?.von_m);
   if (fromValue == null) return "";
-  const filledSegments = [entry?.schlag_1, entry?.schlag_2, entry?.schlag_3].filter(
-    (value) => String(value ?? "").trim() !== ""
-  ).length;
-  return formatDepthNumeric(fromValue + filledSegments * SPT_SEGMENT_DEPTH_M);
+  const schlagValues = [
+    { schlag: entry?.schlag_1, cm: entry?.schlag_1_cm },
+    { schlag: entry?.schlag_2, cm: entry?.schlag_2_cm },
+    { schlag: entry?.schlag_3, cm: entry?.schlag_3_cm },
+  ];
+  let depthCm = 0;
+  for (const segment of schlagValues) {
+    const normalizedSchlag = normalizeSptSchlagInput(String(segment.schlag ?? ""));
+    if (!normalizedSchlag) continue;
+    depthCm += getSptSegmentDepthCm(normalizedSchlag, segment.cm);
+    if (normalizedSchlag === String(SPT_MAX_SCHLAEGE)) break;
+  }
+  return formatDepthNumeric(fromValue + depthCm / 100);
 };
 
 const initialData: FormData = {
@@ -409,6 +459,8 @@ const initialData: FormData = {
   probe_spt: "",
   uebergeben_am: "",
   uebergeben_an: "",
+  kernkisten_liefern: "",
+  kernkisten_vorhalten: "",
   schicht_a1: "",
   schicht_a2: "",
   schicht_b: "",
@@ -473,6 +525,9 @@ const emptySptEntry = (): SptEntry => ({
   schlag_1: "",
   schlag_2: "",
   schlag_3: "",
+  schlag_1_cm: "",
+  schlag_2_cm: "",
+  schlag_3_cm: "",
 });
 
 const normalizeSptEntries = (row: Partial<SchichtRow> | null | undefined): SptEntry[] => {
@@ -483,6 +538,9 @@ const normalizeSptEntries = (row: Partial<SchichtRow> | null | undefined): SptEn
         schlag_1: String(entry?.schlag_1 ?? ""),
         schlag_2: String(entry?.schlag_2 ?? ""),
         schlag_3: String(entry?.schlag_3 ?? ""),
+        schlag_1_cm: String(entry?.schlag_1_cm ?? ""),
+        schlag_2_cm: String(entry?.schlag_2_cm ?? ""),
+        schlag_3_cm: String(entry?.schlag_3_cm ?? ""),
       }))
     : [];
 
@@ -501,6 +559,9 @@ const normalizeSptEntries = (row: Partial<SchichtRow> | null | undefined): SptEn
       schlag_1: String(row?.spt_schlag_1 ?? ""),
       schlag_2: String(row?.spt_schlag_2 ?? ""),
       schlag_3: String(row?.spt_schlag_3 ?? ""),
+      schlag_1_cm: "",
+      schlag_2_cm: "",
+      schlag_3_cm: "",
     },
   ];
 };
@@ -724,6 +785,27 @@ const joinDepthRange = (from: string | undefined | null, to: string | undefined 
   return fromText || toText;
 };
 
+const DictationButton = ({ onClick, active = false }: { onClick: () => void; active?: boolean }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`inline-flex h-6 w-6 items-center justify-center rounded-md border ${
+      active
+        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+    }`}
+    title="Diktierfunktion öffnen"
+    aria-label="Diktierfunktion öffnen"
+  >
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" />
+      <path d="M19 11a7 7 0 0 1-14 0" />
+      <path d="M12 18v3" />
+      <path d="M8 21h8" />
+    </svg>
+  </button>
+);
+
 type SchichtenverzeichnisFormProps = {
   projectId?: string;
   reportId?: string;
@@ -839,6 +921,16 @@ export default function SchichtenverzeichnisForm({
     buildRowFieldOffsetState()
   );
   const [selectedFineTuneRow, setSelectedFineTuneRow] = useState(0);
+  const dictationTargetsRef = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | null>>({});
+  const dictationRecognitionRef = useRef<{
+    stop: () => void;
+    onresult: ((event: unknown) => void) | null;
+    onerror: ((event: unknown) => void) | null;
+    onend: (() => void) | null;
+  } | null>(null);
+  const activeDictationTargetRef = useRef<string | null>(null);
+  const dictationShouldRunRef = useRef(false);
+  const [activeDictationTarget, setActiveDictationTarget] = useState<string | null>(null);
   const useStepper = stepper;
   const steps = useMemo(
     () => [
@@ -848,6 +940,7 @@ export default function SchichtenverzeichnisForm({
       { key: "pegel", title: "Pegelrohr / Ausbau" },
       { key: "filter", title: "Filter / Dichtung / Bohrgut" },
       { key: "schicht", title: "Schichtbeschreibung" },
+      { key: "proben_spt", title: "Proben & SPT" },
       { key: "proben", title: "Proben & Übergabe" },
     ],
     []
@@ -865,6 +958,169 @@ export default function SchichtenverzeichnisForm({
         window.scrollTo({ top: currentY, behavior: "auto" });
       });
     });
+  }, []);
+  const focusDictationTarget = useCallback((key: string) => {
+    const target = dictationTargetsRef.current[key];
+    if (!target) return;
+    target.focus();
+    target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+  }, []);
+  const insertDictationText = useCallback((key: string, spokenText: string) => {
+    const target = dictationTargetsRef.current[key];
+    if (!target) return;
+    const text = spokenText.trim();
+    if (!text) return;
+    const start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? target.value.length;
+    const before = target.value.slice(0, start);
+    const after = target.value.slice(end);
+    const glueLeft = before && !/\s$/.test(before) ? " " : "";
+    const glueRight = after && !/^\s/.test(after) ? " " : "";
+    const nextValue = `${before}${glueLeft}${text}${glueRight}${after}`;
+    const isTextArea = target instanceof HTMLTextAreaElement;
+    const setter = isTextArea
+      ? Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
+      : Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    if (setter) {
+      setter.call(target, nextValue);
+    } else {
+      target.value = nextValue;
+    }
+    const caret = (before + glueLeft + text).length;
+    target.setSelectionRange(caret, caret);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+  }, []);
+  const startDictationForTarget = useCallback(
+    (key: string) => {
+      if (activeDictationTargetRef.current === key && dictationShouldRunRef.current) {
+        dictationShouldRunRef.current = false;
+        if (dictationRecognitionRef.current) {
+          try {
+            dictationRecognitionRef.current.stop();
+          } catch {
+            // ignore
+          }
+          dictationRecognitionRef.current = null;
+        }
+        activeDictationTargetRef.current = null;
+        setActiveDictationTarget(null);
+        return;
+      }
+      dictationShouldRunRef.current = false;
+      if (dictationRecognitionRef.current) {
+        try {
+          dictationRecognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+        dictationRecognitionRef.current = null;
+      }
+      const speechApiWindow = window as Window & {
+        SpeechRecognition?: new () => {
+          lang: string;
+          interimResults: boolean;
+          continuous: boolean;
+          maxAlternatives: number;
+          onresult: ((event: unknown) => void) | null;
+          onerror: ((event: unknown) => void) | null;
+          onend: (() => void) | null;
+          start: () => void;
+          stop: () => void;
+        };
+        webkitSpeechRecognition?: new () => {
+          lang: string;
+          interimResults: boolean;
+          continuous: boolean;
+          maxAlternatives: number;
+          onresult: ((event: unknown) => void) | null;
+          onerror: ((event: unknown) => void) | null;
+          onend: (() => void) | null;
+          start: () => void;
+          stop: () => void;
+        };
+      };
+      const ua = navigator.userAgent;
+      const isMobileLike = /Android|iPhone|iPad|iPod/i.test(ua);
+      const RecognitionCtor = speechApiWindow.SpeechRecognition ?? speechApiWindow.webkitSpeechRecognition;
+      focusDictationTarget(key);
+      // Desktop (especially Mac/Brave) is often unstable with Web Speech API:
+      // keep a stable fallback there and only force browser recognition on mobile-like devices.
+      if (!isMobileLike || !RecognitionCtor) return;
+      dictationShouldRunRef.current = true;
+      activeDictationTargetRef.current = key;
+      setActiveDictationTarget(key);
+      const launchRecognition = () => {
+        if (!dictationShouldRunRef.current || activeDictationTargetRef.current !== key) return;
+        const recognition = new RecognitionCtor();
+        recognition.lang = "de-DE";
+        recognition.interimResults = false;
+        recognition.continuous = true;
+        recognition.maxAlternatives = 1;
+        recognition.onresult = (event: unknown) => {
+          const e = event as {
+            resultIndex?: number;
+            results?: ArrayLike<ArrayLike<{ transcript?: string }> & { isFinal?: boolean }>;
+          };
+          const results = e.results;
+          if (!results) return;
+          let transcript = "";
+          const startIndex = e.resultIndex ?? 0;
+          for (let i = startIndex; i < results.length; i += 1) {
+            const result = results[i];
+            const piece = result?.[0]?.transcript ?? "";
+            if ((result as { isFinal?: boolean })?.isFinal !== false) transcript += piece;
+          }
+          if (transcript.trim()) {
+            const targetKey = activeDictationTargetRef.current;
+            if (targetKey) insertDictationText(targetKey, transcript);
+          }
+        };
+        recognition.onerror = (event: unknown) => {
+          const speechError = event as { error?: string };
+          if (speechError.error === "not-allowed" || speechError.error === "service-not-allowed") {
+            dictationShouldRunRef.current = false;
+            activeDictationTargetRef.current = null;
+            setActiveDictationTarget(null);
+          }
+        };
+        recognition.onend = () => {
+          if (dictationRecognitionRef.current === recognition) {
+            dictationRecognitionRef.current = null;
+          }
+          if (dictationShouldRunRef.current && activeDictationTargetRef.current === key) {
+            setTimeout(() => {
+              launchRecognition();
+            }, 120);
+            return;
+          }
+          if (activeDictationTargetRef.current === key) {
+            activeDictationTargetRef.current = null;
+            setActiveDictationTarget(null);
+          }
+        };
+        dictationRecognitionRef.current = recognition;
+        try {
+          recognition.start();
+        } catch {
+          dictationShouldRunRef.current = false;
+          activeDictationTargetRef.current = null;
+          setActiveDictationTarget(null);
+        }
+      };
+      launchRecognition();
+    },
+    [focusDictationTarget, insertDictationText]
+  );
+  useEffect(() => {
+    return () => {
+      dictationShouldRunRef.current = false;
+      if (!dictationRecognitionRef.current) return;
+      try {
+        dictationRecognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+    };
   }, []);
   const page1PdfFields = useMemo(
     () =>
@@ -1033,7 +1289,6 @@ export default function SchichtenverzeichnisForm({
     []
   );
   const stepProgress = useMemo(() => {
-    const computedProbeKi = computeProbeKiFromBohrungen(bohrungen);
     const progress = [
       {
         filled: countFilled([
@@ -1110,25 +1365,36 @@ export default function SchichtenverzeichnisForm({
               row.g,
               row.h,
               row.feststellungen,
-              row.proben_art,
-              row.proben_nr,
-              row.proben_tiefe,
-            ]) +
-            countFilled(row.proben_tiefen),
+            ]),
           0
         ),
-        total: Math.max(1, schichtRows.length) * 17,
+        total: Math.max(1, schichtRows.length) * 11,
+      },
+      {
+        filled: schichtRows.reduce((acc, row) => {
+          const sptFilled = (Array.isArray(row.spt_eintraege) ? row.spt_eintraege : []).reduce(
+            (innerAcc, entry) =>
+              innerAcc +
+              countFilled([entry?.von_m, entry?.bis_m, entry?.schlag_1, entry?.schlag_2, entry?.schlag_3]),
+            0
+          );
+          return (
+            acc +
+            countFilled([row.proben_art, row.proben_nr, row.proben_tiefe]) +
+            countFilled(row.proben_tiefen) +
+            sptFilled
+          );
+        }, 0),
+        total: Math.max(1, schichtRows.length) * 18,
       },
       {
         filled: countFilled([
-          computedProbeKi,
-          data.proben_art,
-          data.proben_nr,
-          data.proben_tiefe,
           data.uebergeben_am,
           data.uebergeben_an,
+          data.kernkisten_liefern,
+          data.kernkisten_vorhalten,
         ]),
-        total: 6,
+        total: 4,
       },
     ];
 
@@ -2528,11 +2794,40 @@ export default function SchichtenverzeichnisForm({
         spt_eintraege:
           idx === 0
             ? [
-                { von_m: "50", bis_m: "75", schlag_1: "50", schlag_2: "45", schlag_3: "40" },
-                { von_m: "75", bis_m: "100", schlag_1: "15", schlag_2: "15", schlag_3: "15" },
+                {
+                  von_m: "50",
+                  bis_m: "75",
+                  schlag_1: "50",
+                  schlag_2: "45",
+                  schlag_3: "40",
+                  schlag_1_cm: "10",
+                  schlag_2_cm: "",
+                  schlag_3_cm: "",
+                },
+                {
+                  von_m: "75",
+                  bis_m: "100",
+                  schlag_1: "15",
+                  schlag_2: "15",
+                  schlag_3: "15",
+                  schlag_1_cm: "",
+                  schlag_2_cm: "",
+                  schlag_3_cm: "",
+                },
               ]
             : idx === 1
-              ? [{ von_m: "100", bis_m: "125", schlag_1: "20", schlag_2: "18", schlag_3: "12" }]
+              ? [
+                  {
+                    von_m: "100",
+                    bis_m: "125",
+                    schlag_1: "20",
+                    schlag_2: "18",
+                    schlag_3: "12",
+                    schlag_1_cm: "",
+                    schlag_2_cm: "",
+                    schlag_3_cm: "",
+                  },
+                ]
               : [],
         spt_gemacht: idx <= 1,
         spt_schlag_1: idx === 0 ? "54" : idx === 1 ? "20" : "",
@@ -2560,6 +2855,8 @@ export default function SchichtenverzeichnisForm({
   };
 
   const showStep = (index: number) => !useStepper || stepIndex === index;
+  const isSchichtStep = showStep(5);
+  const isProbenSptStep = showStep(6);
   const containerClass = useStepper
     ? "mt-6 space-y-6 max-w-[2000px] mx-auto w-full overflow-x-hidden px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]"
     : "space-y-6";
@@ -3492,9 +3789,10 @@ export default function SchichtenverzeichnisForm({
           )
         : null}
 
-      {showStep(5)
+      {isSchichtStep || isProbenSptStep
         ? renderStep(
-            <Card title="Schichtbeschreibung (Auszug)">
+            <Card title={isSchichtStep ? "Schichtbeschreibung (Auszug)" : "Proben / SPT"}>
+        {isSchichtStep ? (
         <details className="rounded-xl border border-slate-200 bg-white">
           <summary className="cursor-pointer select-none rounded-xl px-3 py-2 text-sm font-semibold uppercase tracking-[0.14em] text-slate-600">
             Legende / Hilfe (Original‑Hinweise)
@@ -3542,6 +3840,7 @@ export default function SchichtenverzeichnisForm({
             </div>
           </div>
         </details>
+        ) : null}
         <div className="mt-4 space-y-4">
           {schichtRows.map((row, idx) => (
             <div
@@ -3553,26 +3852,20 @@ export default function SchichtenverzeichnisForm({
                   Schichtzeile {idx + 1}
                 </div>
                 <div className="flex gap-2">
+                  {isSchichtStep ? (
                   <button
                     type="button"
-                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+                    className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
                     onClick={() =>
                       setSchichtRows((prev) => {
-                        const clone = {
-                          ...prev[idx],
-                          proben_tiefen: Array.isArray(prev[idx].proben_tiefen)
-                            ? [...prev[idx].proben_tiefen]
-                            : [""],
-                          proben_arten: Array.isArray(prev[idx].proben_arten)
-                            ? [...prev[idx].proben_arten]
-                            : ["GP"],
-                        };
-                        return [...prev.slice(0, idx + 1), clone, ...prev.slice(idx + 1)];
+                        const nextRow = emptySchichtRow();
+                        return [...prev.slice(0, idx + 1), nextRow, ...prev.slice(idx + 1)];
                       })
                     }
                   >
-                    Duplizieren
+                    Nächste Schicht
                   </button>
+                  ) : null}
                   <button
                     type="button"
                     className="rounded-md border border-rose-200 bg-white px-2 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50"
@@ -3586,11 +3879,16 @@ export default function SchichtenverzeichnisForm({
                 </div>
               </div>
               <div
-                className="grid gap-4 2xl:grid-cols-[1.4fr_0.9fr_0.4fr]"
-                style={{
-                  minHeight: `${Number(schichtRowHeight) || 200}px`,
-                }}
+                className={isSchichtStep ? "grid gap-4 2xl:grid-cols-[1.7fr_1fr]" : "grid gap-4"}
+                style={
+                  isSchichtStep
+                    ? {
+                        minHeight: `${Number(schichtRowHeight) || 200}px`,
+                      }
+                    : undefined
+                }
               >
+              {isSchichtStep ? (
               <div>
               <div className="rounded-xl border border-slate-200 h-full bg-white">
                 <div className="grid h-full xl:grid-cols-[0.35fr_1fr]">
@@ -3618,8 +3916,17 @@ export default function SchichtenverzeichnisForm({
                       Schichtbeschreibung
                     </div>
                     <label className="col-span-full 2xl:col-span-4 border-b border-slate-200 px-3 py-2">
-                      a1) Benennung
+                      <div className="flex items-center justify-between gap-2">
+                        <span>a1) Benennung</span>
+                        <DictationButton
+                          onClick={() => startDictationForTarget(`sv-a1-${idx}`)}
+                          active={activeDictationTarget === `sv-a1-${idx}`}
+                        />
+                      </div>
                       <input
+                        ref={(el) => {
+                          dictationTargetsRef.current[`sv-a1-${idx}`] = el;
+                        }}
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.a1}
                         onChange={(e) =>
@@ -3632,8 +3939,17 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="col-span-full 2xl:col-span-4 border-b border-slate-200 px-3 py-2">
-                      a2) Bemerkung
+                      <div className="flex items-center justify-between gap-2">
+                        <span>a2) Bemerkung</span>
+                        <DictationButton
+                          onClick={() => startDictationForTarget(`sv-a2-${idx}`)}
+                          active={activeDictationTarget === `sv-a2-${idx}`}
+                        />
+                      </div>
                       <input
+                        ref={(el) => {
+                          dictationTargetsRef.current[`sv-a2-${idx}`] = el;
+                        }}
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                         value={row.a2}
                         onChange={(e) =>
@@ -3827,27 +4143,44 @@ export default function SchichtenverzeichnisForm({
                 </div>
               </div>
               </div>
-              <div className="rounded-xl border border-slate-200 p-3 h-full flex flex-col">
-                <div className="text-xs font-semibold text-slate-600">Feststellungen beim Bohren</div>
-                <textarea
-                  className="mt-2 h-28 min-h-[96px] max-h-40 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  value={row.feststellungen}
-                  maxLength={MAX_FESTSTELLUNGEN_CHARS}
-                  onChange={(e) =>
-                    setSchichtRows((prev) => {
-                      const next = [...prev];
-                      next[idx] = {
-                        ...next[idx],
-                        feststellungen: e.target.value.slice(0, MAX_FESTSTELLUNGEN_CHARS),
-                      };
-                      return next;
-                    })
-                  }
-                />
-                <div className="mt-1 text-[10px] text-slate-400">
-                  {row.feststellungen.length}/{MAX_FESTSTELLUNGEN_CHARS}
-                </div>
-                <label className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700">
+              ) : null}
+              <div
+                className={`rounded-xl border border-slate-200 p-3 h-full flex flex-col ${isProbenSptStep ? "order-2" : ""}`}
+              >
+                {isSchichtStep ? (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs font-semibold text-slate-600">Feststellungen beim Bohren</div>
+                      <DictationButton
+                        onClick={() => startDictationForTarget(`sv-feststellungen-${idx}`)}
+                        active={activeDictationTarget === `sv-feststellungen-${idx}`}
+                      />
+                    </div>
+                    <textarea
+                      ref={(el) => {
+                        dictationTargetsRef.current[`sv-feststellungen-${idx}`] = el;
+                      }}
+                      className="mt-2 h-28 min-h-[96px] max-h-40 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      value={row.feststellungen}
+                      maxLength={MAX_FESTSTELLUNGEN_CHARS}
+                      onChange={(e) =>
+                        setSchichtRows((prev) => {
+                          const next = [...prev];
+                          next[idx] = {
+                            ...next[idx],
+                            feststellungen: e.target.value.slice(0, MAX_FESTSTELLUNGEN_CHARS),
+                          };
+                          return next;
+                        })
+                      }
+                    />
+                    <div className="mt-1 text-[10px] text-slate-400">
+                      {row.feststellungen.length}/{MAX_FESTSTELLUNGEN_CHARS}
+                    </div>
+                  </>
+                ) : null}
+                {isProbenSptStep ? (
+                  <label className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700">
                   <input
                     type="checkbox"
                     checked={(row.spt_eintraege?.length ?? 0) > 0}
@@ -3883,8 +4216,9 @@ export default function SchichtenverzeichnisForm({
                     }
                   />
                   SPT durchgeführt
-                </label>
-                {(row.spt_eintraege?.length ?? 0) > 0 ? (
+                  </label>
+                ) : null}
+                {isProbenSptStep && (row.spt_eintraege?.length ?? 0) > 0 ? (
                   <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -3957,6 +4291,9 @@ export default function SchichtenverzeichnisForm({
                           >
                             {(() => {
                               const computedBis = computeSptBisFromEntry(entry);
+                              const stopAfterSchlag1 = entry?.schlag_1 === String(SPT_MAX_SCHLAEGE);
+                              const stopAfterSchlag2 =
+                                stopAfterSchlag1 || entry?.schlag_2 === String(SPT_MAX_SCHLAEGE);
                               return (
                                 <>
                             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -4010,7 +4347,17 @@ export default function SchichtenverzeichnisForm({
                                       ? [...next[idx].spt_eintraege]
                                       : [emptySptEntry()];
                                     const current = entries[sptIndex] ?? emptySptEntry();
-                                    const nextEntry = { ...current, schlag_1: e.target.value };
+                                    const nextSchlag = normalizeSptSchlagInput(e.target.value);
+                                    const nextEntry = {
+                                      ...current,
+                                      schlag_1: nextSchlag,
+                                      schlag_1_cm:
+                                        nextSchlag === String(SPT_MAX_SCHLAEGE) ? current.schlag_1_cm : "",
+                                      schlag_2: nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_2,
+                                      schlag_2_cm: nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_2_cm,
+                                      schlag_3: nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_3,
+                                      schlag_3_cm: nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_3_cm,
+                                    };
                                     entries[sptIndex] = {
                                       ...nextEntry,
                                       bis_m: computeSptBisFromEntry(nextEntry),
@@ -4028,64 +4375,189 @@ export default function SchichtenverzeichnisForm({
                                   })
                                 }
                               />
-                              <input
-                                className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                                placeholder="Schlagzahl max. 50"
-                                value={entry?.schlag_2 ?? ""}
-                                onChange={(e) =>
-                                  setSchichtRows((prev) => {
-                                    const next = [...prev];
-                                    const entries = Array.isArray(next[idx].spt_eintraege)
-                                      ? [...next[idx].spt_eintraege]
-                                      : [emptySptEntry()];
-                                    const current = entries[sptIndex] ?? emptySptEntry();
-                                    const nextEntry = { ...current, schlag_2: e.target.value };
-                                    entries[sptIndex] = {
-                                      ...nextEntry,
-                                      bis_m: computeSptBisFromEntry(nextEntry),
-                                    };
-                                    const first = entries[0] ?? emptySptEntry();
-                                    next[idx] = {
-                                      ...next[idx],
-                                      spt_gemacht: entries.length > 0,
-                                      spt_eintraege: entries,
-                                      spt_schlag_1: first.schlag_1,
-                                      spt_schlag_2: first.schlag_2,
-                                      spt_schlag_3: first.schlag_3,
-                                    };
-                                    return next;
-                                  })
-                                }
-                              />
-                              <input
-                                className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                                placeholder="Schlagzahl max. 50"
-                                value={entry?.schlag_3 ?? ""}
-                                onChange={(e) =>
-                                  setSchichtRows((prev) => {
-                                    const next = [...prev];
-                                    const entries = Array.isArray(next[idx].spt_eintraege)
-                                      ? [...next[idx].spt_eintraege]
-                                      : [emptySptEntry()];
-                                    const current = entries[sptIndex] ?? emptySptEntry();
-                                    const nextEntry = { ...current, schlag_3: e.target.value };
-                                    entries[sptIndex] = {
-                                      ...nextEntry,
-                                      bis_m: computeSptBisFromEntry(nextEntry),
-                                    };
-                                    const first = entries[0] ?? emptySptEntry();
-                                    next[idx] = {
-                                      ...next[idx],
-                                      spt_gemacht: entries.length > 0,
-                                      spt_eintraege: entries,
-                                      spt_schlag_1: first.schlag_1,
-                                      spt_schlag_2: first.schlag_2,
-                                      spt_schlag_3: first.schlag_3,
-                                    };
-                                    return next;
-                                  })
-                                }
-                              />
+                              {entry?.schlag_1 === String(SPT_MAX_SCHLAEGE) ? (
+                                <input
+                                  className="h-8 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-slate-900"
+                                  placeholder="cm bei 50"
+                                  value={entry?.schlag_1_cm ?? ""}
+                                  onChange={(e) =>
+                                    setSchichtRows((prev) => {
+                                      const next = [...prev];
+                                      const entries = Array.isArray(next[idx].spt_eintraege)
+                                        ? [...next[idx].spt_eintraege]
+                                        : [emptySptEntry()];
+                                      const current = entries[sptIndex] ?? emptySptEntry();
+                                      const nextEntry = {
+                                        ...current,
+                                        schlag_1_cm: normalizeSptCmInput(e.target.value),
+                                      };
+                                      entries[sptIndex] = {
+                                        ...nextEntry,
+                                        bis_m: computeSptBisFromEntry(nextEntry),
+                                      };
+                                      const first = entries[0] ?? emptySptEntry();
+                                      next[idx] = {
+                                        ...next[idx],
+                                        spt_gemacht: entries.length > 0,
+                                        spt_eintraege: entries,
+                                        spt_schlag_1: first.schlag_1,
+                                        spt_schlag_2: first.schlag_2,
+                                        spt_schlag_3: first.schlag_3,
+                                      };
+                                      return next;
+                                    })
+                                  }
+                                />
+                              ) : null}
+                              {!stopAfterSchlag1 ? (
+                                <>
+                                  <input
+                                    className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                                    placeholder="Schlagzahl max. 50"
+                                    value={entry?.schlag_2 ?? ""}
+                                    onChange={(e) =>
+                                      setSchichtRows((prev) => {
+                                        const next = [...prev];
+                                        const entries = Array.isArray(next[idx].spt_eintraege)
+                                          ? [...next[idx].spt_eintraege]
+                                          : [emptySptEntry()];
+                                        const current = entries[sptIndex] ?? emptySptEntry();
+                                        const nextSchlag = normalizeSptSchlagInput(e.target.value);
+                                        const nextEntry = {
+                                          ...current,
+                                          schlag_2: nextSchlag,
+                                          schlag_2_cm:
+                                            nextSchlag === String(SPT_MAX_SCHLAEGE) ? current.schlag_2_cm : "",
+                                          schlag_3: nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_3,
+                                          schlag_3_cm:
+                                            nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_3_cm,
+                                        };
+                                        entries[sptIndex] = {
+                                          ...nextEntry,
+                                          bis_m: computeSptBisFromEntry(nextEntry),
+                                        };
+                                        const first = entries[0] ?? emptySptEntry();
+                                        next[idx] = {
+                                          ...next[idx],
+                                          spt_gemacht: entries.length > 0,
+                                          spt_eintraege: entries,
+                                          spt_schlag_1: first.schlag_1,
+                                          spt_schlag_2: first.schlag_2,
+                                          spt_schlag_3: first.schlag_3,
+                                        };
+                                        return next;
+                                      })
+                                    }
+                                  />
+                                  {entry?.schlag_2 === String(SPT_MAX_SCHLAEGE) ? (
+                                    <input
+                                      className="h-8 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-slate-900"
+                                      placeholder="cm bei 50"
+                                      value={entry?.schlag_2_cm ?? ""}
+                                      onChange={(e) =>
+                                        setSchichtRows((prev) => {
+                                          const next = [...prev];
+                                          const entries = Array.isArray(next[idx].spt_eintraege)
+                                            ? [...next[idx].spt_eintraege]
+                                            : [emptySptEntry()];
+                                          const current = entries[sptIndex] ?? emptySptEntry();
+                                          const nextEntry = {
+                                            ...current,
+                                            schlag_2_cm: normalizeSptCmInput(e.target.value),
+                                          };
+                                          entries[sptIndex] = {
+                                            ...nextEntry,
+                                            bis_m: computeSptBisFromEntry(nextEntry),
+                                          };
+                                          const first = entries[0] ?? emptySptEntry();
+                                          next[idx] = {
+                                            ...next[idx],
+                                            spt_gemacht: entries.length > 0,
+                                            spt_eintraege: entries,
+                                            spt_schlag_1: first.schlag_1,
+                                            spt_schlag_2: first.schlag_2,
+                                            spt_schlag_3: first.schlag_3,
+                                          };
+                                          return next;
+                                        })
+                                      }
+                                    />
+                                  ) : null}
+                                </>
+                              ) : null}
+                              {!stopAfterSchlag2 ? (
+                                <>
+                                  <input
+                                    className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                                    placeholder="Schlagzahl max. 50"
+                                    value={entry?.schlag_3 ?? ""}
+                                    onChange={(e) =>
+                                      setSchichtRows((prev) => {
+                                        const next = [...prev];
+                                        const entries = Array.isArray(next[idx].spt_eintraege)
+                                          ? [...next[idx].spt_eintraege]
+                                          : [emptySptEntry()];
+                                        const current = entries[sptIndex] ?? emptySptEntry();
+                                        const nextSchlag = normalizeSptSchlagInput(e.target.value);
+                                        const nextEntry = {
+                                          ...current,
+                                          schlag_3: nextSchlag,
+                                          schlag_3_cm:
+                                            nextSchlag === String(SPT_MAX_SCHLAEGE) ? current.schlag_3_cm : "",
+                                        };
+                                        entries[sptIndex] = {
+                                          ...nextEntry,
+                                          bis_m: computeSptBisFromEntry(nextEntry),
+                                        };
+                                        const first = entries[0] ?? emptySptEntry();
+                                        next[idx] = {
+                                          ...next[idx],
+                                          spt_gemacht: entries.length > 0,
+                                          spt_eintraege: entries,
+                                          spt_schlag_1: first.schlag_1,
+                                          spt_schlag_2: first.schlag_2,
+                                          spt_schlag_3: first.schlag_3,
+                                        };
+                                        return next;
+                                      })
+                                    }
+                                  />
+                                  {entry?.schlag_3 === String(SPT_MAX_SCHLAEGE) ? (
+                                    <input
+                                      className="h-8 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-slate-900"
+                                      placeholder="cm bei 50"
+                                      value={entry?.schlag_3_cm ?? ""}
+                                      onChange={(e) =>
+                                        setSchichtRows((prev) => {
+                                          const next = [...prev];
+                                          const entries = Array.isArray(next[idx].spt_eintraege)
+                                            ? [...next[idx].spt_eintraege]
+                                            : [emptySptEntry()];
+                                          const current = entries[sptIndex] ?? emptySptEntry();
+                                          const nextEntry = {
+                                            ...current,
+                                            schlag_3_cm: normalizeSptCmInput(e.target.value),
+                                          };
+                                          entries[sptIndex] = {
+                                            ...nextEntry,
+                                            bis_m: computeSptBisFromEntry(nextEntry),
+                                          };
+                                          const first = entries[0] ?? emptySptEntry();
+                                          next[idx] = {
+                                            ...next[idx],
+                                            spt_gemacht: entries.length > 0,
+                                            spt_eintraege: entries,
+                                            spt_schlag_1: first.schlag_1,
+                                            spt_schlag_2: first.schlag_2,
+                                            spt_schlag_3: first.schlag_3,
+                                          };
+                                          return next;
+                                        })
+                                      }
+                                    />
+                                  ) : null}
+                                </>
+                              ) : null}
                             </div>
                                 </>
                               );
@@ -4096,7 +4568,8 @@ export default function SchichtenverzeichnisForm({
                   </div>
                 ) : null}
               </div>
-              <div className="rounded-xl border border-slate-200 p-3 h-full">
+              {isProbenSptStep ? (
+              <div className="order-1 rounded-xl border border-slate-200 p-3 h-full">
                 <div className="text-xs font-semibold text-slate-600">Entnommene Proben</div>
                 <div className="mt-3 grid gap-2">
                   <div className="flex items-center justify-between">
@@ -4233,6 +4706,7 @@ export default function SchichtenverzeichnisForm({
                     )})}
                 </div>
               </div>
+              ) : null}
             </div>
             </div>
           ))}
@@ -4241,10 +4715,40 @@ export default function SchichtenverzeichnisForm({
           )
         : null}
 
-      {showStep(6)
+      {showStep(7)
         ? renderStep(
             <Card title="Proben / Übergabe">
               <div className="grid gap-4 md:grid-cols-2">
+                <div className="md:col-span-2 grid gap-2 sm:grid-cols-2">
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(data.kernkisten_liefern?.trim())}
+                      onChange={(e) =>
+                        setData((prev) => ({
+                          ...prev,
+                          kernkisten_liefern: e.target.checked ? "x" : "",
+                          kernkisten_vorhalten: e.target.checked ? "" : prev.kernkisten_vorhalten,
+                        }))
+                      }
+                    />
+                    Kernkisten liefern
+                  </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(data.kernkisten_vorhalten?.trim())}
+                      onChange={(e) =>
+                        setData((prev) => ({
+                          ...prev,
+                          kernkisten_vorhalten: e.target.checked ? "x" : "",
+                          kernkisten_liefern: e.target.checked ? "" : prev.kernkisten_liefern,
+                        }))
+                      }
+                    />
+                    Kernkisten vorhalten
+                  </label>
+                </div>
                 <label className="min-w-0 space-y-1">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Übergeben am

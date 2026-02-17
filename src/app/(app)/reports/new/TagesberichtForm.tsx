@@ -358,6 +358,28 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
 
   return r as Tagesbericht;
 }
+
+const DictationButton = ({ onClick, active = false }: { onClick: () => void; active?: boolean }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`inline-flex h-7 w-7 items-center justify-center rounded-md border ${
+      active
+        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+    }`}
+    title="Diktierfunktion öffnen"
+    aria-label="Diktierfunktion öffnen"
+  >
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" />
+      <path d="M19 11a7 7 0 0 1-14 0" />
+      <path d="M12 18v3" />
+      <path d="M8 21h8" />
+    </svg>
+  </button>
+);
+
 export default function TagesberichtForm({
   projectId,
   reportId,
@@ -380,6 +402,16 @@ export default function TagesberichtForm({
   }, [mode, reportId, projectId]);
 
   const savingRef = useRef(false);
+  const dictationTargetsRef = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const dictationRecognitionRef = useRef<{
+    stop: () => void;
+    onresult: ((event: unknown) => void) | null;
+    onerror: ((event: unknown) => void) | null;
+    onend: (() => void) | null;
+  } | null>(null);
+  const activeDictationTargetRef = useRef<string | null>(null);
+  const dictationShouldRunRef = useRef(false);
+  const [activeDictationTarget, setActiveDictationTarget] = useState<string | null>(null);
   const reportSaveKeyRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveReadyRef = useRef(false);
@@ -730,6 +762,155 @@ export default function TagesberichtForm({
     const d = String(now.getDate()).padStart(2, "0");
     return `${y}-${m}-${d}`;
   };
+  const focusDictationTarget = useCallback((key: string) => {
+    const target = dictationTargetsRef.current[key];
+    if (!target) return;
+    target.focus();
+    target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+  }, []);
+  const insertDictationText = useCallback((key: string, spokenText: string) => {
+    const target = dictationTargetsRef.current[key];
+    if (!target) return;
+    const text = spokenText.trim();
+    if (!text) return;
+    const start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? target.value.length;
+    const before = target.value.slice(0, start);
+    const after = target.value.slice(end);
+    const glueLeft = before && !/\s$/.test(before) ? " " : "";
+    const glueRight = after && !/^\s/.test(after) ? " " : "";
+    const nextValue = `${before}${glueLeft}${text}${glueRight}${after}`;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+    if (setter) {
+      setter.call(target, nextValue);
+    } else {
+      target.value = nextValue;
+    }
+    const caret = (before + glueLeft + text).length;
+    target.setSelectionRange(caret, caret);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+  }, []);
+  const startDictationForTarget = useCallback(
+    (key: string) => {
+      if (activeDictationTargetRef.current === key && dictationShouldRunRef.current) {
+        dictationShouldRunRef.current = false;
+        if (dictationRecognitionRef.current) {
+          try {
+            dictationRecognitionRef.current.stop();
+          } catch {
+            // ignore
+          }
+          dictationRecognitionRef.current = null;
+        }
+        activeDictationTargetRef.current = null;
+        setActiveDictationTarget(null);
+        return;
+      }
+      dictationShouldRunRef.current = false;
+      if (dictationRecognitionRef.current) {
+        try {
+          dictationRecognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+        dictationRecognitionRef.current = null;
+      }
+      const speechApiWindow = window as Window & {
+        SpeechRecognition?: new () => {
+          lang: string;
+          interimResults: boolean;
+          continuous: boolean;
+          maxAlternatives: number;
+          onresult: ((event: unknown) => void) | null;
+          onerror: ((event: unknown) => void) | null;
+          onend: (() => void) | null;
+          start: () => void;
+          stop: () => void;
+        };
+        webkitSpeechRecognition?: new () => {
+          lang: string;
+          interimResults: boolean;
+          continuous: boolean;
+          maxAlternatives: number;
+          onresult: ((event: unknown) => void) | null;
+          onerror: ((event: unknown) => void) | null;
+          onend: (() => void) | null;
+          start: () => void;
+          stop: () => void;
+        };
+      };
+      const ua = navigator.userAgent;
+      const isMobileLike = /Android|iPhone|iPad|iPod/i.test(ua);
+      const RecognitionCtor = speechApiWindow.SpeechRecognition ?? speechApiWindow.webkitSpeechRecognition;
+      focusDictationTarget(key);
+      // Desktop (especially Mac/Brave) is often unstable with Web Speech API:
+      // keep a stable fallback there and only force browser recognition on mobile-like devices.
+      if (!isMobileLike || !RecognitionCtor) return;
+      dictationShouldRunRef.current = true;
+      activeDictationTargetRef.current = key;
+      setActiveDictationTarget(key);
+      const launchRecognition = () => {
+        if (!dictationShouldRunRef.current || activeDictationTargetRef.current !== key) return;
+        const recognition = new RecognitionCtor();
+        recognition.lang = "de-DE";
+        recognition.interimResults = false;
+        recognition.continuous = true;
+        recognition.maxAlternatives = 1;
+        recognition.onresult = (event: unknown) => {
+          const e = event as {
+            resultIndex?: number;
+            results?: ArrayLike<ArrayLike<{ transcript?: string }> & { isFinal?: boolean }>;
+          };
+          const results = e.results;
+          if (!results) return;
+          let transcript = "";
+          const startIndex = e.resultIndex ?? 0;
+          for (let i = startIndex; i < results.length; i += 1) {
+            const result = results[i];
+            const piece = result?.[0]?.transcript ?? "";
+            if ((result as { isFinal?: boolean })?.isFinal !== false) transcript += piece;
+          }
+          if (transcript.trim()) {
+            const targetKey = activeDictationTargetRef.current;
+            if (targetKey) insertDictationText(targetKey, transcript);
+          }
+        };
+        recognition.onerror = (event: unknown) => {
+          const speechError = event as { error?: string };
+          if (speechError.error === "not-allowed" || speechError.error === "service-not-allowed") {
+            dictationShouldRunRef.current = false;
+            activeDictationTargetRef.current = null;
+            setActiveDictationTarget(null);
+          }
+        };
+        recognition.onend = () => {
+          if (dictationRecognitionRef.current === recognition) {
+            dictationRecognitionRef.current = null;
+          }
+          if (dictationShouldRunRef.current && activeDictationTargetRef.current === key) {
+            setTimeout(() => {
+              launchRecognition();
+            }, 120);
+            return;
+          }
+          if (activeDictationTargetRef.current === key) {
+            activeDictationTargetRef.current = null;
+            setActiveDictationTarget(null);
+          }
+        };
+        dictationRecognitionRef.current = recognition;
+        try {
+          recognition.start();
+        } catch {
+          dictationShouldRunRef.current = false;
+          activeDictationTargetRef.current = null;
+          setActiveDictationTarget(null);
+        }
+      };
+      launchRecognition();
+    },
+    [focusDictationTarget, insertDictationText]
+  );
 
   const MAX_CUSTOM_WORK_CYCLES = 6;
 
@@ -738,6 +919,14 @@ export default function TagesberichtForm({
       Object.values(geoSearchDebounceRef.current).forEach((t) => {
         if (t) clearTimeout(t);
       });
+      dictationShouldRunRef.current = false;
+      if (dictationRecognitionRef.current) {
+        try {
+          dictationRecognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
     };
   }, []);
 
@@ -2199,12 +2388,40 @@ if (mode === "edit") {
     const rounded = Math.round(hours * 4) / 4;
     return formatQuarterHours(rounded);
   };
-
-  const calcTaktHoursForWorker = (worker: WorkerRow) => {
+  const parseHoursInput = (value?: string | null) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return null;
+    const parsed = Number(raw.replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const areHourValuesEqual = (a?: string | null, b?: string | null) => {
+    const aNum = parseHoursInput(a);
+    const bNum = parseHoursInput(b);
+    if (aNum == null || bNum == null) return false;
+    return Math.abs(aNum - bNum) < 0.01;
+  };
+  const sumHourStrings = (values: string[]) => {
+    let sum = 0;
+    let has = false;
+    values.forEach((value) => {
+      const parsed = parseHoursInput(value);
+      if (parsed == null) return;
+      sum += parsed;
+      has = true;
+    });
+    return has ? formatHoursFromHours(sum) : "";
+  };
+  const isAssignedCycle = (cycle: string | undefined | null) => {
+    const raw = String(cycle ?? "").trim();
+    return raw !== "" && raw !== "__custom__";
+  };
+  const calcTaktHoursForWorker = (worker: WorkerRow, workerCycles: string[]) => {
     const st = Array.isArray(worker.stunden) ? worker.stunden : [];
     let sum = 0;
     let has = false;
-    st.forEach((val) => {
+    workerCycles.forEach((cycle, idx) => {
+      if (!isAssignedCycle(cycle)) return;
+      const val = st[idx] ?? "";
       const num = Number(String(val ?? "").replace(",", "."));
       if (Number.isFinite(num)) {
         sum += num;
@@ -2234,8 +2451,9 @@ if (mode === "edit") {
   };
 
   const getTaktHoursStringForWorker = (worker: WorkerRow) => {
-    const taktHours = calcTaktHoursForWorker(worker);
-    return formatHoursFromHours(taktHours);
+    const workerCycles = getWorkerCycles(worker);
+    const taktHours = calcTaktHoursForWorker(worker, workerCycles);
+    return formatHoursFromHours(taktHours) || "0";
   };
 
   const isWorkerMismatch = (worker: WorkerRow, workerIndex: number) => {
@@ -2308,6 +2526,17 @@ if (mode === "edit") {
     if (from == null || to == null || to <= from) return 0;
     return to - from;
   };
+  const sharedTotalHours = useMemo(() => {
+    const cycles = Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""];
+    const filtered = cycles.map((cycle, idx) => (isAssignedCycle(cycle) ? sharedStunden[idx] ?? "" : ""));
+    const sum = sumHourStrings(filtered);
+    return sum || "0";
+  }, [sharedStunden, report.workCycles]);
+  const sharedExpectedHours = getTimeHoursStringForWorker(0);
+  const sharedHoursMatch =
+    Boolean(sharedTotalHours) &&
+    Boolean(sharedExpectedHours) &&
+    areHourValuesEqual(sharedTotalHours, sharedExpectedHours);
 
   useEffect(() => {
     const workers = Array.isArray(report.workers) ? report.workers : [];
@@ -2326,8 +2555,13 @@ if (mode === "edit") {
 
     for (let idx = 0; idx < nextWorkers.length; idx++) {
       const w = nextWorkers[idx];
-      const taktHours = calcTaktHoursForWorker(w);
-      const reine = formatHoursFromHours(taktHours);
+      const workerCycles = Array.isArray(w.workCycles) && w.workCycles.length
+        ? w.workCycles
+        : Array.isArray(report.workCycles) && report.workCycles.length
+          ? report.workCycles
+          : [""];
+      const taktHours = calcTaktHoursForWorker(w, workerCycles);
+      const reine = formatHoursFromHours(taktHours) || "0";
       if (w.reineArbeitsStd !== reine) {
         nextWorkers[idx] = { ...w, reineArbeitsStd: reine };
         changed = true;
@@ -3101,7 +3335,18 @@ if (mode === "edit") {
 
         {report.workCyclesSame ? (
           <div className="mt-4 rounded-xl border p-4 space-y-3">
-            <div className="text-sm font-semibold text-slate-800">Arbeitstakte (für alle)</div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-semibold text-slate-800">Arbeitstakte (für alle)</div>
+              <div
+                className={`rounded-xl border px-5 py-2 text-sm font-semibold ${
+                  sharedHoursMatch
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                    : "border-rose-300 bg-rose-50 text-rose-700"
+                }`}
+              >
+                Soll: {sharedExpectedHours || "—"} Std. | Ist: {sharedTotalHours || "—"} Std.
+              </div>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {(Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((val, i) => (
                 <div key={i} className="rounded-lg border border-slate-200/70 p-3 space-y-2">
@@ -3213,14 +3458,23 @@ if (mode === "edit") {
               const taktStr = getTaktHoursStringForWorker(w);
               const timeStr = getTimeHoursStringForWorker(idx);
               const invalid = hasInvalidStunden(w);
-              const matches = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr === timeStr;
-              const mismatch = !invalid && Boolean(taktStr) && Boolean(timeStr) && taktStr !== timeStr;
+              const matches = !invalid && Boolean(taktStr) && Boolean(timeStr) && areHourValuesEqual(taktStr, timeStr);
+              const mismatch = !invalid && Boolean(taktStr) && Boolean(timeStr) && !areHourValuesEqual(taktStr, timeStr);
               const workerCycles = getWorkerCycles(w);
               return (
                 <div key={idx} className="rounded-xl border p-4 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="text-sm font-semibold text-slate-800">
                       {w.name?.trim() ? w.name : `Arbeiter ${idx + 1}`}
+                    </div>
+                    <div
+                      className={`rounded-xl border px-5 py-2 text-sm font-semibold ${
+                        matches
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                          : "border-rose-300 bg-rose-50 text-rose-700"
+                      }`}
+                    >
+                      Soll: {timeStr || "—"} Std. | Ist: {taktStr || "—"} Std.
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Arbeitstakte</span>
@@ -4107,8 +4361,17 @@ if (mode === "edit") {
     {reportType === "tagesbericht_rhein_main_link" ? (
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-          <h3 className="font-medium">Besucher</h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-medium">Besucher</h3>
+            <DictationButton
+              onClick={() => startDictationForTarget("tb-besucher")}
+              active={activeDictationTarget === "tb-besucher"}
+            />
+          </div>
           <textarea
+            ref={(el) => {
+              dictationTargetsRef.current["tb-besucher"] = el;
+            }}
             className="mt-3 w-full rounded-xl border p-3 min-h-[110px]"
             value={report.besucher ?? ""}
             onChange={(e) => update("besucher", e.target.value)}
@@ -4116,8 +4379,17 @@ if (mode === "edit") {
           />
         </div>
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-          <h3 className="font-medium">SHE - Vorfälle</h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-medium">SHE - Vorfälle</h3>
+            <DictationButton
+              onClick={() => startDictationForTarget("tb-she")}
+              active={activeDictationTarget === "tb-she"}
+            />
+          </div>
           <textarea
+            ref={(el) => {
+              dictationTargetsRef.current["tb-she"] = el;
+            }}
             className="mt-3 w-full rounded-xl border p-3 min-h-[110px]"
             value={report.sheVorfaelle ?? ""}
             onChange={(e) => update("sheVorfaelle", e.target.value)}
@@ -4125,8 +4397,17 @@ if (mode === "edit") {
           />
         </div>
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-          <h3 className="font-medium">Tool-Box-Talks</h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-medium">Tool-Box-Talks</h3>
+            <DictationButton
+              onClick={() => startDictationForTarget("tb-toolbox")}
+              active={activeDictationTarget === "tb-toolbox"}
+            />
+          </div>
           <textarea
+            ref={(el) => {
+              dictationTargetsRef.current["tb-toolbox"] = el;
+            }}
             className="mt-3 w-full rounded-xl border p-3 min-h-[110px]"
             value={report.toolBoxTalks ?? ""}
             onChange={(e) => update("toolBoxTalks", e.target.value)}
@@ -4134,8 +4415,17 @@ if (mode === "edit") {
           />
         </div>
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-          <h3 className="font-medium">Tägliche Überprüfung BG</h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-medium">Tägliche Überprüfung BG</h3>
+            <DictationButton
+              onClick={() => startDictationForTarget("tb-bg")}
+              active={activeDictationTarget === "tb-bg"}
+            />
+          </div>
           <textarea
+            ref={(el) => {
+              dictationTargetsRef.current["tb-bg"] = el;
+            }}
             className="mt-3 w-full rounded-xl border p-3 min-h-[110px]"
             value={report.taeglicheUeberpruefungBg ?? ""}
             onChange={(e) => update("taeglicheUeberpruefungBg", e.target.value)}
@@ -4146,8 +4436,17 @@ if (mode === "edit") {
     ) : (
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-          <h3 className="font-medium">Sonstige Arbeiten</h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-medium">Sonstige Arbeiten</h3>
+            <DictationButton
+              onClick={() => startDictationForTarget("tb-otherwork")}
+              active={activeDictationTarget === "tb-otherwork"}
+            />
+          </div>
           <textarea
+            ref={(el) => {
+              dictationTargetsRef.current["tb-otherwork"] = el;
+            }}
             className="mt-3 w-full rounded-xl border p-3 min-h-[160px]"
             value={report.otherWork ?? ""}
             onChange={(e) => update("otherWork", e.target.value)}
@@ -4156,8 +4455,17 @@ if (mode === "edit") {
         </div>
 
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-          <h3 className="font-medium">Bemerkungen / Anordnungen / Besuche</h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-medium">Bemerkungen / Anordnungen / Besuche</h3>
+            <DictationButton
+              onClick={() => startDictationForTarget("tb-remarks")}
+              active={activeDictationTarget === "tb-remarks"}
+            />
+          </div>
           <textarea
+            ref={(el) => {
+              dictationTargetsRef.current["tb-remarks"] = el;
+            }}
             className="mt-3 w-full rounded-xl border p-3 min-h-[160px]"
             value={report.remarks ?? ""}
             onChange={(e) => update("remarks", e.target.value)}
