@@ -1039,13 +1039,9 @@ export default function SchichtenverzeichnisForm({
           stop: () => void;
         };
       };
-      const ua = navigator.userAgent;
-      const isMobileLike = /Android|iPhone|iPad|iPod/i.test(ua);
       const RecognitionCtor = speechApiWindow.SpeechRecognition ?? speechApiWindow.webkitSpeechRecognition;
       focusDictationTarget(key);
-      // Desktop (especially Mac/Brave) is often unstable with Web Speech API:
-      // keep a stable fallback there and only force browser recognition on mobile-like devices.
-      if (!isMobileLike || !RecognitionCtor) return;
+      if (!RecognitionCtor) return;
       dictationShouldRunRef.current = true;
       activeDictationTargetRef.current = key;
       setActiveDictationTarget(key);
