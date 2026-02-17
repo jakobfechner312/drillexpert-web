@@ -313,7 +313,7 @@ function AppLayout({
 }) {
   return (
     <div className="mx-auto grid max-w-[2200px] gap-6 px-4 sm:px-6 py-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="hidden lg:block">
+      <aside className="hidden self-start lg:sticky lg:top-24 lg:block lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
         <SidebarNav />
       </aside>
 

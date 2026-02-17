@@ -201,7 +201,15 @@ const PEGEL_DURCHMESSER_OPTIONS = [
 const PEGEL_DURCHMESSER_BASE_OPTIONS = ['2"', '3"', '4"', '5"', '6"', '8"', "DN100", "DN200"] as const;
 const PEGEL_DURCHMESSER_ROTATION_OPTIONS = ['2"', '3"'] as const;
 const PEGEL_DURCHMESSER_GREIF_EXTRA_OPTIONS = ["DN300", "DN400", "DN500", "DN600", "DN700", "DN800"] as const;
-const GRUNDWASSERSTAND_OPTIONS = ["angebohrt", "eingespiegelt", "Bohrende", "im Pegel"] as const;
+const GRUNDWASSERSTAND_OPTIONS = [
+  "angebohrt",
+  "eingespiegelt",
+  "Bohrende",
+  "im Pegel",
+  "kein GW",
+  "Spülung",
+  "benutzerdefiniert",
+] as const;
 const FILTER_PAIR_CONFIG: Array<{
   id: string;
   title: string;

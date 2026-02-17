@@ -83,6 +83,23 @@ function emptyTransportRow() {
 }
 
 const emptyTimeRow = () => ({ name: "", from: "", to: "" });
+const DEVICE_OPTIONS = [
+  "Atego Tyroller",
+  "MAN Tyroller",
+  "AXOR Tyroller",
+  'MAN "Willi"',
+  "Wirth ECO 1",
+  "Sennebogen 630 blau",
+  "Sennebogen grün",
+  "Tyroller Raupe",
+] as const;
+const DRILLER_DEVICE_HISTORY_KEY = "tagesbericht_driller_device_history_v1";
+
+const normalizeDrillerName = (value: unknown) =>
+  String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 
 type GeoSuggestion = {
   id: string;
@@ -739,10 +756,59 @@ export default function TagesberichtForm({
   );
    // ✅ hält immer den aktuellsten Report
   const reportRef = useRef(report);
+  const drillerDeviceHistoryRef = useRef<Record<string, string>>({});
+  const prevDrillerNameRef = useRef<string>("");
 
   useEffect(() => {
     reportRef.current = report;
   }, [report]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(DRILLER_DEVICE_HISTORY_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        drillerDeviceHistoryRef.current = parsed as Record<string, string>;
+      }
+    } catch {
+      // ignore malformed cache
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const drillerKey = normalizeDrillerName(report.signatures?.drillerName);
+    const device = String(report.device ?? "").trim();
+    if (!drillerKey || !device) return;
+    if (drillerDeviceHistoryRef.current[drillerKey] === device) return;
+    drillerDeviceHistoryRef.current = {
+      ...drillerDeviceHistoryRef.current,
+      [drillerKey]: device,
+    };
+    try {
+      localStorage.setItem(
+        DRILLER_DEVICE_HISTORY_KEY,
+        JSON.stringify(drillerDeviceHistoryRef.current)
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [report.signatures?.drillerName, report.device]);
+
+  useEffect(() => {
+    if (mode !== "create") return;
+    const drillerKey = normalizeDrillerName(report.signatures?.drillerName);
+    const prevDrillerKey = prevDrillerNameRef.current;
+    if (drillerKey === prevDrillerKey) return;
+    prevDrillerNameRef.current = drillerKey;
+    if (!drillerKey) return;
+    const rememberedDevice = drillerDeviceHistoryRef.current[drillerKey];
+    if (!rememberedDevice) return;
+    if (String(report.device ?? "").trim() === rememberedDevice) return;
+    setReport((prev) => ({ ...prev, device: rememberedDevice }));
+  }, [mode, report.signatures?.drillerName, report.device]);
 
   useEffect(() => {
     let mounted = true;
@@ -2622,7 +2688,21 @@ if (mode === "edit") {
                       </label>
                       <label className="space-y-1 md:col-span-3">
                         <span className="text-sm text-slate-600">Gerät</span>
-                        <input className="w-full rounded-xl border p-3" value={report.device ?? ""} onChange={(e) => update("device", e.target.value)} />
+                        <select
+                          className="w-full rounded-xl border p-3"
+                          value={report.device ?? ""}
+                          onChange={(e) => update("device", e.target.value)}
+                        >
+                          <option value="">Bitte wählen…</option>
+                          {DEVICE_OPTIONS.map((device) => (
+                            <option key={device} value={device}>
+                              {device}
+                            </option>
+                          ))}
+                          {report.device && !DEVICE_OPTIONS.includes(report.device as (typeof DEVICE_OPTIONS)[number]) ? (
+                            <option value={report.device}>{report.device}</option>
+                          ) : null}
+                        </select>
                       </label>
                     </div>
                   )
