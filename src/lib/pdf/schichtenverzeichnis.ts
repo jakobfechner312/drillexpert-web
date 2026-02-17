@@ -118,8 +118,8 @@ export async function generateSchichtenverzeichnisPdf(
   const rowCount = hasRowData ? data.schicht_rows.length : 0;
   const remainingAfterPage1 = Math.max(0, rowCount - rowsPerPagePage1);
   const requiredPageNCopies = hasRowData
-    ? Math.max(1, Math.ceil(remainingAfterPage1 / rowsPerPagePageN))
-    : 1;
+    ? Math.ceil(remainingAfterPage1 / rowsPerPagePageN)
+    : 0;
 
   const pages: Array<ReturnType<typeof outDoc.addPage>> = [];
 
@@ -133,16 +133,18 @@ export async function generateSchichtenverzeichnisPdf(
   outDoc.addPage(firstPage);
   pages.push(firstPage);
 
-  const pageNTemplatePath = getTemplatePath(TEMPLATE_PAGE_N);
-  if (!fs.existsSync(pageNTemplatePath)) {
-    throw new Error(`Template PDF not found at: ${pageNTemplatePath}`);
-  }
-  const pageNTemplateBytes = fs.readFileSync(pageNTemplatePath);
-  const pageNSrcDoc = await PDFDocument.load(pageNTemplateBytes);
-  for (let i = 0; i < requiredPageNCopies; i += 1) {
-    const [pageN] = await outDoc.copyPages(pageNSrcDoc, [0]);
-    outDoc.addPage(pageN);
-    pages.push(pageN);
+  if (requiredPageNCopies > 0) {
+    const pageNTemplatePath = getTemplatePath(TEMPLATE_PAGE_N);
+    if (!fs.existsSync(pageNTemplatePath)) {
+      throw new Error(`Template PDF not found at: ${pageNTemplatePath}`);
+    }
+    const pageNTemplateBytes = fs.readFileSync(pageNTemplatePath);
+    const pageNSrcDoc = await PDFDocument.load(pageNTemplateBytes);
+    for (let i = 0; i < requiredPageNCopies; i += 1) {
+      const [pageN] = await outDoc.copyPages(pageNSrcDoc, [0]);
+      outDoc.addPage(pageN);
+      pages.push(pageN);
+    }
   }
   const gwPageStartIndex = pages.length;
   if (requiredGwCopies > 0) {

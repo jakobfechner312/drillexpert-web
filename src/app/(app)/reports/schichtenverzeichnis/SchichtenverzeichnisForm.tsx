@@ -165,11 +165,21 @@ const MAX_FESTSTELLUNGEN_CHARS = 200;
 const MAX_GROUNDWATER_ROWS = 50;
 const BOHR_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509", "700", "880", "1.180", "1.500"] as const;
 const RAMM_ROTATION_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
+const ROTATION_DURCHMESSER_OPTIONS = ["146"] as const;
 const GREIF_DURCHMESSER_OPTIONS = ["700", "880", "1.180", "1.500"] as const;
 const SCHLITZWEITE_OPTIONS = ["0,5", "0,75", "1", "1,5", "1,75", "2", "2,25", "2,5"] as const;
 const KIES_KOERNUNG_OPTIONS = ["0,71-1,25", "1,0-2,0", "2,0-3,15", "3,15-5,6", "5,6-8", "8,0-16"] as const;
 const SCHICHT_E_OPTIONS = ["0", "+", "++"] as const;
 const SCHICHT_C_OPTIONS = ["leicht", "mittel", "schwer"] as const;
+const SCHICHT_B_OPTIONS = [
+  "Breiig",
+  "Weich",
+  "Steif",
+  "Halbfest",
+  "Fest",
+  "Hart",
+  "Brüchig",
+] as const;
 const SCHICHT_D_COLOR_DEFAULT = "#8b5a2b";
 const SCHICHT_D_TINT_DEFAULT = "gruen";
 const PEGEL_DURCHMESSER_OPTIONS = [
@@ -606,7 +616,8 @@ const normalizeBohrverfahren = (value: unknown): BohrungEntry["verfahren"] => {
 };
 const getDurchmesserOptionsForVerfahren = (verfahren: BohrungEntry["verfahren"]) => {
   if (verfahren === "greif") return GREIF_DURCHMESSER_OPTIONS;
-  if (verfahren === "ramm" || verfahren === "rotation" || verfahren === "voll") return RAMM_ROTATION_DURCHMESSER_OPTIONS;
+  if (verfahren === "rotation") return ROTATION_DURCHMESSER_OPTIONS;
+  if (verfahren === "ramm" || verfahren === "voll") return RAMM_ROTATION_DURCHMESSER_OPTIONS;
   return BOHR_DURCHMESSER_OPTIONS;
 };
 const legacyBohrungenFromData = (values: FormData): BohrungEntry[] => {
@@ -2823,6 +2834,8 @@ export default function SchichtenverzeichnisForm({
                                   verrohr_durchmesser:
                                     nextVerfahren === "ek_dks"
                                       ? "146"
+                                      : nextVerfahren === "rotation"
+                                      ? "146"
                                       : nextVerfahren === "greif"
                                       ? isGreifDurchmesser
                                         ? currentDurchmesser
@@ -2869,7 +2882,7 @@ export default function SchichtenverzeichnisForm({
                           }
                         />
                         <label className="space-y-1">
-                          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-500">
                             Ø (mm)
                           </span>
                           <select
@@ -3536,18 +3549,53 @@ export default function SchichtenverzeichnisForm({
                       />
                     </label>
                     <label className="border-b border-r border-slate-200 px-3 py-2">
-                      b) Bohrgut
-                      <input
+                      b) Konsistenz
+                      <select
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                        value={row.b}
+                        value={
+                          row.b === ""
+                            ? ""
+                            : SCHICHT_B_OPTIONS.includes(row.b as (typeof SCHICHT_B_OPTIONS)[number])
+                              ? row.b
+                              : "__custom__"
+                        }
                         onChange={(e) =>
                           setSchichtRows((prev) => {
                             const next = [...prev];
-                            next[idx] = { ...next[idx], b: e.target.value };
+                            next[idx] = {
+                              ...next[idx],
+                              b: e.target.value === "__custom__" ? "benutzerdefiniert" : e.target.value,
+                            };
                             return next;
                           })
                         }
-                      />
+                      >
+                        <option value="">Bitte wählen…</option>
+                        {SCHICHT_B_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                        <option value="__custom__">Benutzerdefiniert</option>
+                      </select>
+                      {(
+                        row.b === "benutzerdefiniert" ||
+                        (!SCHICHT_B_OPTIONS.includes(row.b as (typeof SCHICHT_B_OPTIONS)[number]) &&
+                          row.b !== "")
+                      ) ? (
+                        <input
+                          className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                          value={row.b === "benutzerdefiniert" ? "" : row.b}
+                          onChange={(e) =>
+                            setSchichtRows((prev) => {
+                              const next = [...prev];
+                              next[idx] = { ...next[idx], b: e.target.value };
+                              return next;
+                            })
+                          }
+                          placeholder="Benutzerdefiniertes Bohrgut"
+                        />
+                      ) : null}
                     </label>
                     <label className="border-b border-r border-slate-200 px-3 py-2">
                       c) Bohrvorgang
@@ -4230,7 +4278,7 @@ function Field({
 }) {
   return (
     <label className={`min-w-0 space-y-1 ${className ?? ""}`}>
-      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+      <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-500">
         {label}
       </span>
       <input
