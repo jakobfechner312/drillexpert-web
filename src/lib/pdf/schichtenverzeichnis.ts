@@ -288,7 +288,7 @@ export async function generateSchichtenverzeichnisPdf(
     const rows = buildBohrungen().slice(0, 6);
     const labelMap: Record<string, string> = {
       ramm: "Rammkernbohrung",
-      greif: "Greifverbohrung",
+      greif: "Greiferbohrung",
       rotation: "Rotationskernbohrung",
       ek_dks: "EK-DK-S",
       voll: "Vollbohrung",
@@ -854,12 +854,14 @@ export async function generateSchichtenverzeichnisPdf(
         ? row.proben_tiefen.filter((v: any) => String(v ?? "").trim() !== "").slice(0, 10)
         : [];
       const hasDepthList = depthList.length > 0;
+      const hasAnyProbeDepth = hasDepthList || String(row?.proben_tiefe ?? "").trim() !== "";
       Object.entries(rowFields).forEach(([rowKey, fieldKey]) => {
         const field = fieldMap.get(fieldKey);
         if (!field) return;
         const alignedFieldKey = pageIndex === 0 ? getAlignedSchichtFieldKey(fieldKey) : fieldKey;
         const alignedField = pageIndex === 0 ? fieldMap.get(alignedFieldKey) ?? field : field;
         if (hasDepthList && (fieldKey === "proben_art" || fieldKey === "proben_nr")) return;
+        if (!hasAnyProbeDepth && (fieldKey === "proben_art" || fieldKey === "proben_nr")) return;
         const value = row?.[rowKey];
         const festWithSpt =
           fieldKey === "feststellungen"

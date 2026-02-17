@@ -145,6 +145,7 @@ function emptyPegelAusbauRow(): PegelAusbauRow {
     fernGask: false,
     passavant: false,
     betonSockel: false,
+    blech: false,
     abstHalter: "",
     klarpump: false,
     filterkiesKoernung: "",
@@ -285,8 +286,14 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
     return { ...emptyWorker(), ...w, workCycles: cycles, stunden: st.slice(0, cycles.length) };
   });
   r.umsetzenRows = Array.isArray(r.umsetzenRows) && r.umsetzenRows.length ? r.umsetzenRows : [emptyUmsetzenRow()];
-  r.pegelAusbauRows =
-    Array.isArray(r.pegelAusbauRows) && r.pegelAusbauRows.length ? r.pegelAusbauRows : [emptyPegelAusbauRow()];
+  r.pegelAusbauRows = (
+    Array.isArray(r.pegelAusbauRows) && r.pegelAusbauRows.length
+      ? r.pegelAusbauRows
+      : [emptyPegelAusbauRow()]
+  ).map((row) => ({
+    ...emptyPegelAusbauRow(),
+    ...(row ?? {}),
+  }));
 
   // diese Arrays nutzt dein UI (WorkTime/Break/Transport)
   r.workTimeRows = Array.isArray(r.workTimeRows) && r.workTimeRows.length ? r.workTimeRows : [emptyTimeRow()];
@@ -1012,29 +1019,28 @@ export default function TagesberichtForm({
 
   // ================== DRAFT + REPORT SAVE HANDLERS ==================
   const { setSaveDraftHandler, setSaveReportHandler, triggerSaveReport } = useDraftActions();
-
-  useEffect(() => {
-    console.log("[Form] register save handlers");
-    const supabase = createClient();
-
-    // ✅ Draft speichern
-    setSaveDraftHandler(async () => {
-      console.log("[Form] saveDraft START");
-
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-    console.log("[Form] getUser done", { userErr, hasUser: !!userRes?.user });
-
+  const saveDraftToServer = useCallback(
+    async ({
+      showSuccess = false,
+      showError = false,
+    }: {
+      showSuccess?: boolean;
+      showError?: boolean;
+    } = {}) => {
+      const supabase = createClient();
+      const { data: userRes } = await supabase.auth.getUser();
       const user = userRes.user;
-      if (!user) return alert("Nicht eingeloggt.");
+      if (!user) {
+        if (showError) alert("Nicht eingeloggt.");
+        return false;
+      }
 
       const pid = enforcedProjectId ?? effectiveProjectId ?? null;
-
       const currentReport = reportRef.current;
       const reportForSave =
         pid != null
           ? await hydrateReportWithProject(currentReport, pid)
           : currentReport;
-      console.log("[Form] inserting draft…");
 
       const title =
         reportForSave?.project?.trim()
@@ -1049,14 +1055,25 @@ export default function TagesberichtForm({
         data: reportForSave,
       });
 
-      console.log("[Form] insert done", { error });
-
       if (error) {
         console.error(error);
-        return alert("Entwurf speichern fehlgeschlagen: " + error.message);
+        if (showError) alert("Entwurf speichern fehlgeschlagen: " + error.message);
+        return false;
       }
 
-      alert("Entwurf gespeichert ✅");
+      if (showSuccess) alert("Entwurf gespeichert ✅");
+      return true;
+    },
+    [effectiveProjectId, enforcedProjectId, hydrateReportWithProject, reportTitleLabel, reportType]
+  );
+
+  useEffect(() => {
+    console.log("[Form] register save handlers");
+    const supabase = createClient();
+
+    // ✅ Draft speichern
+    setSaveDraftHandler(async () => {
+      await saveDraftToServer({ showSuccess: true, showError: true });
     });
 
     // ✅ Finalen Bericht speichern
@@ -1226,6 +1243,7 @@ if (mode === "edit") {
     reportId,
     reportTitleLabel,
     reportType,
+    saveDraftToServer,
     saveScope,
     useStepper,
   ]);
@@ -2391,6 +2409,7 @@ if (mode === "edit") {
     | "fernGask"
     | "passavant"
     | "betonSockel"
+    | "blech"
     | "klarpump";
 
   const pegelBoolFields: Array<[PegelBooleanKey, string]> = [
@@ -2400,6 +2419,7 @@ if (mode === "edit") {
     ["fernGask", "Fern-Gask."],
     ["passavant", "Passavant"],
     ["betonSockel", "Betonsockel"],
+    ["blech", "Blech"],
     ["klarpump", "Klarpump."],
   ];
 
@@ -3405,7 +3425,7 @@ if (mode === "edit") {
                     value={row.verrohrtBis ?? ""}
                     onChange={(e) => {
                       const val = e.target.value;
-                      const rbSet = new Set(["178", "220", "273", "324", "368", "419", "509"]);
+                      const rbSet = new Set(["178", "220", "273", "324", "368", "419", "509", "700", "800", "1.180", "1.500"]);
                       const flags: VerrohrtFlag[] = val === "146" ? ["S"] : rbSet.has(val) ? ["RB"] : [];
                       setRow(i, { verrohrtBis: val, verrohrtFlags: flags });
                     }}
@@ -3419,6 +3439,10 @@ if (mode === "edit") {
                     <option value="368">368</option>
                     <option value="419">419</option>
                     <option value="509">509</option>
+                    <option value="700">700</option>
+                    <option value="800">800</option>
+                    <option value="1.180">1.180</option>
+                    <option value="1.500">1.500</option>
                   </select>
                 </div>
 
@@ -4058,7 +4082,7 @@ if (mode === "edit") {
                   <label key={k} className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
-                      checked={r[k]}
+                      checked={Boolean(r[k])}
                       onChange={(e) => updatePegel(i, { [k]: e.target.checked } as Partial<PegelAusbauRow>)}
                     />
                     {label}
@@ -4350,6 +4374,7 @@ if (mode === "edit") {
                     return;
                   }
                 }
+                void saveDraftToServer();
                 setStepIndexKeepingScroll((i) => Math.min(steps.length - 1, i + 1));
               }}
               disabled={stepIndex >= steps.length - 1}

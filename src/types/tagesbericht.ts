@@ -126,6 +126,7 @@ export type PegelAusbauRow = {
   fernGask: boolean;
   passavant: boolean;
   betonSockel: boolean;
+  blech: boolean;
   abstHalter: string;
   klarpump: boolean;
   filterkiesKoernung: string;

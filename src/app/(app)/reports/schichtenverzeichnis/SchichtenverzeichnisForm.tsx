@@ -208,7 +208,6 @@ const GRUNDWASSERSTAND_OPTIONS = [
   "im Pegel",
   "kein GW",
   "Spülung",
-  "benutzerdefiniert",
 ] as const;
 const FILTER_PAIR_CONFIG: Array<{
   id: string;
@@ -466,7 +465,7 @@ const computeProbeKiFromBohrungen = (rows: Array<Pick<BohrungEntry, "bohrung_bis
     .filter((n): n is number => n != null);
   if (!values.length) return "";
   const deepest = Math.max(...values);
-  return formatDepthNumeric(deepest / 2);
+  return formatDepthNumeric(Math.ceil(deepest / 2));
 };
 const emptySptEntry = (): SptEntry => ({
   von_m: "",
@@ -622,6 +621,12 @@ const normalizeBohrverfahren = (value: unknown): BohrungEntry["verfahren"] => {
   if (raw === "voll") return "voll";
   return "ramm";
 };
+const enforceBohrungDurchmesserRules = (entry: BohrungEntry): BohrungEntry => {
+  if (entry.verfahren === "rotation" || entry.verfahren === "ek_dks") {
+    return { ...entry, verrohr_durchmesser: "146" };
+  }
+  return entry;
+};
 const getDurchmesserOptionsForVerfahren = (verfahren: BohrungEntry["verfahren"]) => {
   if (verfahren === "greif") return GREIF_DURCHMESSER_OPTIONS;
   if (verfahren === "rotation") return ROTATION_DURCHMESSER_OPTIONS;
@@ -655,7 +660,9 @@ const legacyBohrungenFromData = (values: FormData): BohrungEntry[] => {
       verrohr_durchmesser: values.verrohr_durch_4 ?? "",
     },
   ];
-  return rows.filter((row) => countFilled([row.bohrung_bis, row.verrohrt_bis, row.verrohr_durchmesser]) > 0);
+  return rows
+    .map((row) => enforceBohrungDurchmesserRules(row))
+    .filter((row) => countFilled([row.bohrung_bis, row.verrohrt_bis, row.verrohr_durchmesser]) > 0);
 };
 const normalizeBohrungen = (raw: unknown, fallback: FormData): BohrungEntry[] => {
   const source = Array.isArray(raw) ? raw : [];
@@ -666,6 +673,7 @@ const normalizeBohrungen = (raw: unknown, fallback: FormData): BohrungEntry[] =>
       verrohrt_bis: String((entry as Partial<BohrungEntry>)?.verrohrt_bis ?? ""),
       verrohr_durchmesser: String((entry as Partial<BohrungEntry>)?.verrohr_durchmesser ?? ""),
     }))
+    .map((entry) => enforceBohrungDurchmesserRules(entry))
     .filter((entry) => countFilled([entry.bohrung_bis, entry.verrohrt_bis, entry.verrohr_durchmesser]) > 0);
   if (normalized.length > 0) return normalized;
   const legacy = legacyBohrungenFromData(fallback);
@@ -1708,14 +1716,27 @@ export default function SchichtenverzeichnisForm({
     if (useStepper) setStepIndex(5);
     return false;
   }, [hasRequiredSchichtfelder, useStepper]);
+  const saveDraftToServer = useCallback(
+    async ({
+      showSuccess = false,
+      showError = false,
+      enforceRequired = true,
+    }: {
+      showSuccess?: boolean;
+      showError?: boolean;
+      enforceRequired?: boolean;
+    } = {}) => {
+      if (enforceRequired) {
+        if (!ensureRequiredDurchfuehrungszeit()) return false;
+        if (!ensureRequiredSchichtfelder()) return false;
+      }
 
-  useEffect(() => {
-    setSaveDraftHandler(async () => {
-      if (!ensureRequiredDurchfuehrungszeit()) return;
-      if (!ensureRequiredSchichtfelder()) return;
       const { data: userRes } = await supabase.auth.getUser();
       const user = userRes.user;
-      if (!user) return alert("Nicht eingeloggt.");
+      if (!user) {
+        if (showError) alert("Nicht eingeloggt.");
+        return false;
+      }
 
       const draftData = {
         ...data,
@@ -1761,10 +1782,45 @@ export default function SchichtenverzeichnisForm({
 
       if (error) {
         console.error(error);
-        return alert("Entwurf speichern fehlgeschlagen: " + error.message);
+        if (showError) alert("Entwurf speichern fehlgeschlagen: " + error.message);
+        return false;
       }
 
-      alert("Entwurf gespeichert ✅");
+      if (showSuccess) alert("Entwurf gespeichert ✅");
+      return true;
+    },
+    [
+      data,
+      effectiveDurchfuehrungszeit,
+      effectiveProbeKi,
+      effectiveProjectId,
+      ensureRequiredDurchfuehrungszeit,
+      ensureRequiredSchichtfelder,
+      fieldOffsetsPage1Payload,
+      grundwasserRows,
+      legacyBohrungsFields,
+      legacyFilterFields,
+      normalizedBohrungenForPayload,
+      normalizedFilterRowsForPayload,
+      rowFieldOffsetsPage1Payload,
+      schichtRows,
+      schichtRowHeight,
+      schichtRowOffsetsPage2,
+      schichtRowsPerPage1,
+      schichtRowsPerPage2,
+      schichtStartOffsetPage1,
+      schichtStartOffsetPage2,
+      schichtXOffsetPage1,
+      schichtXOffsetPage2,
+      schichtXOffsetsPage1,
+      schichtXOffsetsPage2,
+      supabase,
+    ]
+  );
+
+  useEffect(() => {
+    setSaveDraftHandler(async () => {
+      await saveDraftToServer({ showSuccess: true, showError: true, enforceRequired: true });
     });
 
     setSaveReportHandler(async () => {
@@ -1902,6 +1958,7 @@ export default function SchichtenverzeichnisForm({
     ensureSaveTarget,
     ensureRequiredDurchfuehrungszeit,
     ensureRequiredSchichtfelder,
+    saveDraftToServer,
     setSaveDraftHandler,
     setSaveReportHandler,
     supabase,
@@ -2388,7 +2445,7 @@ export default function SchichtenverzeichnisForm({
     });
     setBohrungen([
       { verfahren: "ramm", bohrung_bis: "12,5", verrohrt_bis: "10,0", verrohr_durchmesser: "146" },
-      { verfahren: "rotation", bohrung_bis: "38,0", verrohrt_bis: "20,0", verrohr_durchmesser: "178" },
+      { verfahren: "rotation", bohrung_bis: "38,0", verrohrt_bis: "20,0", verrohr_durchmesser: "146" },
       { verfahren: "ek_dks", bohrung_bis: "DN80", verrohrt_bis: "30,0", verrohr_durchmesser: "220" },
       { verfahren: "voll", bohrung_bis: "46,0", verrohrt_bis: "40,0", verrohr_durchmesser: "273" },
     ]);
@@ -2857,7 +2914,7 @@ export default function SchichtenverzeichnisForm({
                             }
                           >
                             <option value="ramm">Rammkernbohrung</option>
-                            <option value="greif">Greifverbohrung</option>
+                            <option value="greif">Greiferbohrung</option>
                             <option value="rotation">Rotationskernbohrung</option>
                             <option value="ek_dks">EK-DK-S</option>
                             <option value="voll">Vollbohrung</option>
@@ -2895,7 +2952,7 @@ export default function SchichtenverzeichnisForm({
                           </span>
                           <select
                             className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                            value={entry.verrohr_durchmesser ?? ""}
+                            value={entry.verfahren === "rotation" ? "146" : entry.verrohr_durchmesser ?? ""}
                             onChange={(e) =>
                               setBohrungen((prev) => {
                                 const next = [...prev];
@@ -2903,6 +2960,7 @@ export default function SchichtenverzeichnisForm({
                                 return next;
                               })
                             }
+                            disabled={entry.verfahren === "rotation"}
                           >
                             <option value="">Bitte wählen…</option>
                             {getDurchmesserOptionsForVerfahren(entry.verfahren).map((opt) => (
@@ -2964,11 +3022,22 @@ export default function SchichtenverzeichnisForm({
                   </span>
                   <select
                     className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                    value={row.grundwasserstand ?? ""}
+                    value={
+                      row.grundwasserstand === ""
+                        ? ""
+                        : GRUNDWASSERSTAND_OPTIONS.includes(
+                            row.grundwasserstand as (typeof GRUNDWASSERSTAND_OPTIONS)[number]
+                          )
+                          ? row.grundwasserstand
+                          : "__custom__"
+                    }
                     onChange={(e) =>
                       setGrundwasserRows((prev) => {
                         const next = [...prev];
-                        next[idx] = { ...next[idx], grundwasserstand: e.target.value };
+                        next[idx] = {
+                          ...next[idx],
+                          grundwasserstand: e.target.value === "__custom__" ? "individuell" : e.target.value,
+                        };
                         return next;
                       })
                     }
@@ -2979,13 +3048,33 @@ export default function SchichtenverzeichnisForm({
                         {opt}
                       </option>
                     ))}
-                    {row.grundwasserstand &&
-                    !GRUNDWASSERSTAND_OPTIONS.includes(
-                      row.grundwasserstand as (typeof GRUNDWASSERSTAND_OPTIONS)[number]
-                    ) ? (
-                      <option value={row.grundwasserstand}>{row.grundwasserstand}</option>
-                    ) : null}
+                    <option value="__custom__">individuell</option>
                   </select>
+                  {(
+                    row.grundwasserstand === "individuell" ||
+                    row.grundwasserstand === "benutzerdefiniert" ||
+                    (!GRUNDWASSERSTAND_OPTIONS.includes(
+                      row.grundwasserstand as (typeof GRUNDWASSERSTAND_OPTIONS)[number]
+                    ) &&
+                      row.grundwasserstand !== "")
+                  ) ? (
+                    <input
+                      className="mt-2 h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                      value={
+                        row.grundwasserstand === "individuell" || row.grundwasserstand === "benutzerdefiniert"
+                          ? ""
+                          : row.grundwasserstand ?? ""
+                      }
+                      onChange={(e) =>
+                        setGrundwasserRows((prev) => {
+                          const next = [...prev];
+                          next[idx] = { ...next[idx], grundwasserstand: e.target.value };
+                          return next;
+                        })
+                      }
+                      placeholder="Individueller Grundwasserstand"
+                    />
+                  ) : null}
                 </label>
                 <label className="space-y-1">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -3572,7 +3661,7 @@ export default function SchichtenverzeichnisForm({
                             const next = [...prev];
                             next[idx] = {
                               ...next[idx],
-                              b: e.target.value === "__custom__" ? "benutzerdefiniert" : e.target.value,
+                              b: e.target.value === "__custom__" ? "individuell" : e.target.value,
                             };
                             return next;
                           })
@@ -3584,16 +3673,17 @@ export default function SchichtenverzeichnisForm({
                             {opt}
                           </option>
                         ))}
-                        <option value="__custom__">Benutzerdefiniert</option>
+                        <option value="__custom__">individuell</option>
                       </select>
                       {(
+                        row.b === "individuell" ||
                         row.b === "benutzerdefiniert" ||
                         (!SCHICHT_B_OPTIONS.includes(row.b as (typeof SCHICHT_B_OPTIONS)[number]) &&
                           row.b !== "")
                       ) ? (
                         <input
                           className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                          value={row.b === "benutzerdefiniert" ? "" : row.b}
+                          value={row.b === "individuell" || row.b === "benutzerdefiniert" ? "" : row.b}
                           onChange={(e) =>
                             setSchichtRows((prev) => {
                               const next = [...prev];
@@ -3601,7 +3691,7 @@ export default function SchichtenverzeichnisForm({
                               return next;
                             })
                           }
-                          placeholder="Benutzerdefiniertes Bohrgut"
+                          placeholder="Individuelle Konsistenz"
                         />
                       ) : null}
                     </label>
@@ -4246,6 +4336,7 @@ export default function SchichtenverzeichnisForm({
               className="btn btn-primary"
               onClick={() => {
                 if (stepIndex === 5 && !ensureRequiredSchichtfelder()) return;
+                void saveDraftToServer({ showSuccess: false, showError: false, enforceRequired: false });
                 setStepIndexKeepingScroll((i) => Math.min(steps.length - 1, i + 1));
               }}
               disabled={stepIndex >= steps.length - 1}
