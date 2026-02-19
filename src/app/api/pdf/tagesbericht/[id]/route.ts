@@ -36,6 +36,53 @@ function normalizeTagesberichtPayload(raw: unknown) {
     umsetzenRows: Array.isArray(src.umsetzenRows) ? src.umsetzenRows : base.umsetzenRows,
     pegelAusbauRows: Array.isArray(src.pegelAusbauRows) ? src.pegelAusbauRows : base.pegelAusbauRows,
     workCycles: Array.isArray(src.workCycles) ? src.workCycles : base.workCycles,
+    customWorkCycles: Array.isArray(src.customWorkCycles) ? src.customWorkCycles : [],
+  };
+}
+
+function alignTagesberichtPayloadForPdf<T extends Record<string, unknown>>(source: T): T {
+  const workCyclesSame = Boolean(source.workCyclesSame);
+  if (workCyclesSame) return source;
+
+  const workers = Array.isArray(source.workers) ? source.workers : [];
+  const union: string[] = [];
+  const pushCycle = (label: unknown) => {
+    const trimmed = String(label ?? "").trim();
+    if (!trimmed) return;
+    if (!union.includes(trimmed)) union.push(trimmed);
+  };
+
+  workers.forEach((worker) => {
+    const list = Array.isArray((worker as { workCycles?: unknown[] }).workCycles)
+      ? ((worker as { workCycles?: unknown[] }).workCycles as unknown[])
+      : [];
+    list.forEach(pushCycle);
+  });
+
+  const fallbackCycles = Array.isArray(source.workCycles) ? source.workCycles : [];
+  const cycles = union.length ? union : fallbackCycles.length ? fallbackCycles : [""];
+
+  const mappedWorkers = workers.map((worker) => {
+    const list = Array.isArray((worker as { workCycles?: unknown[] }).workCycles)
+      ? ((worker as { workCycles?: unknown[] }).workCycles as unknown[])
+      : [];
+    const st = Array.isArray((worker as { stunden?: unknown[] }).stunden)
+      ? ((worker as { stunden?: unknown[] }).stunden as unknown[])
+      : [];
+    const map = new Map<string, unknown>();
+    list.forEach((label, idx) => {
+      const key = String(label ?? "").trim();
+      if (!key) return;
+      map.set(key, st[idx] ?? "");
+    });
+    const aligned = cycles.map((label) => map.get(String(label ?? "").trim()) ?? "");
+    return { ...(worker as Record<string, unknown>), stunden: aligned };
+  });
+
+  return {
+    ...source,
+    workCycles: cycles,
+    workers: mappedWorkers,
   };
 }
 
@@ -62,7 +109,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
     const origin = new URL(req.url).origin;
     const previewUrl = new URL("/api/pdf/tagesbericht", origin);
-    const payload = normalizeTagesberichtPayload(report.data);
+    const payload = alignTagesberichtPayloadForPdf(normalizeTagesberichtPayload(report.data));
     const forwardedHeaders = new Headers({ "Content-Type": "application/json" });
     const cookie = req.headers.get("cookie");
     const authorization = req.headers.get("authorization");
@@ -96,7 +143,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         "Cache-Control": "no-store",
       },
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Unknown error" }, { status: 500 });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1765,7 +1765,10 @@ if (mode === "edit") {
   }
 
   const buildPdfPayload = (source: Tagesbericht): Tagesbericht => {
-    if (source.workCyclesSame) return source;
+    const fixedCustomCycles = Array.isArray(customWorkCycles) ? customWorkCycles : [];
+    if (source.workCyclesSame) {
+      return { ...source, customWorkCycles: fixedCustomCycles };
+    }
     const workers = Array.isArray(source.workers) ? source.workers : [];
     const union: string[] = [];
     const pushCycle = (label: string) => {
@@ -1795,7 +1798,12 @@ if (mode === "edit") {
       const aligned = cycles.map((label) => map.get(label) ?? "");
       return { ...w, stunden: aligned };
     });
-    return { ...source, workCycles: cycles, workers: mappedWorkers };
+    return {
+      ...source,
+      workCycles: cycles,
+      workers: mappedWorkers,
+      customWorkCycles: fixedCustomCycles,
+    };
   };
 
   async function downloadPdfToLocal() {

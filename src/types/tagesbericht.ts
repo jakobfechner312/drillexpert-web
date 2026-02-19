@@ -205,6 +205,7 @@ export type Tagesbericht = {
   workStartDistanceM: number | null;
 
   workCycles: string[]; // MVP: einfache Liste
+  customWorkCycles?: string[]; // feste Reihenfolge aus Profil (ab Nr. 23)
   workCyclesSame?: boolean;
   otherWork: string;
   remarks: string;

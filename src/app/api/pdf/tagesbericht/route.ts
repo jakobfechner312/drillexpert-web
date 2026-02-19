@@ -323,27 +323,38 @@ export async function POST(req: Request) {
       "Platten legen",
     ];
     const workCycles = Array.isArray(data.workCycles) ? data.workCycles : [];
-    const customCycleOrder: string[] = [];
-    const customCycleSeen = new Set<string>();
-    workCycles.forEach((label: string) => {
-      if (!label) return;
-      if (workCycleOptions.includes(label)) return;
-      if (customCycleSeen.has(label)) return;
-      customCycleSeen.add(label);
-      customCycleOrder.push(label);
+    const customCycleMaster = Array.isArray((data as { customWorkCycles?: unknown }).customWorkCycles)
+      ? ((data as { customWorkCycles?: unknown[] }).customWorkCycles ?? [])
+          .map((label) => String(label ?? "").trim())
+          .filter((label) => label.length > 0)
+      : [];
+    const customCycleIndex = new Map<string, number>();
+    customCycleMaster.forEach((label, idx) => {
+      if (!customCycleIndex.has(label)) customCycleIndex.set(label, idx);
     });
-    const customCycleIndex = new Map<string, number>(
-      customCycleOrder.map((label, idx) => [label, idx])
-    );
+    const fallbackCustomOrder: string[] = [];
+    const fallbackCustomSeen = new Set<string>();
+    const getCustomCycleNumber = (rawLabel: unknown): number | null => {
+      const label = String(rawLabel ?? "").trim();
+      if (!label || workCycleOptions.includes(label)) return null;
+      const fixedIdx = customCycleIndex.get(label);
+      if (typeof fixedIdx === "number") return 23 + fixedIdx;
+      if (!fallbackCustomSeen.has(label)) {
+        fallbackCustomSeen.add(label);
+        fallbackCustomOrder.push(label);
+      }
+      const fallbackIdx = fallbackCustomOrder.indexOf(label);
+      return fallbackIdx >= 0 ? 23 + customCycleMaster.length + fallbackIdx : null;
+    };
     for (let j = 0; j < STUNDEN_BOXES; j++) {
       const label = workCycles[j];
       const idx = label ? workCycleOptions.indexOf(label) : -1;
-      const customIdx = label ? customCycleIndex.get(label) : undefined;
+      const customNr = getCustomCycleNumber(label);
       const display =
         idx >= 0
           ? String(idx + 1)
-          : typeof customIdx === "number"
-          ? String(23 + customIdx)
+          : typeof customNr === "number"
+          ? String(customNr)
           : "";
       draw(display, WCOL.stundenStartX + j * WCOL.stundenStep, stundenHeaderY, 8);
     }
@@ -724,7 +735,21 @@ export async function POST(req: Request) {
 
     // Bemerkungen / Anordnungen / Besuche (+ eigene Arbeitstakte)
     const baseRemarks = String(data.remarks ?? "");
-    const customWithNumbers = customCycleOrder.map((label, idx) => `${23 + idx} - ${label}`);
+    const usedCustomCycles: string[] = [];
+    const usedCustomSeen = new Set<string>();
+    workCycles.forEach((rawLabel: unknown) => {
+      const label = String(rawLabel ?? "").trim();
+      if (!label || workCycleOptions.includes(label)) return;
+      if (usedCustomSeen.has(label)) return;
+      usedCustomSeen.add(label);
+      usedCustomCycles.push(label);
+    });
+    const customWithNumbers = usedCustomCycles
+      .map((label) => {
+        const nr = getCustomCycleNumber(label);
+        return typeof nr === "number" ? `${nr} - ${label}` : "";
+      })
+      .filter((line) => line.length > 0);
     const extraCycles = [...specialCycles, ...customWithNumbers];
     const remarksCombined =
       baseRemarks.trim() && extraCycles.length
