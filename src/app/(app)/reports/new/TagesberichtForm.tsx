@@ -5,6 +5,7 @@ import { useDraftActions } from "@/components/DraftActions";
 import { useMemo, useRef, useEffect, useState, useCallback, type SetStateAction } from "react";
 import SignatureCanvas from "react-signature-canvas";
 import { usePathname, useSearchParams } from "next/navigation";
+import { Clock3 } from "lucide-react";
 
 import type {
   Tagesbericht,
@@ -87,19 +88,47 @@ const DEVICE_OPTIONS = [
   "Atego Tyroller",
   "MAN Tyroller",
   "AXOR Tyroller",
-  'MAN "Willi"',
+  "MAN Willi",
   "Wirth ECO 1",
+  "Tyroller Klappraupe",
+  "Raupe Fraste XL",
+  "Zetros",
+  "MAN weiß",
+  "Unimog",
   "Sennebogen 630 blau",
-  "Sennebogen grün",
-  "Tyroller Raupe",
+  "Sennbogen 624 grün",
+  "Fraste alt",
 ] as const;
+const RML_GERAETE_OPTIONS = ["LKW", "Radlader/Dumper", "Wasserwagen", "Kompressor"] as const;
+const RML_KRONE_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509", "700", "800", "1.180", "1.500"] as const;
+const RML_VERFUELLUNG_OPTIONS = ["Tonformling", "Sand", "Kies", "Zement-Bentonit", "ortsuebliches Material", "Beton", "Individuell"] as const;
+const RML_BOHRVERFAHREN_OPTIONS = [
+  "Rammkernbohrung",
+  "Rotationsbohrung",
+  "Vollbohrung",
+  "Greiferbohrung",
+  "Seilkernbohrung",
+] as const;
+const PEGEL_DM_OPTIONS = ['2"', '3"', '4"', '5"', '6"', '8"', "DN300", "DN400", "DN500", "DN600", "DN700", "DN800"] as const;
+const BG_CHECK_OPTIONS = [
+  "Betriebsflüssigkeiten",
+  "Schmierung",
+  "Bolzen, Lager",
+  "Seile und Tragmittel",
+  "Hydraulik",
+  "ev. Leckagen",
+] as const;
+const SPT_MAX_SCHLAEGE = 50;
+const SPT_DEFAULT_SEGMENT_CM = 15;
 const DRILLER_DEVICE_HISTORY_KEY = "tagesbericht_driller_device_history_v1";
 
-const normalizeDrillerName = (value: unknown) =>
+  const normalizeDrillerName = (value: unknown) =>
   String(value ?? "")
     .trim()
     .replace(/\s+/g, " ")
     .toLowerCase();
+const isKnownDeviceOption = (value: unknown): value is (typeof DEVICE_OPTIONS)[number] =>
+  typeof value === "string" && DEVICE_OPTIONS.includes(value as (typeof DEVICE_OPTIONS)[number]);
 
 type GeoSuggestion = {
   id: string;
@@ -107,6 +136,7 @@ type GeoSuggestion = {
   shortLabel: string;
   lat: number;
   lon: number;
+  postalCode?: string;
 };
 
 function emptyPegelAusbauRow(): PegelAusbauRow {
@@ -237,6 +267,46 @@ const RowActions = ({
   </div>
 );
 
+const TimePickerInput = ({
+  value,
+  onValueChange,
+  onOpenPicker,
+  className,
+  buttonLabel = "Zeit auswählen",
+}: {
+  value: string;
+  onValueChange: (next: string) => void;
+  onOpenPicker: (input: HTMLInputElement | null) => void;
+  className?: string;
+  buttonLabel?: string;
+}) => {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="time"
+        step={60}
+        className={[className ?? "", "pr-11"].filter(Boolean).join(" ")}
+        value={value}
+        onChange={(e) => onValueChange(e.target.value)}
+        onFocus={(e) => onOpenPicker(e.currentTarget)}
+        onClick={(e) => onOpenPicker(e.currentTarget)}
+      />
+      <button
+        type="button"
+        aria-label={buttonLabel}
+        className="absolute inset-y-1.5 right-1.5 inline-flex w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onOpenPicker(inputRef.current)}
+      >
+        <Clock3 size={16} />
+      </button>
+    </div>
+  );
+};
+
 function normalizeTagesbericht(raw: unknown): Tagesbericht {
   const base = createDefaultTagesbericht();
 
@@ -315,11 +385,19 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
   // time input braucht "HH:MM"
   const toHHMM = (v: unknown): string => {
     if (typeof v !== "string") return "";
+    const compact = v.trim().replace(/\s+/g, "");
     // "HH:MM:SS" -> "HH:MM"
-    if (/^\d{2}:\d{2}:\d{2}/.test(v)) return v.slice(0, 5);
+    if (/^\d{2}:\d{2}:\d{2}$/.test(compact)) return compact.slice(0, 5);
     // "HH:MM" passt schon
-    if (/^\d{2}:\d{2}$/.test(v)) return v;
-    return v;
+    if (/^\d{2}:\d{2}$/.test(compact)) return compact;
+    // tolerant für "H:M", "H.MM", "12 :30"
+    const loose = compact.match(/^(\d{1,2})[:.](\d{1,2})$/);
+    if (!loose) return "";
+    const hh = Number(loose[1]);
+    const mm = Number(loose[2]);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return "";
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return "";
+    return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
   };
 
   if (Array.isArray(r.workTimeRows)) {
@@ -453,6 +531,7 @@ export default function TagesberichtForm({
 
   useEffect(() => {
     if (mode !== "create") return;
+    if (reportType !== "tagesbericht_rhein_main_link") return;
     let mounted = true;
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -463,12 +542,26 @@ export default function TagesberichtForm({
       if (!fullName) return;
       setReport((prev) => {
         const currentName = String(prev?.signatures?.drillerName ?? "").trim();
-        if (currentName) return prev;
+        const currentWorkerName = String(prev?.workers?.[0]?.name ?? "").trim();
+        const currentTimeName = String(prev?.workTimeRows?.[0]?.name ?? "").trim();
+        if (currentName && currentWorkerName && currentTimeName) return prev;
+
+        const nextWorkers = Array.isArray(prev.workers) && prev.workers.length ? [...prev.workers] : [emptyWorker()];
+        if (!String(nextWorkers[0]?.name ?? "").trim()) {
+          nextWorkers[0] = { ...nextWorkers[0], name: fullName };
+        }
+        const nextWorkTimeRows =
+          Array.isArray(prev.workTimeRows) && prev.workTimeRows.length ? [...prev.workTimeRows] : [emptyTimeRow()];
+        if (!String(nextWorkTimeRows[0]?.name ?? "").trim()) {
+          nextWorkTimeRows[0] = { ...nextWorkTimeRows[0], name: fullName };
+        }
         return {
           ...prev,
+          workers: nextWorkers,
+          workTimeRows: nextWorkTimeRows,
           signatures: {
             ...(prev.signatures ?? {}),
-            drillerName: fullName,
+            drillerName: currentName || fullName,
           },
         };
       });
@@ -476,7 +569,7 @@ export default function TagesberichtForm({
     return () => {
       mounted = false;
     };
-  }, [mode, supabase]);
+  }, [mode, reportType, supabase]);
 
   useEffect(() => {
     if (!enforcedProjectId) return;
@@ -693,12 +786,14 @@ export default function TagesberichtForm({
   const [customCycleDraft, setCustomCycleDraft] = useState<Record<string, string>>({});
   const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
   const [expandedLines, setExpandedLines] = useState<Record<string, boolean>>({});
+  const [rmlOrtSuggestions, setRmlOrtSuggestions] = useState<GeoSuggestion[]>([]);
   const [umsetzenSuggestions, setUmsetzenSuggestions] = useState<Record<string, GeoSuggestion[]>>({});
   const [umsetzenCoords, setUmsetzenCoords] = useState<Record<string, { lat: number; lon: number; label: string }>>({});
   const [umsetzenRouteLoading, setUmsetzenRouteLoading] = useState<Record<number, boolean>>({});
   const [transportSuggestions, setTransportSuggestions] = useState<Record<string, GeoSuggestion[]>>({});
   const [transportCoords, setTransportCoords] = useState<Record<string, { lat: number; lon: number; label: string }>>({});
   const [transportRouteLoading, setTransportRouteLoading] = useState<Record<number, boolean>>({});
+  const [rmlSptCmOverrides, setRmlSptCmOverrides] = useState<Record<string, string>>({});
   const geoSearchDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
   const [pegelSumpfEnabled, setPegelSumpfEnabled] = useState<Record<number, boolean>>({});
   const [pegelStahlEnabled, setPegelStahlEnabled] = useState<Record<number, boolean>>({});
@@ -711,13 +806,13 @@ export default function TagesberichtForm({
         ? [
             { key: "stammdaten", title: "Stammdaten" },
             { key: "bohrdaten", title: "Bohrdaten" },
-            { key: "wetter", title: "Wetter + Ruhewasser" },
-            { key: "zeiten", title: "Arbeitszeit & Pausen" },
-            { key: "arbeitsakte", title: "Arbeitsakte / Stunden" },
-            { key: "tabelle", title: "Tabelle Bohrungen" },
+            { key: "aufschluss", title: "Aufschluss / Krone / Tiefe" },
+            { key: "taetigkeiten", title: "Beschreibung der Tätigkeiten" },
+            { key: "ausbau", title: "Ausbau" },
             { key: "verfuellung", title: "Verfüllung" },
-            { key: "pegel", title: "Pegelausbau" },
-            { key: "abschluss", title: "Bemerkungen & Unterschriften" },
+            { key: "spt", title: "SPT-Versuche" },
+            { key: "abschluss", title: "Bemerkungen" },
+            { key: "pruefung-signatur", title: "Prüfung & Unterschriften" },
           ]
         : [
             { key: "stammdaten", title: "Stammdaten" },
@@ -749,10 +844,19 @@ export default function TagesberichtForm({
   const openNativePicker = (input: HTMLInputElement | null) => {
     if (!input) return;
     const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    input.focus({ preventScroll: true });
     try {
-      pickerInput.showPicker?.();
+      if (typeof pickerInput.showPicker === "function") {
+        pickerInput.showPicker();
+        return;
+      }
     } catch {
       // Fallback: Browser opens picker natively when supported.
+    }
+    try {
+      input.click();
+    } catch {
+      // Final fallback: focused input allows manual typing.
     }
   };
   const getTodayDateInputValue = () => {
@@ -762,6 +866,14 @@ export default function TagesberichtForm({
     const d = String(now.getDate()).padStart(2, "0");
     return `${y}-${m}-${d}`;
   };
+  useEffect(() => {
+    if (!isRml || mode !== "create") return;
+    const today = getTodayDateInputValue();
+    setReport((prev) => {
+      if (String(prev.date ?? "").trim()) return prev;
+      return { ...prev, date: today };
+    });
+  }, [isRml, mode]);
   const focusDictationTarget = useCallback((key: string) => {
     const target = dictationTargetsRef.current[key];
     if (!target) return;
@@ -990,6 +1102,24 @@ export default function TagesberichtForm({
   }, [report.signatures?.drillerName, report.device]);
 
   useEffect(() => {
+    if (!isRml || mode !== "create" || !effectiveProjectId) return;
+    let mounted = true;
+    (async () => {
+      const { count, error } = await supabase
+        .from("reports")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", effectiveProjectId)
+        .eq("report_type", "tagesbericht_rhein_main_link");
+      if (!mounted || error) return;
+      const nextNr = String((count ?? 0) + 1);
+      setReport((prev) => ({ ...prev, berichtNr: nextNr }));
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [effectiveProjectId, isRml, mode, supabase]);
+
+  useEffect(() => {
     if (mode !== "create") return;
     const drillerKey = normalizeDrillerName(report.signatures?.drillerName);
     const prevDrillerKey = prevDrillerNameRef.current;
@@ -998,6 +1128,7 @@ export default function TagesberichtForm({
     if (!drillerKey) return;
     const rememberedDevice = drillerDeviceHistoryRef.current[drillerKey];
     if (!rememberedDevice) return;
+    if (!isKnownDeviceOption(rememberedDevice)) return;
     if (String(report.device ?? "").trim() === rememberedDevice) return;
     setReport((prev) => ({ ...prev, device: rememberedDevice }));
   }, [mode, report.signatures?.drillerName, report.device]);
@@ -1282,7 +1413,25 @@ export default function TagesberichtForm({
           reportSaveKeyRef.current = crypto.randomUUID();
         }
 
-        const currentReport = reportRef.current;
+        let currentReport = reportRef.current;
+        const legalBreakCheck = enforceLegalBreakRules(currentReport);
+        if (legalBreakCheck.warnings.length > 0) {
+          const preview = legalBreakCheck.warnings.slice(0, 4).join("\n");
+          const suffix =
+            legalBreakCheck.warnings.length > 4
+              ? `\n+ ${legalBreakCheck.warnings.length - 4} weitere Zeile(n)`
+              : "";
+          const ok = window.confirm(
+            `Gesetzliche Pausenregel nicht erfüllt:\n${preview}${suffix}\n\nAutomatisch ergänzen und weiter speichern?`
+          );
+          if (!ok) {
+            alert("Speichern abgebrochen. Bitte Pausen ergänzen.");
+            return;
+          }
+          currentReport = legalBreakCheck.report;
+          reportRef.current = legalBreakCheck.report;
+          setReport(legalBreakCheck.report);
+        }
         const projectScoped = finalProjectId;
         const reportForSave = await hydrateReportWithProject(currentReport, projectScoped);
         if (projectScoped && prefillProjectId && prefillProjectId !== projectScoped) {
@@ -1773,10 +1922,10 @@ if (mode === "edit") {
         ...base,
         reportType,
         date: today,
-        project: "Baustelle Freiburg Nord",
-        firma: "Drillexpert",
-        client: "Stadt Freiburg",
-        device: "Bohrgerät BG-12",
+        project: "",
+        firma: "",
+        client: "",
+        device: "Atego Tyroller",
         plz: "79312",
         ort: "Emmendingen",
         bohrungNr: "B1",
@@ -1842,7 +1991,7 @@ if (mode === "edit") {
       name: "Team A",
       vehicles: "LKW 7.5t, Bohrgerät X2, Sprinter",
       aNr: "A-2026-001",
-      device: "Bohrgerät BG-12",
+      device: "Atego Tyroller",
       trailer: "Anhänger 2t",
       workTimeRows: [
         { name: "Max Mustermann", from: "07:00", to: "12:00" }, // 5h
@@ -2064,9 +2213,9 @@ if (mode === "edit") {
   }
 
   /** ---------- Tabelle ---------- */
-  const MAX_TABLE_ROWS = 5;
+  const MAX_TABLE_ROWS = isRml ? 10 : 5;
   const MAX_UMSETZEN_ROWS = 3;
-  const MAX_PEGEL_ROWS = 3;
+  const MAX_PEGEL_ROWS = isRml ? 10 : 3;
 
   const safeTableRows = useMemo<TableRow[]>(
     () => (Array.isArray(report.tableRows) && report.tableRows.length ? report.tableRows : [emptyTableRow()]),
@@ -2080,6 +2229,96 @@ if (mode === "edit") {
       return { ...p, tableRows: rows };
     });
   }
+
+  const getSptParts = (raw?: string | null) => {
+    const parts = String(raw ?? "").split("/");
+    return [parts[0] ?? "", parts[1] ?? "", parts[2] ?? ""] as const;
+  };
+
+  const normalizeSptSchlagInput = (value: string) => {
+    const digits = String(value ?? "").replace(/[^\d]/g, "");
+    if (!digits) return "";
+    const parsed = Number.parseInt(digits, 10);
+    if (!Number.isFinite(parsed)) return "";
+    return String(Math.min(Math.max(parsed, 0), SPT_MAX_SCHLAEGE));
+  };
+  const parseSptCm = (value: string | undefined) => {
+    if (!value) return null;
+    const normalized = value.replace(",", ".").trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.min(Math.max(parsed, 0), SPT_DEFAULT_SEGMENT_CM);
+  };
+  const sptCmOverrideKey = (rowIndex: number, segmentIndex: 0 | 1 | 2) => `${rowIndex}-${segmentIndex}`;
+  const parseDepthNumber = (value: string | undefined | null) => {
+    if (!value) return null;
+    const normalized = value.replace(",", ".").trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const formatDepthNumber = (value: number) => {
+    const fixed = (Math.round(value * 100) / 100).toFixed(2);
+    return fixed.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  };
+  const getSptSegmentCm = (rowIndex: number, segmentIndex: 0 | 1 | 2, schlagValue: string) => {
+    const normalizedSchlag = normalizeSptSchlagInput(schlagValue);
+    if (!normalizedSchlag) return 0;
+    if (normalizedSchlag === String(SPT_MAX_SCHLAEGE)) {
+      const override = parseSptCm(rmlSptCmOverrides[sptCmOverrideKey(rowIndex, segmentIndex)]);
+      return override ?? 0;
+    }
+    return SPT_DEFAULT_SEGMENT_CM;
+  };
+  const getSptDepthMeters = (
+    rowIndex: number,
+    s1: string,
+    s2: string,
+    s3: string,
+    overrides?: Record<string, string>
+  ) => {
+    const segments = [s1, s2, s3] as const;
+    let cm = 0;
+    for (let i = 0; i < segments.length; i += 1) {
+      const s = normalizeSptSchlagInput(segments[i] ?? "");
+      if (!s) continue;
+      if (s === String(SPT_MAX_SCHLAEGE)) {
+        const key = sptCmOverrideKey(rowIndex, i as 0 | 1 | 2);
+        const overrideRaw = overrides ? overrides[key] : rmlSptCmOverrides[key];
+        const override = parseSptCm(overrideRaw);
+        cm += override ?? 0;
+      } else {
+        cm += SPT_DEFAULT_SEGMENT_CM;
+      }
+      if (s === String(SPT_MAX_SCHLAEGE)) break;
+    }
+    return (cm / 100).toFixed(2);
+  };
+  const getSptBisFromVon = (
+    rowIndex: number,
+    vonRaw: string,
+    s1: string,
+    s2: string,
+    s3: string,
+    overrides?: Record<string, string>
+  ) => {
+    const von = parseDepthNumber(vonRaw);
+    if (von == null) return "";
+    const depth = Number(getSptDepthMeters(rowIndex, s1, s2, s3, overrides));
+    if (!Number.isFinite(depth)) return "";
+    return formatDepthNumber(von + depth);
+  };
+
+  const setSptPart = (rowIndex: number, partIndex: 0 | 1 | 2, value: string) => {
+    const current = safeTableRows[rowIndex];
+    const parts = [...getSptParts(current?.spt)] as string[];
+    parts[partIndex] = normalizeSptSchlagInput(value);
+    const next = parts.map((p) => p.trim());
+    const spt = next.some((p) => p.length > 0) ? next.join("/") : "";
+    const bis = getSptBisFromVon(rowIndex, String(current?.gebohrtVon ?? ""), next[0] ?? "", next[1] ?? "", next[2] ?? "");
+    setRow(rowIndex, { spt, gebohrtBis: bis });
+  };
 
   function addRow() {
     setReport((p) => {
@@ -2130,6 +2369,88 @@ if (mode === "edit") {
       return { ...p, umsetzenRows: rows };
     });
   }
+
+  const extractPostalCode = (value: string) => {
+    const m = value.match(/\b\d{4,5}\b/);
+    return m ? m[0] : "";
+  };
+
+  const fetchRmlOrtSuggestions = async (query: string): Promise<GeoSuggestion[]> => {
+    if (!isRml || query.trim().length < 2) {
+      setRmlOrtSuggestions([]);
+      return [];
+    }
+    try {
+      const res = await fetch(`/api/geo/search?q=${encodeURIComponent(query.trim())}`, { cache: "no-store" });
+      const payload = (await res.json()) as { suggestions?: GeoSuggestion[] };
+      if (!res.ok || !Array.isArray(payload.suggestions)) {
+        setRmlOrtSuggestions([]);
+        return [];
+      }
+      const suggestions = payload.suggestions.slice(0, 6);
+      setRmlOrtSuggestions(suggestions);
+      return suggestions;
+    } catch {
+      setRmlOrtSuggestions([]);
+      return [];
+    }
+  };
+
+  const fetchPostalCodeByCoords = async (lat: number, lon: number) => {
+    try {
+      const res = await fetch(
+        `/api/geo/postal-code?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`,
+        { cache: "no-store" }
+      );
+      const payload = (await res.json()) as { postalCode?: string; place?: string };
+      if (!res.ok) return "";
+      return String(payload.postalCode ?? "").trim();
+    } catch {
+      return "";
+    }
+  };
+
+  const triggerRmlOrtSearchDebounced = (query: string) => {
+    const key = "rml-ort";
+    const existing = geoSearchDebounceRef.current[key];
+    if (existing) clearTimeout(existing);
+    geoSearchDebounceRef.current[key] = setTimeout(() => {
+      void fetchRmlOrtSuggestions(query);
+    }, 200);
+  };
+
+  const chooseRmlOrtSuggestion = (suggestion: GeoSuggestion) => {
+    const placeName = String(suggestion.shortLabel ?? suggestion.label.split(",")[0] ?? suggestion.label).trim();
+    const detectedPlz = String(suggestion.postalCode ?? "").trim() || extractPostalCode(suggestion.label);
+    update("ort", placeName);
+    if (detectedPlz) {
+      update("plz", detectedPlz);
+    } else {
+      void fetchPostalCodeByCoords(suggestion.lat, suggestion.lon).then((postalCode) => {
+        if (postalCode) update("plz", postalCode);
+      });
+    }
+    setRmlOrtSuggestions([]);
+  };
+
+  const resolveRmlOrtOnBlur = async (rawOrt: string) => {
+    if (!isRml) return;
+    const value = rawOrt.trim();
+    if (!value) {
+      setRmlOrtSuggestions([]);
+      return;
+    }
+    const suggestions = await fetchRmlOrtSuggestions(value);
+    if (!suggestions.length) return;
+    const exact = suggestions.find((s) => s.shortLabel.trim().toLowerCase() === value.toLowerCase()) ?? suggestions[0];
+    const detectedPlz = String(exact.postalCode ?? "").trim() || extractPostalCode(exact.label);
+    if (detectedPlz) {
+      update("plz", detectedPlz);
+      return;
+    }
+    const fallbackPlz = await fetchPostalCodeByCoords(exact.lat, exact.lon);
+    if (fallbackPlz) update("plz", fallbackPlz);
+  };
 
   const umsetzenFieldKey = (index: number, field: "von" | "auf") => `${index}-${field}`;
 
@@ -2340,6 +2661,43 @@ if (mode === "edit") {
     });
   }
 
+  function setWorkerNameAt(i: number, name: string) {
+    setReport((p) => {
+      const rows = Array.isArray(p.workers) && p.workers.length ? [...p.workers] : [emptyWorker()];
+      while (rows.length <= i) rows.push(emptyWorker());
+      rows[i] = { ...rows[i], name };
+      return { ...p, workers: rows };
+    });
+  }
+  const bohrhelferNames = useMemo(() => {
+    const rows = Array.isArray(report.workers) ? report.workers : [];
+    const helpers = rows.slice(1).map((w) => String(w?.name ?? ""));
+    return helpers.length ? helpers : [""];
+  }, [report.workers]);
+  const setBohrhelferNameAt = (helperIndex: number, name: string) => {
+    setWorkerNameAt(helperIndex + 1, name);
+  };
+  const addBohrhelfer = () => {
+    setReport((p) => {
+      const rows = Array.isArray(p.workers) && p.workers.length ? [...p.workers] : [emptyWorker()];
+      const helperCount = Math.max(0, rows.length - 1);
+      if (helperCount >= 3) return p;
+      rows.push(emptyWorker());
+      return { ...p, workers: rows };
+    });
+  };
+  const removeBohrhelfer = () => {
+    setReport((p) => {
+      const rows = Array.isArray(p.workers) && p.workers.length ? [...p.workers] : [emptyWorker()];
+      if (rows.length <= 2) {
+        if (rows[1]) rows[1] = { ...rows[1], name: "" };
+        return { ...p, workers: rows };
+      }
+      rows.pop();
+      return { ...p, workers: rows };
+    });
+  };
+
   const getWorkerCycles = (w: WorkerRow) =>
     Array.isArray(w.workCycles) && w.workCycles.length
       ? w.workCycles
@@ -2522,6 +2880,73 @@ if (mode === "edit") {
     if (from == null || to == null || to <= from) return 0;
     return to - from;
   };
+
+  const enforceLegalBreakRules = useCallback((source: Tagesbericht) => {
+    const parseLocalTimeToMinutes = (value?: string | null) => {
+      if (!value) return null;
+      const [h, m] = value.split(":").map((v) => Number(v));
+      if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+      return h * 60 + m;
+    };
+    const minutesToHHMM = (minutes: number) => {
+      const clamped = Math.max(0, Math.floor(minutes));
+      const hh = Math.floor(clamped / 60);
+      const mm = clamped % 60;
+      return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+    };
+    const getRequiredBreakMinutes = (workMinutes: number) => {
+      if (workMinutes > 9 * 60) return 45;
+      if (workMinutes > 6 * 60) return 30;
+      return 0;
+    };
+
+    const workRows = Array.isArray(source.workTimeRows) ? [...source.workTimeRows] : [];
+    const breakRows = Array.isArray(source.breakRows) ? [...source.breakRows] : [];
+    const maxRows = Math.max(workRows.length, breakRows.length, 1);
+    let changed = false;
+    const warnings: string[] = [];
+
+    while (breakRows.length < maxRows) breakRows.push(emptyTimeRow());
+
+    for (let i = 0; i < maxRows; i += 1) {
+      const work = workRows[i];
+      if (!work) continue;
+      const workFrom = parseLocalTimeToMinutes(work.from);
+      const workTo = parseLocalTimeToMinutes(work.to);
+      if (workFrom == null || workTo == null || workTo <= workFrom) continue;
+
+      const workMinutes = workTo - workFrom;
+      const requiredBreak = getRequiredBreakMinutes(workMinutes);
+      if (requiredBreak <= 0) continue;
+
+      const breakRow = breakRows[i] ?? emptyTimeRow();
+      const breakFrom = parseLocalTimeToMinutes(breakRow.from);
+      const breakTo = parseLocalTimeToMinutes(breakRow.to);
+      const breakMinutes =
+        breakFrom != null && breakTo != null && breakTo > breakFrom ? breakTo - breakFrom : 0;
+
+      if (breakMinutes >= requiredBreak) continue;
+
+      const label = String(work.name ?? breakRow.name ?? `Zeile ${i + 1}`).trim() || `Zeile ${i + 1}`;
+      warnings.push(`${label}: ${Math.round(workMinutes / 60)}h -> mindestens ${requiredBreak} min Pause`);
+
+      const nextBreakTo = workTo;
+      const nextBreakFrom = Math.max(workFrom, nextBreakTo - requiredBreak);
+      breakRows[i] = {
+        ...breakRow,
+        name: String(breakRow.name ?? work.name ?? ""),
+        from: minutesToHHMM(nextBreakFrom),
+        to: minutesToHHMM(nextBreakTo),
+      };
+      changed = true;
+    }
+
+    return {
+      changed,
+      warnings,
+      report: changed ? ({ ...source, breakRows } as Tagesbericht) : source,
+    };
+  }, []);
   const sharedTotalHours = useMemo(() => {
     const cycles = Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""];
     const filtered = cycles.map((cycle, idx) => (isAssignedCycle(cycle) ? sharedStunden[idx] ?? "" : ""));
@@ -2614,6 +3039,40 @@ if (mode === "edit") {
     });
   }
 
+  const rmlPegelDmValue = useMemo(
+    () => safePegel.find((row) => String(row.pegelDm ?? "").trim().length > 0)?.pegelDm ?? "",
+    [safePegel]
+  );
+
+  function setPegelDmForAllRows(nextDm: string) {
+    setReport((p) => {
+      const rows = Array.isArray(p.pegelAusbauRows) && p.pegelAusbauRows.length ? [...p.pegelAusbauRows] : [emptyPegelAusbauRow()];
+      const nextRows = rows.map((row) => ({ ...row, pegelDm: nextDm }));
+      return { ...p, pegelAusbauRows: nextRows };
+    });
+  }
+
+  const rmlBgCheckSet = useMemo(
+    () =>
+      new Set(
+        String(report.taeglicheUeberpruefungBg ?? "")
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      ),
+    [report.taeglicheUeberpruefungBg]
+  );
+
+  const toggleRmlBgCheck = (item: string, checked: boolean) => {
+    const next = new Set(rmlBgCheckSet);
+    if (checked) {
+      next.add(item);
+    } else {
+      next.delete(item);
+    }
+    update("taeglicheUeberpruefungBg", Array.from(next).join(", "));
+  };
+
   function addPegelRow() {
     setReport((p) => {
       const rows = Array.isArray(p.pegelAusbauRows) && p.pegelAusbauRows.length ? [...p.pegelAusbauRows] : [];
@@ -2654,10 +3113,20 @@ if (mode === "edit") {
   ];
 
   const showStep = (index: number) => !useStepper || stepIndex === index;
-  const showHeaderBlock = !useStepper || stepIndex <= 3;
+  const showHeaderBlock = !useStepper || (isRml ? stepIndex <= 2 : stepIndex <= 3);
   const headerGridClass = useStepper
     ? "grid gap-5 md:grid-cols-1"
     : "grid gap-5 md:grid-cols-2 xl:grid-cols-[1.35fr_1.35fr_1.2fr]";
+  const rmlSelectedGeraete = useMemo(
+    () =>
+      new Set(
+        String(report.vehicles ?? "")
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean)
+      ),
+    [report.vehicles]
+  );
 
   return (
     <div className="mt-6 space-y-6 max-w-[2000px] mx-auto w-full overflow-x-hidden px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
@@ -2804,64 +3273,34 @@ if (mode === "edit") {
             {showStep(0) ? (
               <SubGroup title="Stammdaten">
                 <div className="grid gap-3">
-                  <label className="space-y-1">
-                    <span className="text-sm text-slate-600">Datum</span>
-                    <div className="flex gap-2">
-                      <input
-                        type="date"
-                        className="w-full rounded-xl border p-3"
-                        value={report.date ?? ""}
-                        onChange={(e) => update("date", e.target.value)}
-                        onFocus={(e) => openNativePicker(e.currentTarget)}
-                        onClick={(e) => openNativePicker(e.currentTarget)}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-secondary shrink-0"
-                        onClick={() => update("date", getTodayDateInputValue())}
-                      >
-                        Heute
-                      </button>
-                    </div>
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-sm text-slate-600">Projekt</span>
-                    <input
-                      className="w-full rounded-xl border p-3"
-                      value={report.project ?? ""}
-                      onChange={(e) => update("project", e.target.value)}
-                    />
-                  </label>
-                  {reportType !== "tagesbericht_rhein_main_link" ? (
-                    <label className="space-y-1">
-                      <span className="text-sm text-slate-600">Auftragsnummer</span>
-                      <input
-                        className="w-full rounded-xl border p-3"
-                        value={report.aNr ?? ""}
-                        onChange={(e) => update("aNr", e.target.value)}
-                      />
-                    </label>
-                  ) : null}
-                  {reportType === "tagesbericht_rhein_main_link" ? (
-                    <label className="space-y-1">
-                      <span className="text-sm text-slate-600">Firma</span>
-                      <input
-                        className="w-full rounded-xl border p-3"
-                        value={report.firma ?? ""}
-                        onChange={(e) => update("firma", e.target.value)}
-                      />
-                    </label>
-                  ) : null}
-                  <label className="space-y-1">
-                    <span className="text-sm text-slate-600">Auftraggeber</span>
-                    <input
-                      className="w-full rounded-xl border p-3"
-                      value={report.client ?? ""}
-                      onChange={(e) => update("client", e.target.value)}
-                    />
-                  </label>
                   {reportType === "tagesbericht_rhein_main_link" ? (
                     <div className="grid gap-3 md:grid-cols-2">
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Datum</span>
+                        <input
+                          type="date"
+                          className="w-full rounded-xl border p-3"
+                          value={report.date ?? ""}
+                          onChange={(e) => update("date", e.target.value)}
+                          onFocus={(e) => openNativePicker(e.currentTarget)}
+                          onClick={(e) => openNativePicker(e.currentTarget)}
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Bohrgerät</span>
+                        <select
+                          className="w-full rounded-xl border p-3"
+                          value={report.device ?? ""}
+                          onChange={(e) => update("device", e.target.value)}
+                        >
+                          <option value="">Bitte wählen…</option>
+                          {DEVICE_OPTIONS.map((device) => (
+                            <option key={device} value={device}>
+                              {device}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <label className="space-y-1">
                         <span className="text-sm text-slate-600">PLZ</span>
                         <input
@@ -2872,12 +3311,98 @@ if (mode === "edit") {
                       </label>
                       <label className="space-y-1">
                         <span className="text-sm text-slate-600">Ort</span>
+                        <div>
+                          <input
+                            className="w-full rounded-xl border p-3"
+                            value={report.ort ?? ""}
+                            onChange={(e) => {
+                              update("ort", e.target.value);
+                              if (e.target.value.trim().length < 2) setRmlOrtSuggestions([]);
+                              triggerRmlOrtSearchDebounced(e.target.value);
+                            }}
+                            onBlur={(e) => {
+                              const nextOrt = e.target.value;
+                              setTimeout(() => {
+                                void resolveRmlOrtOnBlur(nextOrt);
+                              }, 120);
+                            }}
+                            placeholder="Ort suchen"
+                            autoComplete="off"
+                          />
+                          {rmlOrtSuggestions.length > 0 ? (
+                            <div className="mt-1 max-h-52 overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                              {rmlOrtSuggestions.map((s) => (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  className="block w-full border-b border-slate-100 px-3 py-2 text-left text-sm hover:bg-slate-50 last:border-b-0"
+                                  onMouseDown={(ev) => {
+                                    ev.preventDefault();
+                                    chooseRmlOrtSuggestion(s);
+                                  }}
+                                >
+                                  {s.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </label>
+                    </div>
+                  ) : (
+                    <>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Datum</span>
+                        <div className="flex gap-2">
+                          <input
+                            type="date"
+                            className="w-full rounded-xl border p-3"
+                            value={report.date ?? ""}
+                            onChange={(e) => update("date", e.target.value)}
+                            onFocus={(e) => openNativePicker(e.currentTarget)}
+                            onClick={(e) => openNativePicker(e.currentTarget)}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-secondary shrink-0"
+                            onClick={() => update("date", getTodayDateInputValue())}
+                          >
+                            Heute
+                          </button>
+                        </div>
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Projekt</span>
                         <input
                           className="w-full rounded-xl border p-3"
-                          value={report.ort ?? ""}
-                          onChange={(e) => update("ort", e.target.value)}
+                          value={report.project ?? ""}
+                          onChange={(e) => update("project", e.target.value)}
                         />
                       </label>
+                    </>
+                  )}
+                  {reportType !== "tagesbericht_rhein_main_link" ? (
+                    <label className="space-y-1">
+                      <span className="text-sm text-slate-600">Auftragsnummer</span>
+                      <input
+                        className="w-full rounded-xl border p-3"
+                        value={report.aNr ?? ""}
+                        onChange={(e) => update("aNr", e.target.value)}
+                      />
+                    </label>
+                  ) : null}
+                  {reportType === "tagesbericht_rhein_main_link" ? null : (
+                    <label className="space-y-1">
+                      <span className="text-sm text-slate-600">Auftraggeber</span>
+                      <input
+                        className="w-full rounded-xl border p-3"
+                        value={report.client ?? ""}
+                        onChange={(e) => update("client", e.target.value)}
+                      />
+                    </label>
+                  )}
+                  {reportType === "tagesbericht_rhein_main_link" ? null : (
+                    <div className="grid gap-3 md:grid-cols-2">
                       <label className="space-y-1">
                         <span className="text-sm text-slate-600">Bericht-Nr.</span>
                         <input
@@ -2895,40 +3420,190 @@ if (mode === "edit") {
                         />
                       </label>
                     </div>
-                  ) : null}
+                  )}
                 </div>
               </SubGroup>
             ) : null}
 
-            {(showStep(1) || showStep(3)) ? (
-              <SubGroup title={reportType === "tagesbericht_rhein_main_link" ? "Bohrdaten & Zeiten" : "Fahrzeuge & Zeiten"}>
+            {(showStep(1) || (!isRml && showStep(3))) ? (
+              <SubGroup title={reportType === "tagesbericht_rhein_main_link" ? "Arbeitszeit / Wetter / Personal / Geräte" : "Fahrzeuge & Zeiten"}>
                 {showStep(1) ? (
                   reportType === "tagesbericht_rhein_main_link" ? (
                     <div className="grid gap-3 md:grid-cols-2">
                       <label className="space-y-1">
-                        <span className="text-sm text-slate-600">Bohrgerät</span>
-                        <input className="w-full rounded-xl border p-3" value={report.device ?? ""} onChange={(e) => update("device", e.target.value)} />
+                        <span className="text-sm text-slate-600">Bericht-Nr.</span>
+                        <input className="w-full rounded-xl border p-3 bg-slate-50 text-slate-700" value={report.berichtNr ?? ""} readOnly />
                       </label>
                       <label className="space-y-1">
-                        <span className="text-sm text-slate-600">Geräte</span>
-                        <input className="w-full rounded-xl border p-3" value={report.vehicles ?? ""} onChange={(e) => update("vehicles", e.target.value)} />
+                        <span className="text-sm text-slate-600">Bohrung-Nr.</span>
+                        <input className="w-full rounded-xl border p-3" value={report.bohrungNr ?? ""} onChange={(e) => update("bohrungNr", e.target.value)} />
                       </label>
                       <label className="space-y-1">
-                        <span className="text-sm text-slate-600">Bohrrichtung</span>
-                        <input className="w-full rounded-xl border p-3" value={report.bohrrichtung ?? ""} onChange={(e) => update("bohrrichtung", e.target.value)} />
+                        <span className="text-sm text-slate-600">Arbeitszeit von</span>
+                        <TimePickerInput
+                          className="w-full rounded-xl border p-3"
+                          value={safeWorkTimes[0]?.from ?? ""}
+                          onValueChange={(next) => setWorkTimeRow(0, { from: next })}
+                          onOpenPicker={openNativePicker}
+                        />
                       </label>
                       <label className="space-y-1">
-                        <span className="text-sm text-slate-600">Winkel horizontal</span>
-                        <input className="w-full rounded-xl border p-3" value={report.winkelHorizontal ?? ""} onChange={(e) => update("winkelHorizontal", e.target.value)} />
+                        <span className="text-sm text-slate-600">Arbeitszeit bis</span>
+                        <TimePickerInput
+                          className="w-full rounded-xl border p-3"
+                          value={safeWorkTimes[0]?.to ?? ""}
+                          onValueChange={(next) => setWorkTimeRow(0, { to: next })}
+                          onOpenPicker={openNativePicker}
+                        />
                       </label>
                       <label className="space-y-1">
-                        <span className="text-sm text-slate-600">Winkel Nordrichtung</span>
-                        <input className="w-full rounded-xl border p-3" value={report.winkelNord ?? ""} onChange={(e) => update("winkelNord", e.target.value)} />
+                        <span className="text-sm text-slate-600">Pause von</span>
+                        <TimePickerInput
+                          className="w-full rounded-xl border p-3"
+                          value={safeBreaks[0]?.from ?? ""}
+                          onValueChange={(next) => setBreakRow(0, { from: next })}
+                          onOpenPicker={openNativePicker}
+                        />
                       </label>
                       <label className="space-y-1">
-                        <span className="text-sm text-slate-600">Verrohrung ab GOK</span>
-                        <input className="w-full rounded-xl border p-3" value={report.verrohrungAbGok ?? ""} onChange={(e) => update("verrohrungAbGok", e.target.value)} />
+                        <span className="text-sm text-slate-600">Pause bis</span>
+                        <TimePickerInput
+                          className="w-full rounded-xl border p-3"
+                          value={safeBreaks[0]?.to ?? ""}
+                          onValueChange={(next) => setBreakRow(0, { to: next })}
+                          onOpenPicker={openNativePicker}
+                        />
                       </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Temp. Max (°C)</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          inputMode="numeric"
+                          value={
+                            typeof report.weather?.tempMaxC === "number" && Number.isFinite(report.weather?.tempMaxC)
+                              ? String(report.weather?.tempMaxC)
+                              : ""
+                          }
+                          onChange={(e) =>
+                            setReport((p) => ({
+                              ...p,
+                              weather: {
+                                ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
+                                tempMaxC:
+                                  e.target.value === "" || Number.isNaN(Number(e.target.value))
+                                    ? null
+                                    : Number(e.target.value),
+                              },
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Temp. Min (°C)</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          inputMode="numeric"
+                          value={
+                            typeof report.weather?.tempMinC === "number" && Number.isFinite(report.weather?.tempMinC)
+                              ? String(report.weather?.tempMinC)
+                              : ""
+                          }
+                          onChange={(e) =>
+                            setReport((p) => ({
+                              ...p,
+                              weather: {
+                                ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
+                                tempMinC:
+                                  e.target.value === "" || Number.isNaN(Number(e.target.value))
+                                    ? null
+                                    : Number(e.target.value),
+                              },
+                            }))
+                          }
+                        />
+                      </label>
+                      <div className="space-y-2 md:col-span-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                        <span className="text-sm font-medium text-slate-700">Wetter</span>
+                        <div className="flex flex-wrap gap-3">
+                          {(["trocken", "regen", "frost"] as const).map((c) => (
+                            <label key={c} className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={(report.weather?.conditions ?? []).includes(c)}
+                                onChange={(e) => {
+                                  const cur = new Set(report.weather?.conditions ?? []);
+                                  if (e.target.checked) cur.add(c);
+                                  else cur.delete(c);
+                                  setReport((p) => ({
+                                    ...p,
+                                    weather: {
+                                      ...(p.weather ?? { conditions: [], tempMaxC: null, tempMinC: null }),
+                                      conditions: Array.from(cur),
+                                    },
+                                  }));
+                                }}
+                              />
+                              <span>{c}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <label className="space-y-1">
+                        <span className="text-sm text-slate-600">Bohrmeister</span>
+                        <input
+                          className="w-full rounded-xl border p-3"
+                          value={safeWorkTimes[0]?.name ?? report.workers?.[0]?.name ?? ""}
+                          onChange={(e) => {
+                            setTimeRowName(0, e.target.value);
+                            setWorkerNameAt(0, e.target.value);
+                          }}
+                        />
+                      </label>
+                      <div className="space-y-2 md:col-span-2 rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium text-slate-700">Bohrhelfer</span>
+                          <div className="flex gap-2">
+                            <button type="button" className="btn btn-secondary btn-xs" onClick={addBohrhelfer}>
+                              + Helfer
+                            </button>
+                            <button type="button" className="btn btn-secondary btn-xs" onClick={removeBohrhelfer}>
+                              - Helfer
+                            </button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {bohrhelferNames.map((name, idx) => (
+                            <input
+                              key={idx}
+                              className="w-full rounded-xl border p-3"
+                              value={name}
+                              onChange={(e) => setBohrhelferNameAt(idx, e.target.value)}
+                              placeholder={`Bohrhelfer ${idx + 1}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-2 md:col-span-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                        <span className="text-sm font-medium text-slate-700">Geräte</span>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {RML_GERAETE_OPTIONS.map((item) => (
+                            <label key={item} className="flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={rmlSelectedGeraete.has(item)}
+                                onChange={(e) => {
+                                  const next = new Set(rmlSelectedGeraete);
+                                  if (e.target.checked) next.add(item);
+                                  else next.delete(item);
+                                  const ordered = RML_GERAETE_OPTIONS.filter((opt) => next.has(opt));
+                                  update("vehicles", ordered.join(", "));
+                                }}
+                              />
+                              <span>{item}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <div className="grid gap-3 md:grid-cols-3">
@@ -2949,16 +3624,13 @@ if (mode === "edit") {
                               {device}
                             </option>
                           ))}
-                          {report.device && !DEVICE_OPTIONS.includes(report.device as (typeof DEVICE_OPTIONS)[number]) ? (
-                            <option value={report.device}>{report.device}</option>
-                          ) : null}
                         </select>
                       </label>
                     </div>
                   )
                 ) : null}
 
-                {showStep(3) ? (
+                {showStep(3) && !isRml ? (
                   <div className="mt-4 min-w-0 rounded-xl border border-slate-200/60 bg-slate-50/50 p-3">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <h4 className="font-medium">Arbeitszeit & Pausen</h4>
@@ -3039,9 +3711,78 @@ if (mode === "edit") {
               </SubGroup>
             ) : null}
 
-            {(showStep(1) || showStep(2)) ? (
+            {(showStep(2) && isRml) ? (
+              <SubGroup title="Bohrdaten (Aufschluss / Krone / Tiefe)">
+                <div className="space-y-3 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
+                  <RowActions
+                    addLabel="+ Zeile"
+                    removeLabel="– Zeile"
+                    onAdd={addRow}
+                    onRemove={removeLastRow}
+                    countLabel={`Zeilen: ${safeTableRows.length} / ${MAX_TABLE_ROWS}`}
+                    disableAdd={safeTableRows.length >= MAX_TABLE_ROWS}
+                  />
+                  <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                    <div className="col-span-4">Bohrverfahren / Bohrwerkzeug / Spülung</div>
+                    <div className="col-span-2">Krone Ø (Bohr-Ø)</div>
+                    <div className="col-span-3">Tiefe ab GOK von (m)</div>
+                    <div className="col-span-3">Tiefe ab GOK bis (m)</div>
+                  </div>
+                  <div className="space-y-2">
+                    {safeTableRows.map((row, i) => {
+                      const aufschlussValue = (row.verrohrtFlags?.[0] ?? "") as VerrohrtFlag | "";
+                      return (
+                        <div key={i} className="grid grid-cols-12 gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                          <select
+                            className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-4"
+                            value={aufschlussValue}
+                            onChange={(e) => {
+                              const next = e.target.value as VerrohrtFlag | "";
+                              setRow(i, { verrohrtFlags: next ? [next] : [] });
+                            }}
+                          >
+                            <option value="">Bitte wählen...</option>
+                            {RML_BOHRVERFAHREN_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-2"
+                            value={row.boNr ?? ""}
+                            onChange={(e) => setRow(i, { boNr: e.target.value })}
+                          >
+                            <option value="">Bitte wählen…</option>
+                            {RML_KRONE_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-3"
+                            value={row.gebohrtVon ?? ""}
+                            onChange={(e) => setRow(i, { gebohrtVon: e.target.value })}
+                            placeholder="von"
+                          />
+                          <input
+                            className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-3"
+                            value={row.gebohrtBis ?? ""}
+                            onChange={(e) => setRow(i, { gebohrtBis: e.target.value })}
+                            placeholder="bis"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </SubGroup>
+            ) : null}
+
+            {(!isRml && (showStep(1) || showStep(2))) ? (
               <SubGroup title={isRml ? "Wetter / Entfernung" : "Wetter / Transport / Entfernung"}>
-                {showStep(2) ? (
+                {showStep(2) && !isRml ? (
                   <div className="rounded-xl border border-slate-200/70 p-3 bg-slate-50/60">
                     <h3 className="font-medium">Wetter</h3>
                     <div className="mt-3 flex flex-wrap gap-3">
@@ -3262,8 +4003,378 @@ if (mode === "edit") {
         </GroupCard>
       ) : null}
 
+      {showStep(3) && isRml ? (
+        <GroupCard title="Beschreibung der Tätigkeiten" badge="Leistungsbericht">
+          <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm text-slate-500">Freitextfeld</div>
+              <DictationButton
+                onClick={() => startDictationForTarget("rml-step4-taetigkeiten")}
+                active={activeDictationTarget === "rml-step4-taetigkeiten"}
+              />
+            </div>
+            <textarea
+              ref={(el) => {
+                dictationTargetsRef.current["rml-step4-taetigkeiten"] = el;
+              }}
+              className="mt-3 w-full rounded-xl border p-3 min-h-[320px]"
+              value={report.otherWork ?? ""}
+              onChange={(e) => update("otherWork", e.target.value)}
+              placeholder="Tätigkeiten, Ablauf, Besonderheiten…"
+            />
+          </div>
+        </GroupCard>
+      ) : null}
+
+      {showStep(4) && isRml ? (
+        <GroupCard title="Ausbau" badge="RML">
+          <div className="space-y-3 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
+            <div className="space-y-1">
+              <label className="block text-sm text-slate-600">Rohrdurchmesser Ø</label>
+              <select
+                className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base text-slate-900 md:max-w-md"
+                value={rmlPegelDmValue}
+                onChange={(e) => setPegelDmForAllRows(e.target.value)}
+              >
+                <option value="">Bitte wählen...</option>
+                {PEGEL_DM_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <RowActions
+              addLabel="+ Zeile"
+              removeLabel="– Zeile"
+              onAdd={addPegelRow}
+              onRemove={removeLastPegelRow}
+              countLabel={`Zeilen: ${safePegel.length} / ${MAX_PEGEL_ROWS}`}
+              disableAdd={safePegel.length >= MAX_PEGEL_ROWS}
+            />
+            <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
+              <div className="col-span-12 md:col-span-4">Ausbau-Art</div>
+              <div className="col-span-12 md:col-span-4">von (m)</div>
+              <div className="col-span-12 md:col-span-4">bis (m)</div>
+            </div>
+            <div className="space-y-2">
+              {safePegel.map((row, i) => {
+                const ausbauArt: "filter" | "vollrohr" | "stahlaufsatz" =
+                  row.aufsatzStahlVon || row.aufsatzStahlBis
+                    ? "stahlaufsatz"
+                    : row.rohrePvcVon || row.rohrePvcBis
+                      ? "vollrohr"
+                      : "filter";
+                const fromValue =
+                  ausbauArt === "stahlaufsatz"
+                    ? row.aufsatzStahlVon ?? ""
+                    : ausbauArt === "vollrohr"
+                      ? row.rohrePvcVon ?? ""
+                      : row.filterVon ?? "";
+                const toValue =
+                  ausbauArt === "stahlaufsatz"
+                    ? row.aufsatzStahlBis ?? ""
+                    : ausbauArt === "vollrohr"
+                      ? row.rohrePvcBis ?? ""
+                      : row.filterBis ?? "";
+
+                return (
+                  <div key={i} className="grid grid-cols-12 gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                    <select
+                      className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-4"
+                      value={ausbauArt}
+                      onChange={(e) => {
+                        const nextArt = e.target.value as "filter" | "vollrohr" | "stahlaufsatz";
+                        if (nextArt === "stahlaufsatz") {
+                          updatePegel(i, {
+                            filterVon: "",
+                            filterBis: "",
+                            rohrePvcVon: "",
+                            rohrePvcBis: "",
+                            aufsatzStahlVon: fromValue,
+                            aufsatzStahlBis: toValue,
+                          });
+                          return;
+                        }
+                        if (nextArt === "vollrohr") {
+                          updatePegel(i, {
+                            filterVon: "",
+                            filterBis: "",
+                            rohrePvcVon: fromValue,
+                            rohrePvcBis: toValue,
+                            aufsatzStahlVon: "",
+                            aufsatzStahlBis: "",
+                          });
+                          return;
+                        }
+                        updatePegel(i, {
+                          filterVon: fromValue,
+                          filterBis: toValue,
+                          rohrePvcVon: "",
+                          rohrePvcBis: "",
+                          aufsatzStahlVon: "",
+                          aufsatzStahlBis: "",
+                        });
+                      }}
+                    >
+                      <option value="filter">Filter</option>
+                      <option value="vollrohr">Vollrohr</option>
+                      <option value="stahlaufsatz">Stahlaufsatz</option>
+                    </select>
+                    <input
+                      className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-4"
+                      value={fromValue}
+                      onChange={(e) => {
+                        const nextFrom = e.target.value;
+                        if (ausbauArt === "stahlaufsatz") {
+                          updatePegel(i, { aufsatzStahlVon: nextFrom });
+                          return;
+                        }
+                        if (ausbauArt === "vollrohr") {
+                          updatePegel(i, { rohrePvcVon: nextFrom });
+                          return;
+                        }
+                        updatePegel(i, { filterVon: nextFrom });
+                      }}
+                      placeholder="von"
+                    />
+                    <input
+                      className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-4"
+                      value={toValue}
+                      onChange={(e) => {
+                        const nextTo = e.target.value;
+                        if (ausbauArt === "stahlaufsatz") {
+                          updatePegel(i, { aufsatzStahlBis: nextTo });
+                          return;
+                        }
+                        if (ausbauArt === "vollrohr") {
+                          updatePegel(i, { rohrePvcBis: nextTo });
+                          return;
+                        }
+                        updatePegel(i, { filterBis: nextTo });
+                      }}
+                      placeholder="bis"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </GroupCard>
+      ) : null}
+
+      {showStep(5) && isRml ? (
+        <GroupCard title="Verfüllung" badge="RML">
+          <div className="space-y-3 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
+            <RowActions
+              addLabel="+ Zeile"
+              removeLabel="– Zeile"
+              onAdd={addPegelRow}
+              onRemove={removeLastPegelRow}
+              countLabel={`Zeilen: ${safePegel.length} / ${MAX_PEGEL_ROWS}`}
+              disableAdd={safePegel.length >= MAX_PEGEL_ROWS}
+            />
+            <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
+              <div className="col-span-4">Verfüllung von (m)</div>
+              <div className="col-span-4">Verfüllung bis (m)</div>
+              <div className="col-span-4">Material</div>
+            </div>
+            <div className="space-y-2">
+              {safePegel.map((row, i) => {
+                const material = String(row.filterkiesKoernung ?? "");
+                const isKnownMaterial = RML_VERFUELLUNG_OPTIONS.includes(material as (typeof RML_VERFUELLUNG_OPTIONS)[number]);
+                const isCustom = material.length > 0 && !isKnownMaterial;
+                const materialSelectValue = isCustom ? "Individuell" : material;
+                return (
+                  <div key={i} className="grid grid-cols-12 gap-2 rounded-xl border border-slate-200 bg-white p-3">
+                    <input
+                      className="col-span-12 rounded-xl border px-3 py-3 text-base md:col-span-4"
+                      value={row.tonVon ?? ""}
+                      onChange={(e) => updatePegel(i, { tonVon: e.target.value })}
+                      placeholder="von"
+                    />
+                    <input
+                      className="col-span-12 rounded-xl border px-3 py-3 text-base md:col-span-4"
+                      value={row.tonBis ?? ""}
+                      onChange={(e) => updatePegel(i, { tonBis: e.target.value })}
+                      placeholder="bis"
+                    />
+                    <div className="col-span-12 space-y-2 md:col-span-4">
+                      <select
+                        className="w-full rounded-xl border px-3 py-3 text-base"
+                        value={materialSelectValue}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          if (next === "Individuell") {
+                            updatePegel(i, { filterkiesKoernung: "Individuell" });
+                          } else {
+                            updatePegel(i, { filterkiesKoernung: next });
+                          }
+                        }}
+                      >
+                        <option value="">Bitte wählen...</option>
+                        {RML_VERFUELLUNG_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                      {materialSelectValue === "Individuell" ? (
+                        <input
+                          className="w-full rounded-xl border px-3 py-3 text-base"
+                          value={isCustom ? material : ""}
+                          onChange={(e) => updatePegel(i, { filterkiesKoernung: e.target.value })}
+                          placeholder="Individuelles Material"
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </GroupCard>
+      ) : null}
+
+      {showStep(6) && isRml ? (
+        <GroupCard title="SPT-Versuche" badge="RML">
+          <div className="space-y-3 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
+            <RowActions
+              addLabel="+ Zeile"
+              removeLabel="– Zeile"
+              onAdd={addRow}
+              onRemove={removeLastRow}
+              countLabel={`Zeilen: ${safeTableRows.length} / ${MAX_TABLE_ROWS}`}
+              disableAdd={safeTableRows.length >= MAX_TABLE_ROWS}
+            />
+            <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
+              <div className="col-span-2">von (m)</div>
+              <div className="col-span-2">bis (m)</div>
+              <div className="col-span-2">0-15 cm</div>
+              <div className="col-span-3">15-30 cm</div>
+              <div className="col-span-3">30-45 cm</div>
+            </div>
+            <div className="space-y-2">
+              {safeTableRows.map((row, i) => {
+                const [s1, s2, s3] = getSptParts(row.spt);
+                const stopAfter1 = normalizeSptSchlagInput(s1) === String(SPT_MAX_SCHLAEGE);
+                const stopAfter2 = normalizeSptSchlagInput(s2) === String(SPT_MAX_SCHLAEGE);
+                const showSecond = !stopAfter1;
+                const showThird = !stopAfter1 && !stopAfter2;
+                return (
+                  <div key={i} className="grid grid-cols-12 gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                    <input
+                      className="col-span-6 rounded-lg border px-3 py-2 text-sm md:col-span-2"
+                      value={row.gebohrtVon ?? ""}
+                      onChange={(e) => {
+                        const nextVon = e.target.value;
+                        const bis = getSptBisFromVon(i, nextVon, s1, s2, s3);
+                        setRow(i, { gebohrtVon: nextVon, gebohrtBis: bis });
+                      }}
+                      placeholder="von"
+                    />
+                    <input
+                      className="col-span-6 rounded-lg border bg-slate-50 px-3 py-2 text-sm md:col-span-2"
+                      value={row.gebohrtBis ?? ""}
+                      readOnly
+                      placeholder="bis"
+                    />
+                    <input
+                      className="col-span-4 rounded-lg border px-3 py-2 text-sm md:col-span-2"
+                      value={s1}
+                      onChange={(e) => setSptPart(i, 0, e.target.value)}
+                      placeholder="0-15"
+                    />
+                    {showSecond ? (
+                      <input
+                        className="col-span-4 rounded-lg border px-3 py-2 text-sm md:col-span-3"
+                        value={s2}
+                        onChange={(e) => setSptPart(i, 1, e.target.value)}
+                        placeholder="15-30"
+                      />
+                    ) : (
+                      <input className="col-span-4 rounded-lg border bg-slate-50 px-3 py-2 text-sm md:col-span-3" value="-" readOnly />
+                    )}
+                    {showThird ? (
+                      <input
+                        className="col-span-4 rounded-lg border px-3 py-2 text-sm md:col-span-3"
+                        value={s3}
+                        onChange={(e) => setSptPart(i, 2, e.target.value)}
+                        placeholder="30-45"
+                      />
+                    ) : (
+                      <input className="col-span-4 rounded-lg border bg-slate-50 px-3 py-2 text-sm md:col-span-3" value="-" readOnly />
+                    )}
+                    {normalizeSptSchlagInput(s1) === String(SPT_MAX_SCHLAEGE) ? (
+                      <label className="col-span-12 text-xs text-slate-600 md:col-span-4">
+                        cm bei 50 (0-15)
+                        <input
+                          className="mt-1 w-full rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm"
+                          value={rmlSptCmOverrides[sptCmOverrideKey(i, 0)] ?? ""}
+                          onChange={(e) => {
+                            const nextValue = e.target.value;
+                            const nextOverrides = {
+                              ...rmlSptCmOverrides,
+                              [sptCmOverrideKey(i, 0)]: nextValue,
+                            };
+                            setRmlSptCmOverrides(nextOverrides);
+                            const bis = getSptBisFromVon(i, String(row.gebohrtVon ?? ""), s1, s2, s3, nextOverrides);
+                            setRow(i, { gebohrtBis: bis });
+                          }}
+                          placeholder="cm"
+                        />
+                      </label>
+                    ) : null}
+                    {showSecond && normalizeSptSchlagInput(s2) === String(SPT_MAX_SCHLAEGE) ? (
+                      <label className="col-span-12 text-xs text-slate-600 md:col-span-4">
+                        cm bei 50 (15-30)
+                        <input
+                          className="mt-1 w-full rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm"
+                          value={rmlSptCmOverrides[sptCmOverrideKey(i, 1)] ?? ""}
+                          onChange={(e) => {
+                            const nextValue = e.target.value;
+                            const nextOverrides = {
+                              ...rmlSptCmOverrides,
+                              [sptCmOverrideKey(i, 1)]: nextValue,
+                            };
+                            setRmlSptCmOverrides(nextOverrides);
+                            const bis = getSptBisFromVon(i, String(row.gebohrtVon ?? ""), s1, s2, s3, nextOverrides);
+                            setRow(i, { gebohrtBis: bis });
+                          }}
+                          placeholder="cm"
+                        />
+                      </label>
+                    ) : null}
+                    {showThird && normalizeSptSchlagInput(s3) === String(SPT_MAX_SCHLAEGE) ? (
+                      <label className="col-span-12 text-xs text-slate-600 md:col-span-4">
+                        cm bei 50 (30-45)
+                        <input
+                          className="mt-1 w-full rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm"
+                          value={rmlSptCmOverrides[sptCmOverrideKey(i, 2)] ?? ""}
+                          onChange={(e) => {
+                            const nextValue = e.target.value;
+                            const nextOverrides = {
+                              ...rmlSptCmOverrides,
+                              [sptCmOverrideKey(i, 2)]: nextValue,
+                            };
+                            setRmlSptCmOverrides(nextOverrides);
+                            const bis = getSptBisFromVon(i, String(row.gebohrtVon ?? ""), s1, s2, s3, nextOverrides);
+                            setRow(i, { gebohrtBis: bis });
+                          }}
+                          placeholder="cm"
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </GroupCard>
+      ) : null}
+
       {/* ======================= ARBEITER (TABELLENLAYOUT) ======================= */}
-      {showStep(4) ? <GroupCard title="Arbeitstakte / Stunden" badge="Personal">
+      {!isRml && showStep(4) ? <GroupCard title="Arbeitstakte / Stunden" badge="Personal">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <RowActions
             addLabel="+ Arbeiter"
@@ -3636,7 +4747,7 @@ if (mode === "edit") {
       </GroupCard> : null}
 
       {/* ======================= TABELLE ======================= */}
-      {showStep(5) ? <GroupCard title="Tabelle (Bohrung / Proben / Verfüllung)" badge="Kernbereich">
+      {!isRml && showStep(5) ? <GroupCard title="Tabelle (Bohrung / Proben / Verfüllung)" badge="Kernbereich">
 
           <RowActions
             addLabel="+ Bohrung"
@@ -3806,7 +4917,7 @@ if (mode === "edit") {
         </div>
       </GroupCard> : null}
 
-      {showStep(6) ? <GroupCard title="Verfüllung" badge="Kernbereich">
+      {!isRml && showStep(6) ? <GroupCard title="Verfüllung" badge="Kernbereich">
         <RowActions
           addLabel="+ Verfüllung"
           removeLabel="– Verfüllung"
@@ -4192,7 +5303,7 @@ if (mode === "edit") {
       </GroupCard> : null}
 
       {/* ======================= PEGELAUSBAU ======================= */}
-      {showStep(7) ? <GroupCard title="Pegelausbau" badge="Ausbau">
+      {!isRml && showStep(7) ? <GroupCard title="Pegelausbau" badge="Ausbau">
 
         <RowActions
           addLabel="+ Pegel"
@@ -4351,11 +5462,11 @@ if (mode === "edit") {
         ))}
       </GroupCard> : null}
       {/* ======================= SONSTIGE / BEMERKUNGEN / UNTERSCHRIFTEN ======================= */}
-      {showStep(8) ? <GroupCard title="Sonstige / Bemerkungen / Unterschriften" badge="Abschluss">
+      {(isRml ? showStep(7) : showStep(8)) ? <GroupCard title={isRml ? "Bemerkungen" : "Sonstige / Bemerkungen / Unterschriften"} badge="Abschluss">
 
     {/* Texte */}
     {reportType === "tagesbericht_rhein_main_link" ? (
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      <div className="mt-4 grid gap-4">
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-2">
             <h3 className="font-medium">Besucher</h3>
@@ -4394,7 +5505,7 @@ if (mode === "edit") {
         </div>
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="font-medium">Tool-Box-Talks</h3>
+            <h3 className="font-medium">Sonstige Ergänzungen (Themen)</h3>
             <DictationButton
               onClick={() => startDictationForTarget("tb-toolbox")}
               active={activeDictationTarget === "tb-toolbox"}
@@ -4407,25 +5518,7 @@ if (mode === "edit") {
             className="mt-3 w-full rounded-xl border p-3 min-h-[110px]"
             value={report.toolBoxTalks ?? ""}
             onChange={(e) => update("toolBoxTalks", e.target.value)}
-            placeholder="Tool-Box-Talks…"
-          />
-        </div>
-        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="font-medium">Tägliche Überprüfung BG</h3>
-            <DictationButton
-              onClick={() => startDictationForTarget("tb-bg")}
-              active={activeDictationTarget === "tb-bg"}
-            />
-          </div>
-          <textarea
-            ref={(el) => {
-              dictationTargetsRef.current["tb-bg"] = el;
-            }}
-            className="mt-3 w-full rounded-xl border p-3 min-h-[110px]"
-            value={report.taeglicheUeberpruefungBg ?? ""}
-            onChange={(e) => update("taeglicheUeberpruefungBg", e.target.value)}
-            placeholder="Tägliche Überprüfung BG…"
+            placeholder="Themen / Sonstige Ergänzungen…"
           />
         </div>
       </div>
@@ -4472,6 +5565,7 @@ if (mode === "edit") {
     )}
 
   {/* UNTERSCHRIFTEN */}
+      {!isRml ? (
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         {/* Auftraggeber */}
         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
@@ -4521,6 +5615,7 @@ if (mode === "edit") {
               <SignatureCanvas
                 ref={sigClientRef}
                 penColor="black"
+                onEnd={saveClientSignature}
                 canvasProps={{
                   width: 500,
                   height: 150,
@@ -4571,6 +5666,7 @@ if (mode === "edit") {
             <SignatureCanvas
               ref={sigDrillerRef}
               penColor="black"
+              onEnd={saveDrillerSignature}
               canvasProps={{
                 width: 500,
                 height: 150,
@@ -4597,7 +5693,154 @@ if (mode === "edit") {
           </div>
         </div>
       </div>
+      ) : null}
     </GroupCard> : null}
+
+      {showStep(8) && isRml ? (
+        <GroupCard title="Prüfung & Unterschriften" badge="Abschluss">
+          <div className="mt-2 space-y-4">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+              <h3 className="font-medium">Tägliche Überprüfung BG</h3>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {BG_CHECK_OPTIONS.map((item) => (
+                  <label
+                    key={item}
+                    className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={rmlBgCheckSet.has(item)}
+                      onChange={(e) => toggleRmlBgCheck(item, e.target.checked)}
+                    />
+                    {item}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+                <h3 className="font-medium">Unterschrift Bohrgeräteführer</h3>
+                <input
+                  className="mt-3 w-full rounded-xl border p-3"
+                  value={report.signatures?.drillerName ?? ""}
+                  onChange={(e) =>
+                    setReport((p) => ({
+                      ...p,
+                      signatures: {
+                        ...(p.signatures ?? {}),
+                        drillerName: e.target.value,
+                      },
+                    }))
+                  }
+                  placeholder="Name"
+                />
+                <div className="mt-3 rounded-xl border bg-white">
+                  <SignatureCanvas
+                    ref={sigDrillerRef}
+                    penColor="black"
+                    onEnd={saveDrillerSignature}
+                    canvasProps={{
+                      width: 500,
+                      height: 150,
+                      className: "w-full h-[150px]",
+                    }}
+                  />
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
+                    onClick={clearDrillerSig}
+                  >
+                    Löschen
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
+                    onClick={saveDrillerSignature}
+                  >
+                    Übernehmen
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-medium">Für den Auftraggeber (Name, Unterschrift)</h3>
+                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={clientSigEnabled}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        setClientSigEnabled(next);
+                        if (!next) {
+                          clearClientSig();
+                          setReport((p) => ({
+                            ...p,
+                            signatures: {
+                              ...(p.signatures ?? {}),
+                              clientOrManagerName: "",
+                              clientOrManagerSigPng: "",
+                            },
+                          }));
+                        }
+                      }}
+                    />
+                    Unterschrift aktivieren
+                  </label>
+                </div>
+
+                <div className={`mt-3 space-y-3 ${clientSigEnabled ? "" : "opacity-50 pointer-events-none"}`}>
+                  <input
+                    className="w-full rounded-xl border p-3"
+                    value={report.signatures?.clientOrManagerName ?? ""}
+                    onChange={(e) =>
+                      setReport((p) => ({
+                        ...p,
+                        signatures: {
+                          ...(p.signatures ?? {}),
+                          clientOrManagerName: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="Name"
+                  />
+                  <div className="rounded-xl border bg-white">
+                    <SignatureCanvas
+                      ref={sigClientRef}
+                      penColor="black"
+                      onEnd={saveClientSignature}
+                      canvasProps={{
+                        width: 500,
+                        height: 150,
+                        className: "w-full h-[150px]",
+                      }}
+                    />
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
+                      onClick={clearClientSig}
+                    >
+                      Löschen
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sky-700 hover:bg-sky-50 text-sm"
+                      onClick={saveClientSignature}
+                    >
+                      Übernehmen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </GroupCard>
+      ) : null}
 
       {/* ======================= BUTTONS ======================= */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-4">
@@ -4658,6 +5901,23 @@ if (mode === "edit") {
               type="button"
               className="btn btn-primary"
               onClick={() => {
+                const legalBreakCheck = enforceLegalBreakRules(reportRef.current);
+                if (legalBreakCheck.warnings.length > 0) {
+                  const preview = legalBreakCheck.warnings.slice(0, 4).join("\n");
+                  const suffix =
+                    legalBreakCheck.warnings.length > 4
+                      ? `\n+ ${legalBreakCheck.warnings.length - 4} weitere Zeile(n)`
+                      : "";
+                  const ok = window.confirm(
+                    `Gesetzliche Pausenregel nicht erfüllt:\n${preview}${suffix}\n\nAutomatisch ergänzen und weiter?`
+                  );
+                  if (!ok) {
+                    alert("Weiter abgebrochen. Bitte Pausen ergänzen.");
+                    return;
+                  }
+                  reportRef.current = legalBreakCheck.report;
+                  setReport(legalBreakCheck.report);
+                }
                 if (stepIndex === 4) {
                   const invalid = safeWorkers.some((w) => hasInvalidStunden(w));
                   if (invalid) {

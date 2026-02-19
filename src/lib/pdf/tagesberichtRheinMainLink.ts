@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 
 const CANDIDATE_TEMPLATE_NAMES = [
+  "RML_TB.pdf",
   "TB_RML.pdf",
   "tagesbericht_rhein_main_link.pdf",
   "rhein_main_tagesbericht.pdf",
@@ -31,9 +32,31 @@ function t(v: unknown, max = 48): string {
 }
 
 export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<Uint8Array> {
-  const templatePath = pickTemplatePath();
-  const bytes = fs.readFileSync(templatePath);
-  const pdf = await PDFDocument.load(bytes);
+  const firstExistingTemplatePath = pickTemplatePath();
+  let bytes: Uint8Array | null = null;
+  let pdf: PDFDocument | null = null;
+  let parseError: unknown = null;
+
+  for (const filename of CANDIDATE_TEMPLATE_NAMES) {
+    const p = path.join(process.cwd(), "public", "templates", filename);
+    if (!fs.existsSync(p)) continue;
+    try {
+      const candidateBytes = fs.readFileSync(p);
+      const candidatePdf = await PDFDocument.load(candidateBytes);
+      bytes = candidateBytes;
+      pdf = candidatePdf;
+      break;
+    } catch (error) {
+      parseError = error;
+    }
+  }
+
+  if (!bytes || !pdf) {
+    const detail =
+      parseError instanceof Error ? parseError.message : "Template kann nicht gelesen werden";
+    throw new Error(`Rhein-Main-Link Template invalid: ${firstExistingTemplatePath} (${detail})`);
+  }
+
   const page = pdf.getPage(0);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
 
@@ -44,6 +67,20 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   const draw = (value: unknown, x: number, y: number, size = 10, max = 48) => {
     const text = t(value, max);
     if (!text) return;
+    page.drawText(text, { x, y, size, font, color: blue });
+  };
+  const drawFitted = (
+    value: unknown,
+    x: number,
+    y: number,
+    maxWidth: number,
+    startSize = 10,
+    maxChars = 80
+  ) => {
+    const text = t(value, maxChars);
+    if (!text) return;
+    let size = startSize;
+    while (size > 7 && font.widthOfTextAtSize(text, size) > maxWidth) size -= 0.5;
     page.drawText(text, { x, y, size, font, color: blue });
   };
 
@@ -93,13 +130,10 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
 
   // Koordinatenblock RML (hier feinjustieren)
   const header = {
-    date: { x: 520, y: 786 },
-    bauvorhaben: { x: 145, y: 742 },
-    firma: { x: 430, y: 742 },
-    auftraggeber: { x: 145, y: 712 },
-    bohrgeraet: { x: 145, y: 674 },
-    plz: { x: 410, y: 674 },
-    ort: { x: 520, y: 674 },
+    date: { x: 398, y: 784 },
+    bohrgeraet: { x: 125, y: 717 },
+    plz: { x: 280, y: 718 },
+    ort: { x: 365, y: 717 },
     bohrungNr: { x: 165, y: 639 },
     berichtNr: { x: 365, y: 639 },
     zeitVon: { x: 620, y: 639 },
@@ -122,10 +156,7 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   } as const;
 
   draw(data?.date, header.date.x, header.date.y, 11, 20);
-  draw(data?.project, header.bauvorhaben.x, header.bauvorhaben.y, 11, 64);
-  draw(data?.firma, header.firma.x, header.firma.y, 10, 24);
-  draw(data?.client, header.auftraggeber.x, header.auftraggeber.y, 11, 64);
-  draw(data?.device, header.bohrgeraet.x, header.bohrgeraet.y, 11, 28);
+  drawFitted(data?.device, header.bohrgeraet.x, header.bohrgeraet.y, 250, 11, 80);
   draw(data?.plz, header.plz.x, header.plz.y, 10, 12);
   draw(data?.ort, header.ort.x, header.ort.y, 10, 24);
 
@@ -154,11 +185,18 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
 
   draw(data?.workers?.[0]?.name, header.bohrmeister.x, header.bohrmeister.y, 10, 18);
   draw(data?.vehicles ?? data?.geraete, header.geraete.x, header.geraete.y, 9, 22);
-  draw(data?.workers?.[1]?.name, header.bohrhelfer.x, header.bohrhelfer.y, 10, 18);
+  const bohrhelferJoined = Array.isArray(data?.workers)
+    ? data.workers
+        .slice(1)
+        .map((w: { name?: unknown }) => String(w?.name ?? "").trim())
+        .filter((n: string) => n.length > 0)
+        .join(", ")
+    : "";
+  draw(bohrhelferJoined, header.bohrhelfer.x, header.bohrhelfer.y, 10, 40);
 
   // Wochentag markieren
-  const weekdayX = { mo: 398, di: 428, mi: 459, do: 490, fr: 520, sa: 550, so: 580 };
-  const weekdayY = 787;
+  const weekdayX = { mo: 253, di: 274, mi: 295, do: 316, fr: 337, sa: 358, so: 378 };
+  const weekdayY = 780;
   const weekday = getWeekdayFromDate(String(data?.date ?? ""));
   if (weekday === 1) drawX(weekdayX.mo, weekdayY);
   if (weekday === 2) drawX(weekdayX.di, weekdayY);

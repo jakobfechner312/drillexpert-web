@@ -101,7 +101,74 @@ export async function generateSchichtenverzeichnisPdf(
     ? Math.ceil(gwOverflowRows.length / gwRowsPerPage)
     : 0;
 
-  const hasRowData = Array.isArray(data?.schicht_rows) && data.schicht_rows.length > 0;
+  const inputSchichtRows = Array.isArray(data?.schicht_rows) ? data.schicht_rows : [];
+  const probeTiefeField = SV_FIELDS.find((field) => field.key === "proben_tiefe");
+  const rowHeightForProbeSplit = Number(data?.schicht_row_height) || 95;
+  const probeFixedSizeForSplit = Math.max(7, (probeTiefeField?.size ?? 6) + 1);
+  const probeLineHeightForSplit = Math.max(8, Math.round(probeFixedSizeForSplit * 1.2));
+  const probeMaxPerSchicht = Math.max(
+    1,
+    Math.floor(Math.max(20, rowHeightForProbeSplit - 10) / probeLineHeightForSplit)
+  );
+  const normalizeProbeArtForSplit = (value: unknown) => {
+    const normalized = String(value ?? "").trim().toUpperCase();
+    if (normalized === "EP") return "EP";
+    if (normalized === "UP") return "UP";
+    if (normalized === "BG") return "BG";
+    return "GP";
+  };
+  const expandedSchichtRows = inputSchichtRows.flatMap((row: any) => {
+    const depthList = Array.isArray(row?.proben_tiefen)
+      ? row.proben_tiefen.map((value: unknown) => String(value ?? "").trim()).filter(Boolean)
+      : [];
+    if (depthList.length <= probeMaxPerSchicht) return [row];
+    const sourceTypes = Array.isArray(row?.proben_arten) ? row.proben_arten : [];
+    const chunks: any[] = [];
+    for (let start = 0; start < depthList.length; start += probeMaxPerSchicht) {
+      const depthChunk = depthList.slice(start, start + probeMaxPerSchicht);
+      const typeChunk = depthChunk.map((_: string, idx: number) =>
+        normalizeProbeArtForSplit(sourceTypes[start + idx] ?? row?.proben_art)
+      );
+      const firstDepth = depthChunk.find((value: string) => String(value).trim() !== "") ?? "";
+      const firstType = typeChunk[0] ?? normalizeProbeArtForSplit(row?.proben_art);
+      if (start === 0) {
+        chunks.push({
+          ...row,
+          proben_tiefen: depthChunk,
+          proben_arten: typeChunk,
+          proben_art: firstType,
+          proben_tiefe: firstDepth || String(row?.proben_tiefe ?? ""),
+        });
+        continue;
+      }
+      chunks.push({
+        ...row,
+        ansatzpunkt_bis: "",
+        a1: "",
+        a2: "",
+        b: "",
+        c: "",
+        d: "",
+        e: "",
+        f: "",
+        g: "",
+        h: "",
+        feststellungen: "",
+        spt_eintraege: [],
+        spt_gemacht: false,
+        spt_schlag_1: "",
+        spt_schlag_2: "",
+        spt_schlag_3: "",
+        proben_tiefen: depthChunk,
+        proben_arten: typeChunk,
+        proben_art: firstType,
+        proben_tiefe: firstDepth,
+      });
+    }
+    return chunks;
+  });
+
+  const hasRowData = expandedSchichtRows.length > 0;
   const fallbackRowsPerPage = Math.max(1, Number(data?.schicht_rows_per_page) || 4);
   // Keep page capacities aligned with the calibrated templates.
   // If saved tuning values are too large, overflow rows would never paginate to extra sheets.
@@ -115,7 +182,7 @@ export async function generateSchichtenverzeichnisPdf(
     1,
     Math.min(maxRowsPageN, Number(data?.schicht_rows_per_page_2) || fallbackRowsPerPage)
   );
-  const rowCount = hasRowData ? data.schicht_rows.length : 0;
+  const rowCount = hasRowData ? expandedSchichtRows.length : 0;
   const remainingAfterPage1 = Math.max(0, rowCount - rowsPerPagePage1);
   const requiredPageNCopies = hasRowData
     ? Math.ceil(remainingAfterPage1 / rowsPerPagePageN)
@@ -650,10 +717,10 @@ export async function generateSchichtenverzeichnisPdf(
     };
   };
 
-  if (Array.isArray(data?.schicht_rows) && data.schicht_rows.length > 0) {
-    data.schicht_rows.forEach((row: any) => {
+  if (expandedSchichtRows.length > 0) {
+    expandedSchichtRows.forEach((row: any) => {
       const depthList = Array.isArray(row?.proben_tiefen)
-        ? row.proben_tiefen.filter((v: any) => String(v ?? "").trim() !== "").slice(0, 10)
+        ? row.proben_tiefen.filter((v: any) => String(v ?? "").trim() !== "")
         : [];
       const sourceTypes = Array.isArray(row?.proben_arten) ? row.proben_arten : [];
       const sptEntries = getSptEntries(row);
@@ -839,7 +906,7 @@ export async function generateSchichtenverzeichnisPdf(
     const probeCounters: Record<string, number> = {};
 
     let sptRunningNumber = 1;
-    data.schicht_rows.forEach((row: any, idx: number) => {
+    expandedSchichtRows.forEach((row: any, idx: number) => {
       const pageIndex =
         idx < rowsPerPagePage1
           ? 0
@@ -880,7 +947,7 @@ export async function generateSchichtenverzeichnisPdf(
         }
       }
       const depthList = Array.isArray(row?.proben_tiefen)
-        ? row.proben_tiefen.filter((v: any) => String(v ?? "").trim() !== "").slice(0, 10)
+        ? row.proben_tiefen.filter((v: any) => String(v ?? "").trim() !== "")
         : [];
       const hasDepthList = depthList.length > 0;
       const hasAnyProbeDepth = hasDepthList || String(row?.proben_tiefe ?? "").trim() !== "";

@@ -8,6 +8,7 @@ type GeoSuggestion = {
   shortLabel: string;
   lat: number;
   lon: number;
+  postalCode?: string;
 };
 
 export async function GET(request: Request) {
@@ -42,6 +43,7 @@ export async function GET(request: Request) {
       lat?: string;
       lon?: string;
       address?: {
+        postcode?: string;
         city?: string;
         town?: string;
         village?: string;
@@ -52,7 +54,7 @@ export async function GET(request: Request) {
       };
     }>;
 
-    const suggestions: GeoSuggestion[] = (Array.isArray(data) ? data : [])
+    const suggestions = (Array.isArray(data) ? data : [])
       .map((row) => {
         const lat = Number(row.lat);
         const lon = Number(row.lon);
@@ -70,13 +72,17 @@ export async function GET(request: Request) {
           a.state ||
           label.split(",")[0]?.trim() ||
           label;
-        return {
+        const baseSuggestion = {
           id: String(row.place_id ?? `${lat},${lon}`),
           label,
           shortLabel,
           lat,
           lon,
-        } satisfies GeoSuggestion;
+        };
+        const postalCode = String(a.postcode ?? "").trim();
+        return postalCode
+          ? ({ ...baseSuggestion, postalCode } satisfies GeoSuggestion)
+          : (baseSuggestion satisfies GeoSuggestion);
       })
       .filter((x): x is GeoSuggestion => Boolean(x));
 

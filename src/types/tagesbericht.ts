@@ -30,7 +30,16 @@ export type UmsetzenRow = {
   wartezeit: string;
 };
 
-export type VerrohrtFlag = "RB" | "EK" | "DK" | "S";
+export type VerrohrtFlag =
+  | "RB"
+  | "EK"
+  | "DK"
+  | "S"
+  | "Rammkernbohrung"
+  | "Rotationsbohrung"
+  | "Greiferbohrung"
+  | "Vollbohrung"
+  | "Seilkernbohrung";
 export type ProbenFlag = "GP" | "KP" | "SP" | "WP" | "BKB" | "KK-LV";
 
 export type TableRow = {

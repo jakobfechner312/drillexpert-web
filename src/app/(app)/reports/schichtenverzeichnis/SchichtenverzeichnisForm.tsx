@@ -2501,7 +2501,7 @@ export default function SchichtenverzeichnisForm({
       const rawDepths = Array.isArray(row.proben_tiefen)
         ? row.proben_tiefen.map((value) => String(value ?? ""))
         : [String(row.proben_tiefe ?? "")];
-      const normalizedDepths = (rawDepths.length ? rawDepths : [""]).slice(0, 10);
+      const normalizedDepths = rawDepths.length ? rawDepths : [""];
       const rawTypes = Array.isArray(row.proben_arten) ? row.proben_arten : [];
       const fallbackType = normalizeProbeType(rawTypes[0] ?? row.proben_art);
       const normalizedTypes = normalizedDepths.map((_, idx) =>
@@ -3848,7 +3848,7 @@ export default function SchichtenverzeichnisForm({
                   Schichtzeile {idx + 1}
                 </div>
                 <div className="flex gap-2">
-                  {isSchichtStep ? (
+                  {isSchichtStep || isProbenSptStep ? (
                   <button
                     type="button"
                     className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
@@ -3859,7 +3859,7 @@ export default function SchichtenverzeichnisForm({
                       })
                     }
                   >
-                    Nächste Schicht
+                    {isSchichtStep ? "Nächste Schicht" : "+ Schichtzeile"}
                   </button>
                   ) : null}
                   <button
@@ -4585,7 +4585,6 @@ export default function SchichtenverzeichnisForm({
                             const currentTypes = Array.isArray(next[idx].proben_arten)
                               ? [...next[idx].proben_arten]
                               : current.map(() => normalizeProbeType(next[idx].proben_art));
-                            if (current.length >= 10) return prev;
                             const defaultType = normalizeProbeType(currentTypes[0] ?? next[idx].proben_art);
                             const previousDepth = String(current[current.length - 1] ?? "");
                             const previousEnd = extractDepthEndValue(previousDepth);
@@ -4596,7 +4595,6 @@ export default function SchichtenverzeichnisForm({
                             return next;
                           })
                         }
-                        disabled={(row.proben_tiefen?.length ?? 1) >= 10}
                       >
                         + Probe
                       </button>
@@ -4626,7 +4624,6 @@ export default function SchichtenverzeichnisForm({
                     </div>
                   </div>
                   {(Array.isArray(row.proben_tiefen) ? row.proben_tiefen : [""])
-                    .slice(0, 10)
                     .map((_, i) => {
                       const depthValue = row.proben_tiefen?.[i] ?? "";
                       const splitDepth = splitDepthRange(depthValue);
