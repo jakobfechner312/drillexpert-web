@@ -118,6 +118,28 @@ export async function generateSchichtenverzeichnisPdf(
     if (normalized === "BG") return "BG";
     return "GP";
   };
+  function parseDepthNumeric(value: unknown): number | null {
+    const raw = String(value ?? "").trim();
+    if (!raw) return null;
+    if (/[a-zA-Z]/.test(raw)) return null;
+    const normalized = raw.replace(",", ".");
+    const match = normalized.match(/-?\d+(?:\.\d+)?/);
+    if (!match) return null;
+    const parsed = Number(match[0]);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  function formatDepthNumeric(value: number): string {
+    const fixed = Number.isInteger(value) ? value.toString() : value.toFixed(2).replace(/\.?0+$/, "");
+    return fixed.replace(".", ",");
+  }
+  function computeSptBisFromEntry(entry: { von_m?: string; schlag_1?: string; schlag_2?: string; schlag_3?: string }) {
+    const fromValue = parseDepthNumeric(entry?.von_m);
+    if (fromValue == null) return "";
+    const filledSegments = [entry?.schlag_1, entry?.schlag_2, entry?.schlag_3].filter(
+      (value) => String(value ?? "").trim() !== ""
+    ).length;
+    return formatDepthNumeric(fromValue + filledSegments * 0.15);
+  }
   const expandedSchichtRows = inputSchichtRows;
   const normalizedProbeRows = Array.isArray(data?.proben_rows) && data.proben_rows.length > 0
     ? data.proben_rows
@@ -522,28 +544,6 @@ export async function generateSchichtenverzeichnisPdf(
     if (normalized === "UP") return "UP";
     if (normalized === "BG") return "BG";
     return "GP";
-  };
-  const parseDepthNumeric = (value: unknown): number | null => {
-    const raw = String(value ?? "").trim();
-    if (!raw) return null;
-    if (/[a-zA-Z]/.test(raw)) return null;
-    const normalized = raw.replace(",", ".");
-    const match = normalized.match(/-?\d+(?:\.\d+)?/);
-    if (!match) return null;
-    const parsed = Number(match[0]);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-  const formatDepthNumeric = (value: number): string => {
-    const fixed = Number.isInteger(value) ? value.toString() : value.toFixed(2).replace(/\.?0+$/, "");
-    return fixed.replace(".", ",");
-  };
-  const computeSptBisFromEntry = (entry: { von_m?: string; schlag_1?: string; schlag_2?: string; schlag_3?: string }) => {
-    const fromValue = parseDepthNumeric(entry?.von_m);
-    if (fromValue == null) return "";
-    const filledSegments = [entry?.schlag_1, entry?.schlag_2, entry?.schlag_3].filter(
-      (value) => String(value ?? "").trim() !== ""
-    ).length;
-    return formatDepthNumeric(fromValue + filledSegments * 0.15);
   };
   const getProbeCounterBucket = (probeArt: string) => {
     if (probeArt === "EP") return "KP";
