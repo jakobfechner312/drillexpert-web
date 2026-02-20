@@ -54,6 +54,7 @@ export type ProbenFlag = "GP" | "KP" | "SP" | "WP" | "BKB" | "KK-LV";
 
 export type TableRow = {
   boNr: string;
+  schappeDurchmesser?: string;
   gebohrtVon: string;
   gebohrtBis: string;
   verrohrtVon: string;
@@ -111,6 +112,7 @@ export type PegelAusbauRow = {
   pegelDm: string;
   ausbauArtType: "filter" | "vollrohr" | "stahlaufsatz" | "individuell" | "";
   ausbauArtCustom: string;
+  schlitzweiteSwMm: string;
 
   // ROHRE
   sumpfVon: string;

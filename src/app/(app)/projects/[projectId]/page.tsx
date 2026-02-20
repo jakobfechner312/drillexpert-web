@@ -279,6 +279,13 @@ export default function ProjectDetailPage() {
   const [filesLoading, setFilesLoading] = useState(false);
   const [filesErr, setFilesErr] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [renameFileOpen, setRenameFileOpen] = useState(false);
+  const [renameFileSourceName, setRenameFileSourceName] = useState("");
+  const [renameFileBaseName, setRenameFileBaseName] = useState("");
+  const [renameFileExtension, setRenameFileExtension] = useState("");
+  const [renamingFile, setRenamingFile] = useState(false);
+  const renameUploadBackdropPressRef = useRef(false);
+  const renameFileBackdropPressRef = useRef(false);
   const [renameUploadOpen, setRenameUploadOpen] = useState(false);
   const [pendingUploadFiles, setPendingUploadFiles] = useState<PendingUploadFile[]>([]);
   const maxFileSizeMb = 25;
@@ -1573,6 +1580,61 @@ export default function ProjectDetailPage() {
     await uploadFiles(items);
   };
 
+  const openRenameFileDialog = (name: string) => {
+    const parts = splitFilename(name);
+    setRenameFileSourceName(name);
+    setRenameFileBaseName(parts.baseName);
+    setRenameFileExtension(parts.extension);
+    setRenameFileOpen(true);
+  };
+
+  const submitRenameFile = async () => {
+    const sourceName = String(renameFileSourceName ?? "").trim();
+    if (!sourceName) {
+      setRenameFileOpen(false);
+      return;
+    }
+    const cleanBase = String(renameFileBaseName ?? "").trim();
+    if (!cleanBase) {
+      setFilesErr("Dateiname darf nicht leer sein.");
+      return;
+    }
+    const targetName = renameFileExtension ? `${cleanBase}.${renameFileExtension}` : cleanBase;
+    if (targetName === sourceName) {
+      setRenameFileOpen(false);
+      return;
+    }
+
+    setRenamingFile(true);
+    setFilesErr(null);
+    const supabase = createClient();
+    const { error } = await supabase
+      .storage
+      .from("dropData")
+      .move(`${projectId}/${sourceName}`, `${projectId}/${targetName}`);
+
+    if (error) {
+      setFilesErr("Umbenennen fehlgeschlagen: " + error.message);
+      setRenamingFile(false);
+      return;
+    }
+
+    const { data: fileListNew, error: fileErr } = await supabase.storage
+      .from("dropData")
+      .list(`${projectId}/`, { limit: 200, offset: 0 });
+    if (fileErr) {
+      setFilesErr("Dateien laden fehlgeschlagen: " + fileErr.message);
+    } else {
+      setFiles((fileListNew ?? []) as ProjectFile[]);
+    }
+
+    setRenamingFile(false);
+    setRenameFileOpen(false);
+    setRenameFileSourceName("");
+    setRenameFileBaseName("");
+    setRenameFileExtension("");
+  };
+
   const openFile = async (name: string) => {
     const supabase = createClient();
     const { data, error } = await supabase.storage
@@ -2433,6 +2495,13 @@ export default function ProjectDetailPage() {
                         </button>
                         <button
                           type="button"
+                          className="btn btn-secondary btn-xs"
+                          onClick={() => openRenameFileDialog(item.name)}
+                        >
+                          Umbenennen
+                        </button>
+                        <button
+                          type="button"
                           className="btn btn-danger btn-xs"
                           onClick={() => deleteFile(item.name)}
                         >
@@ -2451,11 +2520,15 @@ export default function ProjectDetailPage() {
       {renameUploadOpen && (
         <div
           className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4"
+          onMouseDown={(e) => {
+            renameUploadBackdropPressRef.current = e.target === e.currentTarget;
+          }}
           onClick={(e) => {
-            if (e.target === e.currentTarget) {
+            if (e.target === e.currentTarget && renameUploadBackdropPressRef.current) {
               setRenameUploadOpen(false);
               setPendingUploadFiles([]);
             }
+            renameUploadBackdropPressRef.current = false;
           }}
         >
           <div className="mx-auto my-6 w-full max-w-2xl rounded-2xl bg-white shadow-xl">
@@ -2528,6 +2601,73 @@ export default function ProjectDetailPage() {
                 disabled={uploading || pendingUploadFiles.length === 0}
               >
                 {uploading ? "Lädt…" : "Mit diesen Namen hochladen"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {renameFileOpen && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4"
+          onMouseDown={(e) => {
+            renameFileBackdropPressRef.current = e.target === e.currentTarget;
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && renameFileBackdropPressRef.current && !renamingFile) {
+              setRenameFileOpen(false);
+            }
+            renameFileBackdropPressRef.current = false;
+          }}
+        >
+          <div className="mx-auto my-6 w-full max-w-xl rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">Datei umbenennen</h3>
+                <p className="text-xs text-slate-500">Nur der Name vor der Endung wird geändert.</p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                onClick={() => setRenameFileOpen(false)}
+                disabled={renamingFile}
+              >
+                Schließen
+              </button>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <div className="text-xs text-slate-500">Aktuell: {renameFileSourceName}</div>
+              <div className="flex items-center gap-2">
+                <input
+                  className="w-full rounded-xl border p-3"
+                  value={renameFileBaseName}
+                  onChange={(e) => setRenameFileBaseName(e.target.value)}
+                  placeholder="Neuer Dateiname"
+                  disabled={renamingFile}
+                />
+                {renameFileExtension ? (
+                  <span className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">
+                    .{renameFileExtension}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setRenameFileOpen(false)}
+                disabled={renamingFile}
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={submitRenameFile}
+                disabled={renamingFile}
+              >
+                {renamingFile ? "Speichere…" : "Umbenennen"}
               </button>
             </div>
           </div>

@@ -55,6 +55,7 @@ export function createDefaultTagesbericht(): Tagesbericht {
     tableRows: [
       {
         boNr: "",
+        schappeDurchmesser: "",
         gebohrtVon: "",
         gebohrtBis: "",
         verrohrtVon: "",
@@ -118,6 +119,7 @@ export function createDefaultTagesbericht(): Tagesbericht {
         pegelDm: "",
         ausbauArtType: "",
         ausbauArtCustom: "",
+        schlitzweiteSwMm: "",
 
         // ROHRE
         sumpfVon: "",

@@ -26,6 +26,7 @@ import { RHEIN_MAIN_LINK_PROJECT_ID } from "@/lib/reportAccess";
 function emptyTableRow(): TableRow {
   return {
     boNr: "",
+    schappeDurchmesser: "",
     gebohrtVon: "",
     gebohrtBis: "",
     verrohrtVon: "",
@@ -110,16 +111,21 @@ const RML_BOHRHELFER_OPTIONS = [
   "Daniel Reglin",
   "Maxi Flegler",
 ] as const;
+const RML_BOHRHELFER_CUSTOM_VALUE = "__custom__";
+const RML_DEVICE_CODE_OPTIONS = ["DE1", "DE2", "DE3", "DE4", "DE5"] as const;
 const RML_KRONE_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509", "700", "800", "1.180", "1.500"] as const;
+const RML_VERROHRUNG_DM_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
 const RML_VERFUELLUNG_OPTIONS = ["Tonformling", "Sand", "Kies", "Zement-Bentonit", "ortsuebliches Material", "Beton", "Individuell"] as const;
 const RML_BOHRVERFAHREN_OPTIONS = [
   "Rammkernbohrung",
   "Rotationsbohrung",
   "Vollbohrung",
 ] as const;
+const RML_SCHAPPE_DURCHMESSER_OPTIONS = ["120", "140", "160", "180"] as const;
 const RML_AUFSCHLUSS_KRONE_146_TO_509 = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
 const RML_AUFSCHLUSS_KRONE_178_TO_509 = ["178", "220", "273", "324", "368", "419", "509"] as const;
 const PEGEL_DM_OPTIONS = ['2"', '3"', '4"', '5"', '6"'] as const;
+const RML_SW_MM_OPTIONS = ["0,3", "0,5", "0,75", "1,0", "1,5"] as const;
 const BG_CHECK_OPTIONS = [
   "Betriebsflüssigkeiten",
   "Schmierung",
@@ -148,6 +154,10 @@ const isKnownDeviceOption = (value: unknown): value is (typeof DEVICE_OPTIONS)[n
   typeof value === "string" && DEVICE_OPTIONS.includes(value as (typeof DEVICE_OPTIONS)[number]);
 const isKnownRmlBohrhelferOption = (value: unknown): value is (typeof RML_BOHRHELFER_OPTIONS)[number] =>
   typeof value === "string" && RML_BOHRHELFER_OPTIONS.includes(value as (typeof RML_BOHRHELFER_OPTIONS)[number]);
+const isCustomRmlBohrhelferName = (value: unknown): boolean => {
+  const normalized = String(value ?? "").trim();
+  return normalized.length > 0 && !isKnownRmlBohrhelferOption(normalized);
+};
 const parsePositiveInteger = (value: unknown): number | null => {
   const raw = String(value ?? "").trim();
   if (!raw) return null;
@@ -155,6 +165,46 @@ const parsePositiveInteger = (value: unknown): number | null => {
   if (!Number.isFinite(parsed) || parsed < 1) return null;
   return parsed;
 };
+const parseRmlDeviceSlots = (value: unknown): Array<{ code: string; label: string }> => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return [];
+  const matched: Array<{ index: number; label: string }> = [];
+  const regex = /DE\s*(\d+)\s*\(([^)]+)\)/gi;
+  let match: RegExpExecArray | null = regex.exec(raw);
+  while (match) {
+    const index = Number.parseInt(match[1] ?? "", 10);
+    const label = String(match[2] ?? "").trim();
+    if (Number.isFinite(index) && index >= 1 && label) {
+      matched.push({ index, label });
+    }
+    match = regex.exec(raw);
+  }
+  if (matched.length > 0) {
+    matched.sort((a, b) => a.index - b.index);
+    return matched.map((entry) => ({
+      code: `DE${Math.min(5, Math.max(1, entry.index))}`,
+      label: entry.label,
+    }));
+  }
+  const commaSplit = raw.split(",").map((item) => item.trim()).filter(Boolean);
+  return commaSplit.map((item, idx) => {
+    const prefixed = item.match(/DE\s*\d+\s*\(([^)]+)\)/i);
+    const extracted = String(prefixed?.[1] ?? "").trim();
+    return {
+      code: RML_DEVICE_CODE_OPTIONS[Math.min(RML_DEVICE_CODE_OPTIONS.length - 1, idx)],
+      label: extracted || item,
+    };
+  });
+};
+const formatRmlDeviceSlots = (slots: Array<{ code: string; label: string }>): string =>
+  slots
+    .map((entry, idx) => ({
+      code: String(entry.code ?? "").trim() || RML_DEVICE_CODE_OPTIONS[Math.min(idx, RML_DEVICE_CODE_OPTIONS.length - 1)],
+      label: String(entry.label ?? "").trim(),
+    }))
+    .filter((entry) => entry.label.length > 0)
+    .map((entry) => `${entry.code} (${entry.label})`)
+    .join(", ");
 const getRmlAufschlussKronenOptions = (bohrverfahren: unknown): readonly string[] => {
   const value = String(bohrverfahren ?? "").trim();
   if (value === "Rotationsbohrung") return ["146"];
@@ -198,6 +248,7 @@ function emptyPegelAusbauRow(): PegelAusbauRow {
     pegelDm: "",
     ausbauArtType: "",
     ausbauArtCustom: "",
+    schlitzweiteSwMm: "",
 
     // ROHRE
     sumpfVon: "",
@@ -886,6 +937,7 @@ export default function TagesberichtForm({
   const reportTitleLabel = formTitle ?? (reportType === "tagesbericht_rhein_main_link" ? "Tagesbericht Rhein-Main-Link" : "Tagesbericht");
   const [customCycleDraft, setCustomCycleDraft] = useState<Record<string, string>>({});
   const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
+  const [rmlBohrhelferCustomMode, setRmlBohrhelferCustomMode] = useState<Record<number, boolean>>({});
   const [expandedLines, setExpandedLines] = useState<Record<string, boolean>>({});
   const [rmlOrtSuggestions, setRmlOrtSuggestions] = useState<GeoSuggestion[]>([]);
   const [umsetzenSuggestions, setUmsetzenSuggestions] = useState<Record<string, GeoSuggestion[]>>({});
@@ -901,6 +953,7 @@ export default function TagesberichtForm({
   const pegelRohrInitCountRef = useRef(0);
   const pegelVerfuellungInitCountRef = useRef(0);
   const [clientSigEnabled, setClientSigEnabled] = useState(false);
+  const [rmlDeviceCodeDraft, setRmlDeviceCodeDraft] = useState<string>("DE1");
   const isRml = reportType === "tagesbericht_rhein_main_link";
   const useStepper = stepper;
   const steps = useMemo(
@@ -1230,7 +1283,7 @@ export default function TagesberichtForm({
         if (!Array.isArray(helperList)) return;
         normalized[userKey] = helperList
           .map((v) => String(v ?? "").trim())
-          .filter((v) => isKnownRmlBohrhelferOption(v));
+          .filter((v) => v.length > 0);
       });
       rmlBohrhelferHistoryByUserRef.current = normalized;
     } catch {
@@ -1729,16 +1782,11 @@ export default function TagesberichtForm({
 
           title = `${auftragsnummer}_${name}_${datum}`;
         } else if (reportType === "tagesbericht_rhein_main_link") {
-          const geraeteRaw = String(reportForSave?.vehicles ?? "");
-          const geraeteCount = geraeteRaw
-            .split(",")
-            .map((v) => v.trim())
-            .filter(Boolean).length;
-          const deCount = Math.max(1, geraeteCount);
+          const deCode = parseRmlDeviceSlots(reportForSave?.device)?.[0]?.code || "DE1";
           const datum = normalizeTitlePart(reportForSave?.date);
           const bohrung = normalizeTitlePart(reportForSave?.bohrungNr);
           const safeBohrung = bohrung || "Bohrung";
-          title = `BTB_DE${deCount}_${datum}_${safeBohrung}`;
+          title = `BTB_${deCode}_${datum}_${safeBohrung}`;
         } else {
           title =
             reportForSave?.project?.trim()
@@ -2257,6 +2305,7 @@ if (mode === "edit") {
             ...emptyTableRow(),
             verrohrtFlags: [bohrverfahren],
             boNr: bohrkrone,
+            schappeDurchmesser: bohrverfahren === "Rammkernbohrung" ? "140" : "",
             gebohrtVon: von,
             gebohrtBis: bis,
             verrohrtVon: bis,
@@ -2556,10 +2605,21 @@ if (mode === "edit") {
         const bohrverfahren = String(row.verrohrtFlags?.[0] ?? "").trim();
         const allowedKronen = getRmlAufschlussKronenOptions(bohrverfahren);
         const currentKrone = String(row.boNr ?? "").trim();
-        if (!allowedKronen.length) return row;
-        if (currentKrone && allowedKronen.includes(currentKrone)) return row;
+        const shouldClearSchappe =
+          bohrverfahren !== "Rammkernbohrung" && String(row.schappeDurchmesser ?? "").trim().length > 0;
+        if (!allowedKronen.length) {
+          if (!shouldClearSchappe) return row;
+          changed = true;
+          return { ...row, schappeDurchmesser: "" };
+        }
+        const needsKroneFix = !(currentKrone && allowedKronen.includes(currentKrone));
+        if (!needsKroneFix && !shouldClearSchappe) return row;
         changed = true;
-        return { ...row, boNr: allowedKronen[0] ?? "" };
+        return {
+          ...row,
+          boNr: needsKroneFix ? (allowedKronen[0] ?? "") : row.boNr,
+          schappeDurchmesser: shouldClearSchappe ? "" : row.schappeDurchmesser,
+        };
       });
       if (!changed) return prev;
       return { ...prev, tableRows: nextRows };
@@ -3135,8 +3195,33 @@ if (mode === "edit") {
     });
   }, [isRml, mode, currentUserId, currentUserEmail]);
 
+  const rmlDeviceSelection = useMemo(() => {
+    const parsed = parseRmlDeviceSlots(report.device);
+    if (parsed.length > 0) return parsed[0];
+    return { code: rmlDeviceCodeDraft, label: "" };
+  }, [report.device, rmlDeviceCodeDraft]);
+
+  useEffect(() => {
+    if (!isRml) return;
+    const first = parseRmlDeviceSlots(report.device)[0];
+    if (!first?.code) return;
+    setRmlDeviceCodeDraft(first.code);
+  }, [isRml, report.device]);
+
+  const setRmlDeviceSelection = (patch: Partial<{ code: string; label: string }>) => {
+    if (patch.code) setRmlDeviceCodeDraft(String(patch.code));
+    const next = {
+      code: String(patch.code ?? rmlDeviceSelection.code ?? "DE1"),
+      label: String(patch.label ?? rmlDeviceSelection.label ?? ""),
+    };
+    update("device", formatRmlDeviceSlots([next]));
+  };
+
   const setBohrhelferNameAt = (helperIndex: number, name: string) => {
     setWorkerNameAt(helperIndex + 1, name);
+  };
+  const setBohrhelferCustomModeAt = (helperIndex: number, enabled: boolean) => {
+    setRmlBohrhelferCustomMode((prev) => ({ ...prev, [helperIndex]: enabled }));
   };
   const addBohrhelfer = () => {
     setReport((p) => {
@@ -3360,6 +3445,9 @@ if (mode === "edit") {
       if (workMinutes > 6 * 60) return 30;
       return 0;
     };
+    const roundToQuarter = (minutes: number) => Math.round(minutes / 15) * 15;
+    const ceilToQuarter = (minutes: number) => Math.ceil(minutes / 15) * 15;
+    const floorToQuarter = (minutes: number) => Math.floor(minutes / 15) * 15;
 
     const workRows = Array.isArray(source.workTimeRows) ? [...source.workTimeRows] : [];
     const breakRows = Array.isArray(source.breakRows) ? [...source.breakRows] : [];
@@ -3391,8 +3479,20 @@ if (mode === "edit") {
       const label = String(work.name ?? breakRow.name ?? `Zeile ${i + 1}`).trim() || `Zeile ${i + 1}`;
       warnings.push(`${label}: ${Math.round(workMinutes / 60)}h -> mindestens ${requiredBreak} min Pause`);
 
-      const nextBreakTo = workTo;
-      const nextBreakFrom = Math.max(workFrom, nextBreakTo - requiredBreak);
+      // Place the auto-added break in the middle, but snap it to quarter-hour times.
+      const centeredStart = Math.floor((workFrom + workTo - requiredBreak) / 2);
+      const earliestQuarterStart = ceilToQuarter(workFrom);
+      const latestQuarterStart = floorToQuarter(workTo - requiredBreak);
+      let nextBreakFrom: number;
+      if (earliestQuarterStart <= latestQuarterStart) {
+        nextBreakFrom = roundToQuarter(centeredStart);
+        if (nextBreakFrom < earliestQuarterStart) nextBreakFrom = earliestQuarterStart;
+        if (nextBreakFrom > latestQuarterStart) nextBreakFrom = latestQuarterStart;
+      } else {
+        // Fallback if no full quarter-aligned window exists (should be rare).
+        nextBreakFrom = Math.max(workFrom, Math.min(centeredStart, workTo - requiredBreak));
+      }
+      const nextBreakTo = nextBreakFrom + requiredBreak;
       breakRows[i] = {
         ...breakRow,
         name: String(breakRow.name ?? work.name ?? ""),
@@ -3900,21 +4000,34 @@ if (mode === "edit") {
                           onClick={(e) => openNativePicker(e.currentTarget)}
                         />
                       </label>
-                      <label className="space-y-1">
+                      <div className="space-y-2 md:col-span-2">
                         <span className="text-sm text-slate-600">Bohrgerät</span>
-                        <select
-                          className="w-full rounded-xl border p-3"
-                          value={report.device ?? ""}
-                          onChange={(e) => update("device", e.target.value)}
-                        >
-                          <option value="">Bitte wählen…</option>
-                          {DEVICE_OPTIONS.map((device) => (
-                            <option key={device} value={device}>
-                              {device}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                        <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2">
+                          <select
+                            className="w-full rounded-xl border p-3 bg-slate-50 text-slate-700"
+                            value={rmlDeviceSelection.code}
+                            onChange={(e) => setRmlDeviceSelection({ code: e.target.value })}
+                          >
+                            {RML_DEVICE_CODE_OPTIONS.map((code) => (
+                              <option key={code} value={code}>
+                                {code}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            className="w-full rounded-xl border p-3"
+                            value={rmlDeviceSelection.label}
+                            onChange={(e) => setRmlDeviceSelection({ label: e.target.value })}
+                          >
+                            <option value="">Bitte wählen…</option>
+                            {DEVICE_OPTIONS.map((device) => (
+                              <option key={device} value={device}>
+                                {device}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
                       <label className="space-y-1">
                         <span className="text-sm text-slate-600">PLZ</span>
                         <input
@@ -4191,22 +4304,44 @@ if (mode === "edit") {
                         </div>
                         <div className="space-y-2">
                           {bohrhelferNames.map((name, idx) => (
-                            <select
-                              key={idx}
-                              className="w-full rounded-xl border p-3"
-                              value={name}
-                              onChange={(e) => setBohrhelferNameAt(idx, e.target.value)}
-                            >
-                              <option value="">{`Bohrhelfer ${idx + 1} wählen...`}</option>
-                              {name && !isKnownRmlBohrhelferOption(name) ? (
-                                <option value={name}>{name}</option>
+                            <div key={idx} className="space-y-2">
+                              <select
+                                className="w-full rounded-xl border p-3"
+                                value={
+                                  isKnownRmlBohrhelferOption(name)
+                                    ? name
+                                    : isCustomRmlBohrhelferName(name) || rmlBohrhelferCustomMode[idx]
+                                      ? RML_BOHRHELFER_CUSTOM_VALUE
+                                      : ""
+                                }
+                                onChange={(e) => {
+                                  const selected = e.target.value;
+                                  if (selected === RML_BOHRHELFER_CUSTOM_VALUE) {
+                                    setBohrhelferCustomModeAt(idx, true);
+                                    if (isKnownRmlBohrhelferOption(name)) setBohrhelferNameAt(idx, "");
+                                    return;
+                                  }
+                                  setBohrhelferCustomModeAt(idx, false);
+                                  setBohrhelferNameAt(idx, selected);
+                                }}
+                              >
+                                <option value="">{`Bohrhelfer ${idx + 1} wählen...`}</option>
+                                {RML_BOHRHELFER_OPTIONS.map((helper) => (
+                                  <option key={helper} value={helper}>
+                                    {helper}
+                                  </option>
+                                ))}
+                                <option value={RML_BOHRHELFER_CUSTOM_VALUE}>Individuell...</option>
+                              </select>
+                              {(isCustomRmlBohrhelferName(name) || rmlBohrhelferCustomMode[idx]) ? (
+                                <input
+                                  className="w-full rounded-xl border p-3"
+                                  placeholder={`Bohrhelfer ${idx + 1} (individuell)`}
+                                  value={name ?? ""}
+                                  onChange={(e) => setBohrhelferNameAt(idx, e.target.value)}
+                                />
                               ) : null}
-                              {RML_BOHRHELFER_OPTIONS.map((helper) => (
-                                <option key={helper} value={helper}>
-                                  {helper}
-                                </option>
-                              ))}
-                            </select>
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -4524,31 +4659,49 @@ if (mode === "edit") {
                     {safeTableRows.map((row, i) => {
                       const aufschlussValue = (row.verrohrtFlags?.[0] ?? "") as VerrohrtFlag | "";
                       const allowedAufschlussKronen = getRmlAufschlussKronenOptions(aufschlussValue);
+                      const isRammkern = aufschlussValue === "Rammkernbohrung";
                       return (
                         <div key={i} className="grid grid-cols-12 gap-2 rounded-xl border border-slate-200 bg-white p-2">
-                          <select
-                            className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-4"
-                            value={aufschlussValue}
-                            onChange={(e) => {
-                              const next = e.target.value as VerrohrtFlag | "";
-                              const allowedKronen = getRmlAufschlussKronenOptions(next);
-                              const currentKrone = String(row.boNr ?? "").trim();
-                              const nextKrone = allowedKronen.includes(currentKrone)
-                                ? currentKrone
-                                : (allowedKronen[0] ?? "");
-                              setRow(i, {
-                                verrohrtFlags: next ? [next] : [],
-                                boNr: nextKrone,
-                              });
-                            }}
-                          >
-                            <option value="">Bitte wählen...</option>
-                            {RML_BOHRVERFAHREN_OPTIONS.map((opt) => (
-                              <option key={opt} value={opt}>
-                                {opt}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="col-span-12 grid grid-cols-1 gap-2 md:col-span-4 md:grid-cols-2">
+                            <select
+                              className={isRammkern ? "rounded-lg border px-3 py-2 text-sm md:col-span-1" : "rounded-lg border px-3 py-2 text-sm md:col-span-2"}
+                              value={aufschlussValue}
+                              onChange={(e) => {
+                                const next = e.target.value as VerrohrtFlag | "";
+                                const allowedKronen = getRmlAufschlussKronenOptions(next);
+                                const currentKrone = String(row.boNr ?? "").trim();
+                                const nextKrone = allowedKronen.includes(currentKrone)
+                                  ? currentKrone
+                                  : (allowedKronen[0] ?? "");
+                                setRow(i, {
+                                  verrohrtFlags: next ? [next] : [],
+                                  boNr: nextKrone,
+                                  schappeDurchmesser: next === "Rammkernbohrung" ? (row.schappeDurchmesser ?? "") : "",
+                                });
+                              }}
+                            >
+                              <option value="">Bitte wählen...</option>
+                              {RML_BOHRVERFAHREN_OPTIONS.map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+                            {isRammkern ? (
+                              <select
+                                className="rounded-lg border px-3 py-2 text-sm"
+                                value={row.schappeDurchmesser ?? ""}
+                                onChange={(e) => setRow(i, { schappeDurchmesser: e.target.value })}
+                              >
+                                <option value="">Schappe-Durchmesser</option>
+                                {RML_SCHAPPE_DURCHMESSER_OPTIONS.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : null}
+                          </div>
                           <select
                             className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-2"
                             value={row.boNr ?? ""}
@@ -4868,7 +5021,7 @@ if (mode === "edit") {
                       onChange={(e) => setVerrohrungRow(i, { diameter: e.target.value })}
                     >
                       <option value="">Bitte wählen...</option>
-                      {RML_KRONE_OPTIONS.map((opt) => (
+                      {RML_VERROHRUNG_DM_OPTIONS.map((opt) => (
                         <option key={opt} value={opt}>
                           {opt}
                         </option>
@@ -4938,9 +5091,10 @@ if (mode === "edit") {
               disableAdd={safePegel.length >= MAX_PEGEL_ROWS}
             />
             <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
-              <div className="col-span-12 md:col-span-4">Ausbau-Art</div>
-              <div className="col-span-12 md:col-span-4 normal-case">von (m)</div>
-              <div className="col-span-12 md:col-span-4 normal-case">bis (m)</div>
+              <div className="col-span-12 md:col-span-3">Ausbau-Art</div>
+              <div className="col-span-12 md:col-span-3 normal-case">Schlitzweite (SW)</div>
+              <div className="col-span-12 md:col-span-3 normal-case">von (m)</div>
+              <div className="col-span-12 md:col-span-3 normal-case">bis (m)</div>
             </div>
             <div className="space-y-2">
               {safePegel.map((row, i) => {
@@ -4976,13 +5130,14 @@ if (mode === "edit") {
                 return (
                   <div key={i} className="grid grid-cols-12 gap-2 rounded-xl border border-slate-200 bg-white p-2">
                     <select
-                      className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-4"
+                      className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-3"
                       value={ausbauArt}
                       onChange={(e) => {
                         const nextArt = e.target.value as "filter" | "vollrohr" | "stahlaufsatz" | "individuell";
                         if (nextArt === "stahlaufsatz") {
                           updatePegel(i, {
                             ausbauArtType: "stahlaufsatz",
+                            schlitzweiteSwMm: "",
                             filterVon: "",
                             filterBis: "",
                             rohrePvcVon: "",
@@ -4995,6 +5150,7 @@ if (mode === "edit") {
                         if (nextArt === "vollrohr") {
                           updatePegel(i, {
                             ausbauArtType: "vollrohr",
+                            schlitzweiteSwMm: "",
                             filterVon: "",
                             filterBis: "",
                             rohrePvcVon: fromValue,
@@ -5007,6 +5163,7 @@ if (mode === "edit") {
                         if (nextArt === "individuell") {
                           updatePegel(i, {
                             ausbauArtType: "individuell",
+                            schlitzweiteSwMm: "",
                             filterVon: fromValue,
                             filterBis: toValue,
                             rohrePvcVon: "",
@@ -5033,8 +5190,26 @@ if (mode === "edit") {
                       <option value="stahlaufsatz">Stahlaufsatz</option>
                       <option value="individuell">Individuell</option>
                     </select>
+                    {ausbauArt === "filter" ? (
+                      <select
+                        className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-3"
+                        value={row.schlitzweiteSwMm ?? ""}
+                        onChange={(e) => updatePegel(i, { schlitzweiteSwMm: e.target.value })}
+                      >
+                        <option value="">Bitte wählen...</option>
+                        {RML_SW_MM_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="col-span-12 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-400 md:col-span-3">
+                        -
+                      </div>
+                    )}
                     <input
-                      className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-4"
+                      className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-3"
                       value={fromValue}
                       onChange={(e) => {
                         const nextFrom = e.target.value;
@@ -5051,7 +5226,7 @@ if (mode === "edit") {
                       placeholder="von"
                     />
                     <input
-                      className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-4"
+                      className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-3"
                       value={toValue}
                       onChange={(e) => {
                         const nextTo = e.target.value;
@@ -6911,54 +7086,55 @@ if (mode === "edit") {
             >
               Speichern
             </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => {
-                const legalBreakCheck = enforceLegalBreakRules(reportRef.current);
-                if (legalBreakCheck.warnings.length > 0) {
-                  const preview = legalBreakCheck.warnings.slice(0, 4).join("\n");
-                  const suffix =
-                    legalBreakCheck.warnings.length > 4
-                      ? `\n+ ${legalBreakCheck.warnings.length - 4} weitere Zeile(n)`
-                      : "";
-                  const ok = window.confirm(
-                    `Gesetzliche Pausenregel nicht erfüllt:\n${preview}${suffix}\n\nAutomatisch ergänzen und weiter?`
-                  );
-                  if (!ok) {
-                    alert("Weiter abgebrochen. Bitte Pausen ergänzen.");
-                    return;
+            {stepIndex < steps.length - 1 ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const legalBreakCheck = enforceLegalBreakRules(reportRef.current);
+                  if (legalBreakCheck.warnings.length > 0) {
+                    const preview = legalBreakCheck.warnings.slice(0, 4).join("\n");
+                    const suffix =
+                      legalBreakCheck.warnings.length > 4
+                        ? `\n+ ${legalBreakCheck.warnings.length - 4} weitere Zeile(n)`
+                        : "";
+                    const ok = window.confirm(
+                      `Gesetzliche Pausenregel nicht erfüllt:\n${preview}${suffix}\n\nAutomatisch ergänzen und weiter?`
+                    );
+                    if (!ok) {
+                      alert("Weiter abgebrochen. Bitte Pausen ergänzen.");
+                      return;
+                    }
+                    reportRef.current = legalBreakCheck.report;
+                    setReport(legalBreakCheck.report);
                   }
-                  reportRef.current = legalBreakCheck.report;
-                  setReport(legalBreakCheck.report);
-                }
-                if (!isRml && stepIndex === 4) {
-                  const invalid = safeWorkers.some((w) => hasInvalidStunden(w));
-                  if (invalid) {
-                    alert("Nur Viertelstunden erlaubt (z.B. 0.25, 0.5, 0.75).");
-                    return;
+                  if (!isRml && stepIndex === 4) {
+                    const invalid = safeWorkers.some((w) => hasInvalidStunden(w));
+                    if (invalid) {
+                      alert("Nur Viertelstunden erlaubt (z.B. 0.25, 0.5, 0.75).");
+                      return;
+                    }
+                    if (
+                      report.workCyclesSame &&
+                      (!areTimeRowsUniform(Array.isArray(report.workTimeRows) ? report.workTimeRows : []) ||
+                        !areTimeRowsUniform(Array.isArray(report.breakRows) ? report.breakRows : []))
+                    ) {
+                      alert("Alle Arbeitstakte gleich ist nur möglich, wenn Arbeitszeiten und Pausen identisch sind.");
+                      return;
+                    }
+                    const mismatches = safeWorkers.filter((w, idx) => isWorkerMismatch(w, idx));
+                    if (mismatches.length > 0) {
+                      alert("Arbeitszeit/Pausen stimmen nicht mit den Takt-Stunden überein.");
+                      return;
+                    }
                   }
-                  if (
-                    report.workCyclesSame &&
-                    (!areTimeRowsUniform(Array.isArray(report.workTimeRows) ? report.workTimeRows : []) ||
-                      !areTimeRowsUniform(Array.isArray(report.breakRows) ? report.breakRows : []))
-                  ) {
-                    alert("Alle Arbeitstakte gleich ist nur möglich, wenn Arbeitszeiten und Pausen identisch sind.");
-                    return;
-                  }
-                  const mismatches = safeWorkers.filter((w, idx) => isWorkerMismatch(w, idx));
-                  if (mismatches.length > 0) {
-                    alert("Arbeitszeit/Pausen stimmen nicht mit den Takt-Stunden überein.");
-                    return;
-                  }
-                }
-                void saveDraftToServer();
-                setStepIndexKeepingScroll((i) => Math.min(steps.length - 1, i + 1));
-              }}
-              disabled={stepIndex >= steps.length - 1}
-            >
-              Weiter
-            </button>
+                  void saveDraftToServer();
+                  setStepIndexKeepingScroll((i) => Math.min(steps.length - 1, i + 1));
+                }}
+              >
+                Weiter
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

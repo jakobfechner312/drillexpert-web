@@ -392,9 +392,24 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     });
     if (!rowHasValue) continue;
     const y = tableYStart - i * tableYStep;
-
-    draw(r?.verrohrtFlags?.join("/") || "Spülung", tableCols.aufschluss, y, 7, 14);
-    draw(r?.boNr, tableCols.krone, y, 7, 12);
+    const bohrverfahren = String(r?.verrohrtFlags?.[0] ?? r?.verrohrtFlags?.join("/") ?? "").trim();
+    const schappeDm = String(r?.schappeDurchmesser ?? "").trim();
+    const aufschlussLabelMap: Record<string, string> = {
+      Rammkernbohrung: "Rammkern.",
+      Rotationsbohrung: "Rotations.",
+      Vollbohrung: "Vollbohrung",
+    };
+    const aufschlussLabel = aufschlussLabelMap[bohrverfahren] ?? (r?.verrohrtFlags?.join("/") || "Spülung");
+    if (bohrverfahren === "Rammkernbohrung" && schappeDm) {
+      // Two-line entry: start slightly higher to avoid clipping at top border.
+      draw("Rammkern.", tableCols.aufschluss, y + 6, 6.5, 14);
+      draw("Schappe", tableCols.aufschluss, y - 2, 6.5, 14);
+      draw(r?.boNr, tableCols.krone, y + 6, 6.5, 12);
+      draw(schappeDm, tableCols.krone, y - 2, 6.5, 12);
+    } else {
+      draw(aufschlussLabel, tableCols.aufschluss, y, 7, 14);
+      draw(r?.boNr, tableCols.krone, y, 7, 12);
+    }
     draw(r?.gebohrtVon, tableCols.tiefeVon, y, 7, 8);
     draw(r?.gebohrtBis, tableCols.tiefeBis, y, 7, 8);
     draw(r?.hindernisZeit ?? "", tableCols.besonderheiten, y, 6, 16);
@@ -419,7 +434,7 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   const lowerCols = {
     ausbauVon: 75,
     ausbauBis: tableCols.krone,
-    ausbauRohr: 200,
+    ausbauRohr: 175,
     verfVon: 264,
     verfBis: 330,
     verfMaterial: 368,
@@ -439,15 +454,26 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     });
     if (!rowHasValue) continue;
     const y = lowerYStart - i * lowerYStep;
-    const ausbauArt = p?.aufsatzStahlVon || p?.aufsatzStahlBis
+    const explicitType = String(p?.ausbauArtType ?? "").trim();
+    const customAusbauArt = String(p?.ausbauArtCustom ?? "").trim();
+    const ausbauArt = explicitType === "stahlaufsatz"
       ? "Stahlaufsatz"
-      : p?.rohrePvcVon || p?.rohrePvcBis
+      : explicitType === "vollrohr"
         ? "Vollrohr"
-        : "Filter";
+        : explicitType === "individuell"
+          ? (customAusbauArt || "Individuell")
+          : p?.aufsatzStahlVon || p?.aufsatzStahlBis
+            ? "Stahlaufsatz"
+            : p?.rohrePvcVon || p?.rohrePvcBis
+              ? "Vollrohr"
+              : customAusbauArt || "Filter";
+    const sw = String(p?.schlitzweiteSwMm ?? "").trim();
+    const isFilter = explicitType === "filter" || (!explicitType && ausbauArt === "Filter");
+    const ausbauLabel = isFilter && sw ? `${ausbauArt}, SW: ${sw} mm` : ausbauArt;
 
     draw(p?.filterVon, lowerCols.ausbauVon, y, 9, 8);
     draw(p?.filterBis, lowerCols.ausbauBis, y, 9, 8);
-    draw(ausbauArt, lowerCols.ausbauRohr, y, 9, 18);
+    draw(ausbauLabel, lowerCols.ausbauRohr, y, 9, 32);
 
     draw(p?.tonVon, lowerCols.verfVon, y, 9, 8);
     draw(p?.tonBis, lowerCols.verfBis, y, 9, 8);
