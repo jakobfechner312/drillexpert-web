@@ -328,12 +328,14 @@ const TimePickerInput = ({
   onOpenPicker,
   className,
   buttonLabel = "Zeit auswählen",
+  stepSeconds = 60,
 }: {
   value: string;
   onValueChange: (next: string) => void;
   onOpenPicker: (input: HTMLInputElement | null) => void;
   className?: string;
   buttonLabel?: string;
+  stepSeconds?: number;
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -342,7 +344,7 @@ const TimePickerInput = ({
       <input
         ref={inputRef}
         type="time"
-        step={60}
+        step={stepSeconds}
         className={[className ?? "", "pr-11"].filter(Boolean).join(" ")}
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
@@ -4057,6 +4059,7 @@ if (mode === "edit") {
                           value={safeWorkTimes[0]?.from ?? ""}
                           onValueChange={(next) => setWorkTimeRow(0, { from: next })}
                           onOpenPicker={openNativePicker}
+                          stepSeconds={900}
                         />
                       </label>
                       <label className="space-y-1">
@@ -4066,6 +4069,7 @@ if (mode === "edit") {
                           value={safeWorkTimes[0]?.to ?? ""}
                           onValueChange={(next) => setWorkTimeRow(0, { to: next })}
                           onOpenPicker={openNativePicker}
+                          stepSeconds={900}
                         />
                       </label>
                       <label className="space-y-1">
@@ -4075,6 +4079,7 @@ if (mode === "edit") {
                           value={safeBreaks[0]?.from ?? ""}
                           onValueChange={(next) => setBreakRow(0, { from: next })}
                           onOpenPicker={openNativePicker}
+                          stepSeconds={900}
                         />
                       </label>
                       <label className="space-y-1">
@@ -4084,6 +4089,7 @@ if (mode === "edit") {
                           value={safeBreaks[0]?.to ?? ""}
                           onValueChange={(next) => setBreakRow(0, { to: next })}
                           onOpenPicker={openNativePicker}
+                          stepSeconds={900}
                         />
                       </label>
                       <label className="space-y-1">
