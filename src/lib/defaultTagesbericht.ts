@@ -43,6 +43,11 @@ export function createDefaultTagesbericht(): Tagesbericht {
     transportRows: [
   { from: "", to: "", km: null, time: "" },],
 
+    // Rhein-Main-Link: Wasserspiegel ab GOK
+    waterLevelRows: [{ time: "", meters: "" }],
+    // Rhein-Main-Link: Verrohrung ab GOK
+    verrohrungRows: [{ diameter: "", meters: "" }],
+
 
     tableSectionsEnabled: { proben: true, versuche: true, verfuellung: true },
 

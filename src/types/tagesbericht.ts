@@ -21,6 +21,16 @@ export type TransportRow = {
   time: string;
 };
 
+export type WaterLevelRow = {
+  time: string;
+  meters: string;
+};
+
+export type VerrohrungRow = {
+  diameter: string;
+  meters: string;
+};
+
 export type UmsetzenRow = {
   von: string;
   auf: string;
@@ -193,6 +203,11 @@ export type Tagesbericht = {
 
   // Transport
   transportRows: TransportRow[];
+
+  // Rhein-Main-Link: Wasserspiegel ab GOK (mehrere Messpunkte)
+  waterLevelRows?: WaterLevelRow[];
+  // Rhein-Main-Link: Verrohrung ab GOK (Ø + Meter)
+  verrohrungRows?: VerrohrungRow[];
 
   // Ruhewasser / Entfernung
   ruhewasserVorArbeitsbeginnM: number | null;

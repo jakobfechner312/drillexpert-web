@@ -61,6 +61,7 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   const font = await pdf.embedFont(StandardFonts.Helvetica);
 
   const blue = rgb(0, 0, 1);
+  const black = rgb(0, 0, 0);
   const gridColor = rgb(0.75, 0.78, 0.82);
   const labelColor = rgb(0.42, 0.45, 0.5);
 
@@ -83,9 +84,113 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     while (size > 7 && font.widthOfTextAtSize(text, size) > maxWidth) size -= 0.5;
     page.drawText(text, { x, y, size, font, color: blue });
   };
+  const wrapTextByWidth = (raw: unknown, maxWidth: number, size = 7): string[] => {
+    const text = String(raw ?? "").trim();
+    if (!text) return [];
+    const rows: string[] = [];
+    const paragraphs = text.split(/\r?\n/);
+
+    for (const paragraphRaw of paragraphs) {
+      const paragraph = paragraphRaw.trim();
+      if (!paragraph) {
+        rows.push("");
+        continue;
+      }
+      const words = paragraph.split(/\s+/);
+      let line = "";
+      for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+          line = candidate;
+          continue;
+        }
+        if (line) rows.push(line);
+        line = word;
+      }
+      if (line) rows.push(line);
+    }
+    return rows;
+  };
+  const drawTemperatureMinMax = (minValue: unknown, maxValue: unknown, x: number, y: number, size = 10) => {
+    const minText = t(minValue, 12);
+    const maxText = t(maxValue, 12);
+    if (!minText && !maxText) return;
+
+    let cursorX = x;
+    const trackingTight = -0.7;
+    const drawPart = (text: string, color: ReturnType<typeof rgb>) => {
+      if (!text) return;
+      page.drawText(text, { x: cursorX, y, size, font, color });
+      cursorX += font.widthOfTextAtSize(text, size) + trackingTight;
+    };
+
+    if (minText) {
+      drawPart(minText, blue);
+      drawPart(" \u00b0C min", black);
+    }
+    if (minText && maxText) drawPart(" / ", black);
+    if (maxText) {
+      drawPart(maxText, blue);
+      drawPart(" \u00b0C max", black);
+    }
+  };
 
   const drawX = (x: number, y: number, size = 12) => {
     page.drawText("X", { x, y, size, font, color: blue });
+  };
+  const drawBohrrichtungMarker = (value: unknown) => {
+    const normalized = String(value ?? "")
+      .trim()
+      .toLowerCase();
+    const directionRanges: Record<string, { startX: number; endX: number }> = {
+      vertikal: { startX: 100, endX: 125 },
+      horizontal: { startX: 125, endX: 155 },
+      schraeg: { startX: 160, endX: 180 },
+      "schräg": { startX: 160, endX: 180 },
+    };
+    const range = directionRanges[normalized];
+    if (!range) return;
+    page.drawRectangle({
+      x: range.startX,
+      y: 677,
+      width: range.endX - range.startX,
+      height: 8,
+      color: blue,
+      opacity: 0.3,
+      borderOpacity: 0,
+    });
+  };
+  const drawSignatureFromDataUrl = async (
+    dataUrl: unknown,
+    box: { x: number; y: number; width: number; height: number }
+  ) => {
+    if (typeof dataUrl !== "string") return false;
+    const trimmed = dataUrl.trim();
+    if (!trimmed) return false;
+    const match = trimmed.match(/^data:image\/(png|jpe?g);base64,(.+)$/i);
+    if (!match) return false;
+
+    const format = match[1].toLowerCase();
+    const base64 = match[2];
+    const bytes = Buffer.from(base64, "base64");
+    const image =
+      format === "png"
+        ? await pdf.embedPng(bytes)
+        : await pdf.embedJpg(bytes);
+
+    const scale = Math.min(box.width / image.width, box.height / image.height);
+    const drawWidth = image.width * scale;
+    const drawHeight = image.height * scale;
+    const drawX = box.x + (box.width - drawWidth) / 2;
+    const drawY = box.y + (box.height - drawHeight) / 2;
+
+    page.drawImage(image, {
+      x: drawX,
+      y: drawY,
+      width: drawWidth,
+      height: drawHeight,
+    });
+    return true;
   };
 
   const drawGrid = (step = 50) => {
@@ -126,7 +231,7 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   };
 
   // Für Feinjustierung vorerst immer aktiv
-  drawGrid(50);
+  drawGrid(25);
 
   // Koordinatenblock RML (hier feinjustieren)
   const header = {
@@ -134,12 +239,12 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     bohrgeraet: { x: 125, y: 717 },
     plz: { x: 280, y: 718 },
     ort: { x: 365, y: 717 },
-    bohrungNr: { x: 165, y: 639 },
-    berichtNr: { x: 365, y: 639 },
-    zeitVon: { x: 620, y: 639 },
-    zeitBis: { x: 730, y: 639 },
-    pauseVon: { x: 676, y: 603 },
-    pauseBis: { x: 733, y: 603 },
+    bohrungNr: { x: 127, y: 696 },
+    berichtNr: { x: 300, y: 696 },
+    zeitVon: { x: 460, y: 698 },
+    zeitBis: { x: 525, y: 698 },
+    pauseVon: { x: 460, y: 680 },
+    pauseBis: { x: 525, y: 680 },
 
     bohrrichtung: { x: 145, y: 604 },
     winkelHorizontal: { x: 410, y: 604 },
@@ -147,12 +252,12 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
 
     wasserspiegelAbGok: { x: 165, y: 569 },
     verrohrungAbGok: { x: 445, y: 569 },
-    temperatur: { x: 625, y: 569 },
-    wetter: { x: 730, y: 569 },
+    temperatur: { x: 400, y: 661 },
+    wetter: { x: 500, y: 661 },
 
-    bohrmeister: { x: 625, y: 534 },
-    geraete: { x: 730, y: 534 },
-    bohrhelfer: { x: 625, y: 500 },
+    bohrmeister: { x: 401, y: 646 },
+    geraete: { x: 560, y: 534 },
+    bohrhelfer: { x: 401, y: 625 },
   } as const;
 
   draw(data?.date, header.date.x, header.date.y, 11, 20);
@@ -166,36 +271,95 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
 
   const wt = Array.isArray(data?.workTimeRows) ? data.workTimeRows : [];
   const pauses = Array.isArray(data?.breakRows) ? data.breakRows : [];
-  draw(wt[0]?.from, header.zeitVon.x, header.zeitVon.y, 10, 8);
-  draw(wt[0]?.to, header.zeitBis.x, header.zeitBis.y, 10, 8);
-  draw(pauses[0]?.from, header.pauseVon.x, header.pauseVon.y, 9, 8);
-  draw(pauses[0]?.to, header.pauseBis.x, header.pauseBis.y, 9, 8);
+  const rows = Array.isArray(data?.tableRows) ? data.tableRows : [];
+  const timeValueFontSize = 10;
+  draw(wt[0]?.from, header.zeitVon.x, header.zeitVon.y, timeValueFontSize, 8);
+  draw(wt[0]?.to, header.zeitBis.x, header.zeitBis.y, timeValueFontSize, 8);
+  draw(pauses[0]?.from, header.pauseVon.x, header.pauseVon.y, timeValueFontSize, 8);
+  draw(pauses[0]?.to, header.pauseBis.x, header.pauseBis.y, timeValueFontSize, 8);
 
-  draw(data?.bohrrichtung, header.bohrrichtung.x, header.bohrrichtung.y, 10, 36);
-  draw(data?.winkelHorizontal, header.winkelHorizontal.x, header.winkelHorizontal.y, 10, 10);
-  draw(data?.winkelNord, header.winkelNord.x, header.winkelNord.y, 10, 10);
+  drawBohrrichtungMarker(data?.bohrrichtung);
 
-  draw(data?.ruhewasserVorArbeitsbeginnM, header.wasserspiegelAbGok.x, header.wasserspiegelAbGok.y, 10, 10);
-  draw(data?.verrohrungAbGok ?? data?.tableRows?.[0]?.verrohrtVon, header.verrohrungAbGok.x, header.verrohrungAbGok.y, 10, 10);
-  draw(data?.weather?.tempMaxC, header.temperatur.x, header.temperatur.y, 10, 8);
+  const verrohrungLayout = {
+    diameterX: 238,
+    meterX: 303,
+    startY: 645,
+    rowStep: 14,
+    maxRows: 4,
+    fontSize: 9,
+  } as const;
+  const verrohrungRows = Array.isArray(data?.verrohrungRows) && data.verrohrungRows.length
+    ? data.verrohrungRows
+    : rows.map((row) => ({ diameter: row?.verrohrtBis, meters: row?.verrohrtVon }));
+  for (let i = 0; i < Math.min(verrohrungLayout.maxRows, verrohrungRows.length); i++) {
+    const row = verrohrungRows[i] ?? {};
+    const y = verrohrungLayout.startY - i * verrohrungLayout.rowStep;
+    draw(row?.diameter, verrohrungLayout.diameterX, y, verrohrungLayout.fontSize, 10);
+    draw(row?.meters, verrohrungLayout.meterX, y, verrohrungLayout.fontSize, 10);
+  }
+  const waterLevelRows = Array.isArray(data?.waterLevelRows) ? data.waterLevelRows : [];
+  const waterLevelLayout = {
+    timeX: 73,
+    meterX: 160,
+    startY: verrohrungLayout.startY,
+    rowStep: verrohrungLayout.rowStep,
+    maxRows: 4,
+    fontSize: verrohrungLayout.fontSize,
+  } as const;
+  for (let i = 0; i < Math.min(waterLevelLayout.maxRows, waterLevelRows.length); i++) {
+    const row = waterLevelRows[i] ?? {};
+    const y = waterLevelLayout.startY - i * waterLevelLayout.rowStep;
+    draw(row?.time, waterLevelLayout.timeX, y, waterLevelLayout.fontSize, 8);
+    draw(row?.meters, waterLevelLayout.meterX, y, waterLevelLayout.fontSize, 8);
+  }
+  if (!waterLevelRows.length && data?.ruhewasserVorArbeitsbeginnM != null) {
+    draw(data?.ruhewasserVorArbeitsbeginnM, waterLevelLayout.meterX, waterLevelLayout.startY, waterLevelLayout.fontSize, 10);
+  }
+  if (!verrohrungRows.length) {
+    draw(data?.verrohrungAbGok, header.verrohrungAbGok.x, header.verrohrungAbGok.y, 10, 10);
+  }
+  const tempMax = data?.weather?.tempMaxC;
+  const tempMin = data?.weather?.tempMinC;
+  drawTemperatureMinMax(tempMin, tempMax, header.temperatur.x, header.temperatur.y, 7);
   const weatherLabel = Array.isArray(data?.weather?.conditions)
     ? data.weather.conditions.join("/")
     : data?.weather;
   draw(weatherLabel, header.wetter.x, header.wetter.y, 9, 20);
 
-  draw(data?.workers?.[0]?.name, header.bohrmeister.x, header.bohrmeister.y, 10, 18);
-  draw(data?.vehicles ?? data?.geraete, header.geraete.x, header.geraete.y, 9, 22);
+  draw(data?.workers?.[0]?.name, header.bohrmeister.x, header.bohrmeister.y, 7, 18);
+  const deviceChecks = new Set(
+    String(data?.vehicles ?? data?.geraete ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+  );
+  const deviceCross = {
+    LKW: { x: 479, y: 640 },
+    "Radlader/Dumper": { x: 479, y: 628 },
+    Wasserwagen: { x: 479, y: 616 },
+    Kompressor: { x: 479, y: 604 },
+  } as const;
+  for (const [label, pos] of Object.entries(deviceCross)) {
+    if (!deviceChecks.has(label)) continue;
+    drawX(pos.x, pos.y, 11);
+  }
   const bohrhelferJoined = Array.isArray(data?.workers)
     ? data.workers
         .slice(1)
         .map((w: { name?: unknown }) => String(w?.name ?? "").trim())
         .filter((n: string) => n.length > 0)
-        .join(", ")
+        .slice(0, 3)
     : "";
-  draw(bohrhelferJoined, header.bohrhelfer.x, header.bohrhelfer.y, 10, 40);
+  if (Array.isArray(bohrhelferJoined)) {
+    const helperFontSize = 8;
+    const helperLineStep = 10;
+    bohrhelferJoined.forEach((name, idx) => {
+      draw(name, header.bohrhelfer.x, header.bohrhelfer.y - idx * helperLineStep, helperFontSize, 24);
+    });
+  }
 
   // Wochentag markieren
-  const weekdayX = { mo: 253, di: 274, mi: 295, do: 316, fr: 337, sa: 358, so: 378 };
+  const weekdayX = { mo: 261, di: 277, mi: 295, do: 315, fr: 332, sa: 348, so: 368 };
   const weekdayY = 780;
   const weekday = getWeekdayFromDate(String(data?.date ?? ""));
   if (weekday === 1) drawX(weekdayX.mo, weekdayY);
@@ -207,14 +371,13 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   if (weekday === 0) drawX(weekdayX.so, weekdayY);
 
   // Haupttabelle (oben Mitte)
-  const rows = Array.isArray(data?.tableRows) ? data.tableRows : [];
-  const tableYStart = 470;
-  const tableYStep = 31;
+  const tableYStart = 544;
+  const tableYStep = 18;
   const tableCols = {
-    aufschluss: 34,
-    krone: 114,
-    tiefeVon: 206,
-    tiefeBis: 286,
+    aufschluss: 60,
+    krone: 121,
+    tiefeVon: 170,
+    tiefeBis: 220,
     beschreibung: 470,
     besonderheiten: 768,
   } as const;
@@ -230,31 +393,44 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     if (!rowHasValue) continue;
     const y = tableYStart - i * tableYStep;
 
-    draw(r?.verrohrtFlags?.join("/") || "Spülung", tableCols.aufschluss, y, 9, 14);
-    draw(r?.boNr, tableCols.krone, y, 9, 12);
-    draw(r?.gebohrtVon, tableCols.tiefeVon, y, 9, 8);
-    draw(r?.gebohrtBis, tableCols.tiefeBis, y, 9, 8);
-    draw(r?.indivProbe ?? "", tableCols.beschreibung, y, 8, 62);
-    draw(r?.hindernisZeit ?? "", tableCols.besonderheiten, y, 8, 16);
+    draw(r?.verrohrtFlags?.join("/") || "Spülung", tableCols.aufschluss, y, 7, 14);
+    draw(r?.boNr, tableCols.krone, y, 7, 12);
+    draw(r?.gebohrtVon, tableCols.tiefeVon, y, 7, 8);
+    draw(r?.gebohrtBis, tableCols.tiefeBis, y, 7, 8);
+    draw(r?.hindernisZeit ?? "", tableCols.besonderheiten, y, 6, 16);
+  }
+
+  // Freitextfeld "Beschreibung der Tätigkeiten":
+  // gleiche Zeilenhöhe wie Tabellenloop, innerhalb des Feldes X 250..555 und Y 375..tableYStart
+  const textField = { minX: 255, maxX: 555, minY: 375, maxY: tableYStart } as const;
+  const textSize = 7;
+  const wrapped = wrapTextByWidth(data?.otherWork, textField.maxX - textField.minX, textSize);
+  const maxRows = Math.max(0, Math.floor((textField.maxY - textField.minY) / tableYStep) + 1);
+  for (let i = 0; i < Math.min(maxRows, wrapped.length); i++) {
+    const y = tableYStart - i * tableYStep;
+    if (y < textField.minY) break;
+    draw(wrapped[i], textField.minX, y, textSize, 220);
   }
 
   // Ausbau / Verfüllung / SPT-Versuche (unten)
   const pegelRows = Array.isArray(data?.pegelAusbauRows) ? data.pegelAusbauRows : [];
-  const lowerYStart = 292;
-  const lowerYStep = 24;
+  const lowerYStart = 310;
+  const lowerYStep = tableYStep;
   const lowerCols = {
-    ausbauVon: 52,
-    ausbauBis: 130,
-    ausbauRohr: 214,
-    verfVon: 352,
-    verfBis: 428,
-    verfMaterial: 505,
-    sptVon: 646,
-    sptBis: 689,
-    sptA: 730,
-    sptB: 760,
-    sptC: 791,
+    ausbauVon: 75,
+    ausbauBis: tableCols.krone,
+    ausbauRohr: 200,
+    verfVon: 264,
+    verfBis: 330,
+    verfMaterial: 368,
+    sptVon: 450,
+    sptBis: 477,
+    sptA: 504,
+    sptB: 527,
+    sptC: 552,
   } as const;
+  const selectedPegelDm = pegelRows.find((row) => String(row?.pegelDm ?? "").trim().length > 0)?.pegelDm;
+  draw(selectedPegelDm, 195, 360, 9, 14);
   for (let i = 0; i < Math.min(10, pegelRows.length); i++) {
     const p = pegelRows[i] ?? {};
     const rowHasValue = Object.values(p).some((v) => {
@@ -263,14 +439,19 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     });
     if (!rowHasValue) continue;
     const y = lowerYStart - i * lowerYStep;
+    const ausbauArt = p?.aufsatzStahlVon || p?.aufsatzStahlBis
+      ? "Stahlaufsatz"
+      : p?.rohrePvcVon || p?.rohrePvcBis
+        ? "Vollrohr"
+        : "Filter";
 
     draw(p?.filterVon, lowerCols.ausbauVon, y, 9, 8);
     draw(p?.filterBis, lowerCols.ausbauBis, y, 9, 8);
-    draw(p?.pegelDm, lowerCols.ausbauRohr, y, 9, 14);
+    draw(ausbauArt, lowerCols.ausbauRohr, y, 9, 18);
 
     draw(p?.tonVon, lowerCols.verfVon, y, 9, 8);
     draw(p?.tonBis, lowerCols.verfBis, y, 9, 8);
-    draw(p?.tonBis || p?.filterkiesKoernung, lowerCols.verfMaterial, y, 9, 14);
+    draw(p?.filterkiesKoernung, lowerCols.verfMaterial, y, 8, 24);
 
     const s = rows[i]?.spt ? String(rows[i].spt).split("/") : [];
     draw(rows[i]?.gebohrtVon, lowerCols.sptVon, y, 9, 8);
@@ -281,13 +462,59 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   }
 
   // Footer-Bereiche
-  draw(data?.besucher, 160, 112, 10, 96);
-  draw(data?.sheVorfaelle, 160, 74, 10, 96);
-  draw(data?.toolBoxTalks, 160, 36, 10, 96);
-  draw(data?.taeglicheUeberpruefungBg, 160, 0, 10, 96);
+  draw(data?.besucher, 165, 195, 10, 96);
+  draw(data?.sheVorfaelle, 165, 172, 10, 96);
+  const sonstigeField = { x: 200, y: 150, maxX: 555, lineStep: 14, maxLines: 3 } as const;
+  const sonstigeLines = wrapTextByWidth(
+    data?.toolBoxTalks,
+    sonstigeField.maxX - sonstigeField.x,
+    10
+  );
+  for (let i = 0; i < Math.min(sonstigeField.maxLines, sonstigeLines.length); i++) {
+    draw(sonstigeLines[i], sonstigeField.x, sonstigeField.y - i * sonstigeField.lineStep, 10, 120);
+  }
+  const rawBgChecks = String(data?.taeglicheUeberpruefungBg ?? "").trim();
+  const bgChecks = new Set(
+    rawBgChecks.includes("|")
+      ? rawBgChecks
+          .split("|")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : rawBgChecks
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
+  );
+  if (bgChecks.has("Bolzen") && bgChecks.has("Lager")) {
+    bgChecks.delete("Bolzen");
+    bgChecks.delete("Lager");
+    bgChecks.add("Bolzen, Lager");
+  }
+  const bgCross = {
+    "Betriebsflüssigkeiten": { x: 161, y: 101 },
+    "Seile und Tragmittel": { x: 161, y: 87 },
+    Schmierung: { x: 317, y: 100 },
+    Hydraulik: { x: 316, y: 86 },
+    "Bolzen, Lager": { x: 458, y: 101 },
+    "ev. Leckagen": { x: 458, y: 86 },
+  } as const;
+  for (const [label, pos] of Object.entries(bgCross)) {
+    if (!bgChecks.has(label)) continue;
+    drawX(pos.x, pos.y, 11);
+  }
 
-  draw(data?.signatures?.drillerName, 30, -45, 10, 28);
-  draw(data?.signatures?.clientOrManagerName, 390, -45, 10, 36);
+  await drawSignatureFromDataUrl(data?.signatures?.drillerSigPng, {
+    x: 60,
+    y: 42,
+    width: 240,
+    height: 30,
+  });
+  await drawSignatureFromDataUrl(data?.signatures?.clientOrManagerSigPng, {
+    x: 325,
+    y: 42,
+    width: 225,
+    height: 30,
+  });
 
   return pdf.save();
 }

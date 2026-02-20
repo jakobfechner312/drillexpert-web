@@ -118,6 +118,11 @@ const BG_CHECK_OPTIONS = [
   "Hydraulik",
   "ev. Leckagen",
 ] as const;
+const BG_CHECK_DELIMITER = " | ";
+const DEV_RML_TEST_SAVE_USER_ID = (process.env.NEXT_PUBLIC_RML_TEST_SAVE_USER_ID ?? "").trim();
+const DEV_RML_TEST_SAVE_USER_EMAIL = (process.env.NEXT_PUBLIC_RML_TEST_SAVE_USER_EMAIL ?? "jfechner1994@gmail.com")
+  .trim()
+  .toLowerCase();
 const SPT_MAX_SCHLAEGE = 50;
 const SPT_DEFAULT_SEGMENT_CM = 15;
 const DRILLER_DEVICE_HISTORY_KEY = "tagesbericht_driller_device_history_v1";
@@ -369,6 +374,20 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
   r.workTimeRows = Array.isArray(r.workTimeRows) && r.workTimeRows.length ? r.workTimeRows : [emptyTimeRow()];
   r.breakRows = Array.isArray(r.breakRows) && r.breakRows.length ? r.breakRows : [emptyTimeRow()];
   r.transportRows = Array.isArray(r.transportRows) && r.transportRows.length ? r.transportRows : [emptyTransportRow()];
+  r.waterLevelRows =
+    Array.isArray(r.waterLevelRows) && r.waterLevelRows.length
+      ? r.waterLevelRows.map((row) => ({
+          time: typeof row?.time === "string" ? row.time : "",
+          meters: typeof row?.meters === "string" ? row.meters : "",
+        }))
+      : [{ time: "", meters: "" }];
+  r.verrohrungRows =
+    Array.isArray(r.verrohrungRows) && r.verrohrungRows.length
+      ? r.verrohrungRows.map((row) => ({
+          diameter: typeof row?.diameter === "string" ? row.diameter : "",
+          meters: typeof row?.meters === "string" ? row.meters : "",
+        }))
+      : [{ diameter: "", meters: "" }];
   r.workCyclesSame = typeof r.workCyclesSame === "boolean" ? r.workCyclesSame : false;
 
   // ---------- FIX: date & time inputs ----------
@@ -491,10 +510,13 @@ export default function TagesberichtForm({
   const dictationShouldRunRef = useRef(false);
   const [activeDictationTarget, setActiveDictationTarget] = useState<string | null>(null);
   const reportSaveKeyRef = useRef<string | null>(null);
+  const forceMyReportsSaveOnceRef = useRef(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveReadyRef = useRef(false);
   const localDraftLoadedRef = useRef(false);
   const weatherPrefillProjectRef = useRef<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
   const isAutoSaveBlocked = () => {
     try {
       return localStorage.getItem(draftBlockStorageKey) === "1";
@@ -528,6 +550,23 @@ export default function TagesberichtForm({
   const [projects, setProjects] = useState<{ id: string; name: string; project_number?: string | null }[]>([]);
   const [projectUiLoading, setProjectUiLoading] = useState(false);
   const [prefillProjectId, setPrefillProjectId] = useState<string | null>(projectId ?? enforcedProjectId ?? null);
+  const isRmlDevTestUser =
+    isRmlReport &&
+    ((DEV_RML_TEST_SAVE_USER_ID.length > 0 && currentUserId === DEV_RML_TEST_SAVE_USER_ID) ||
+      (DEV_RML_TEST_SAVE_USER_EMAIL.length > 0 && currentUserEmail === DEV_RML_TEST_SAVE_USER_EMAIL));
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!mounted) return;
+      setCurrentUserId(String(data?.user?.id ?? ""));
+      setCurrentUserEmail(String(data?.user?.email ?? "").trim().toLowerCase());
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
 
   useEffect(() => {
     if (mode !== "create") return;
@@ -617,6 +656,11 @@ export default function TagesberichtForm({
    }, [effectiveProjectId, enforcedProjectId, loadMyProjects]);
 
   const ensureSaveTarget = useCallback(async (): Promise<{ scope: SaveScope; projectId: string | null } | null> => {
+    if (isRmlReport && forceMyReportsSaveOnceRef.current) {
+      forceMyReportsSaveOnceRef.current = false;
+      return { scope: "my_reports", projectId: null };
+    }
+
     if (enforcedProjectId) {
       return { scope: "project", projectId: enforcedProjectId };
     }
@@ -644,7 +688,7 @@ export default function TagesberichtForm({
 
     pendingSaveResolveRef.current = null;
     return result ?? null;
-  }, [projectId, saveScope, localProjectId, loadMyProjects, enforcedProjectId]);
+  }, [projectId, saveScope, localProjectId, loadMyProjects, enforcedProjectId, isRmlReport]);
 
   const fetchProjectPrefill = useCallback(async (targetProjectId: string) => {
     const { data: proj, error } = await supabase
@@ -807,6 +851,7 @@ export default function TagesberichtForm({
             { key: "stammdaten", title: "Stammdaten" },
             { key: "bohrdaten", title: "Bohrdaten" },
             { key: "aufschluss", title: "Aufschluss / Krone / Tiefe" },
+            { key: "wasser-verrohrung", title: "Wasserspiegel / Verrohrung" },
             { key: "taetigkeiten", title: "Beschreibung der Tätigkeiten" },
             { key: "ausbau", title: "Ausbau" },
             { key: "verfuellung", title: "Verfüllung" },
@@ -1937,38 +1982,75 @@ if (mode === "edit") {
         plz: "79312",
         ort: "Emmendingen",
         bohrungNr: "B1",
-        berichtNr: "RML-001",
+        berichtNr: "1",
         aNr: "DE-2026-001",
         bohrrichtung: "vertikal",
         winkelHorizontal: "0",
         winkelNord: "0",
         verrohrungAbGok: "0.0",
-        vehicles: "Bohrgerät, Kompressor",
+        vehicles: "LKW, Radlader/Dumper, Wasserwagen, Kompressor",
         workTimeRows: [{ name: "Max Mustermann", from: "07:00", to: "17:00" }],
         breakRows: [{ name: "Max Mustermann", from: "12:00", to: "12:30" }],
-        weather: { conditions: ["trocken"], tempMaxC: 10, tempMinC: 2 },
-        ruhewasserVorArbeitsbeginnM: 1,
+        weather: { conditions: ["regen", "frost"], tempMaxC: 3.1, tempMinC: 0.2 },
+        ruhewasserVorArbeitsbeginnM: 1.2,
+        waterLevelRows: [
+          { time: "07:00", meters: "1.2" },
+          { time: "09:30", meters: "1.4" },
+          { time: "12:00", meters: "1.6" },
+          { time: "15:30", meters: "1.8" },
+        ],
+        verrohrungRows: [
+          { diameter: "146", meters: "6" },
+          { diameter: "178", meters: "7.5" },
+          { diameter: "220", meters: "9" },
+          { diameter: "273", meters: "10.5" },
+        ],
         transportRows: [{ from: "Lager", to: "Baustelle", km: 12, time: "00:20" }],
         workers: [
           { ...emptyWorker(), name: "Max Mustermann" },
           { ...emptyWorker(), name: "Leon Beispiel" },
+          { ...emptyWorker(), name: "Mira Test" },
+          { ...emptyWorker(), name: "Sven Probe" },
         ],
-        tableRows: [
-          { ...emptyTableRow(), verrohrtFlags: ["RB"], boNr: "B1", gebohrtVon: "0.0", gebohrtBis: "6", indivProbe: "A1", hindernisZeit: "" },
-          { ...emptyTableRow(), verrohrtFlags: ["EK"], boNr: "B2", gebohrtVon: "0.0", gebohrtBis: "7.5", indivProbe: "B2", hindernisZeit: "" },
-          { ...emptyTableRow(), verrohrtFlags: ["DK"], boNr: "B3", gebohrtVon: "0.0", gebohrtBis: "9", indivProbe: "A1", hindernisZeit: "" },
-          { ...emptyTableRow(), verrohrtFlags: ["S"], boNr: "B4", gebohrtVon: "0.0", gebohrtBis: "10.5", indivProbe: "B2", hindernisZeit: "" },
-          { ...emptyTableRow(), verrohrtFlags: ["RB"], boNr: "B5", gebohrtVon: "0.0", gebohrtBis: "12", indivProbe: "A1", hindernisZeit: "" },
-        ],
+        tableRows: Array.from({ length: 10 }, (_, i) => {
+          const bohrverfahren = RML_BOHRVERFAHREN_OPTIONS[i % RML_BOHRVERFAHREN_OPTIONS.length];
+          const bohrkrone = RML_KRONE_OPTIONS[(i + 2) % RML_KRONE_OPTIONS.length];
+          const von = "0.0";
+          const bis = String(6 + i * 1.5);
+          const verrohrungDm = RML_KRONE_OPTIONS[i % RML_KRONE_OPTIONS.length];
+          const sptValues = ["8/12/15", "10/14/18", "12/16/20", "14/18/22", "16/20/24"];
+          return {
+            ...emptyTableRow(),
+            verrohrtFlags: [bohrverfahren],
+            boNr: bohrkrone,
+            gebohrtVon: von,
+            gebohrtBis: bis,
+            verrohrtVon: bis,
+            verrohrtBis: verrohrungDm,
+            spt: i < sptValues.length ? sptValues[i] : "",
+            hindernisZeit: "",
+          };
+        }),
         pegelAusbauRows: [
-          { ...emptyPegelAusbauRow(), filterVon: "4", filterBis: "8", pegelDm: "DN100", tonVon: "0.0", tonBis: "1.5" },
-          { ...emptyPegelAusbauRow(), filterVon: "5", filterBis: "9", pegelDm: "DN80", tonVon: "0.0", tonBis: "1.5" },
-          { ...emptyPegelAusbauRow(), filterVon: "6", filterBis: "10", pegelDm: "DN100", tonVon: "0.0", tonBis: "1.5" },
+          { ...emptyPegelAusbauRow(), bohrNr: "B1", filterVon: "4", filterBis: "8", pegelDm: '4"', tonVon: "0.0", tonBis: "1.5" },
+          { ...emptyPegelAusbauRow(), bohrNr: "B2", filterVon: "5", filterBis: "9", pegelDm: '3"', tonVon: "0.0", tonBis: "1.5" },
+          { ...emptyPegelAusbauRow(), bohrNr: "B3", filterVon: "6", filterBis: "10", pegelDm: '4"', tonVon: "0.0", tonBis: "1.5" },
+          { ...emptyPegelAusbauRow(), bohrNr: "B4", filterVon: "7", filterBis: "11", pegelDm: '3"', tonVon: "0.0", tonBis: "1.5" },
+          { ...emptyPegelAusbauRow(), bohrNr: "B5", filterVon: "8", filterBis: "12", pegelDm: '4"', tonVon: "0.0", tonBis: "1.5" },
+          { ...emptyPegelAusbauRow(), bohrNr: "B6", filterVon: "9", filterBis: "13", pegelDm: '3"', tonVon: "0.0", tonBis: "1.5" },
         ],
+        otherWork:
+          "Baustelle eingerichtet, Bohransatz eingemessen und Arbeitsbereich gesichert.\n" +
+          "B1 bis 6,0 m, B2 bis 7,5 m und B3 bis 9,0 m hergestellt; Bohrgut fortlaufend dokumentiert.\n" +
+          "Wasserspiegelmessungen 07:00/09:30/12:00/15:30 aufgenommen, keine besonderen Vorkommnisse.",
         besucher: "Bauleitung 10:30",
         sheVorfaelle: "Keine",
-        toolBoxTalks: "Sicherheitsunterweisung 07:00",
-        taeglicheUeberpruefungBg: "Kontrolliert / i.O.",
+        toolBoxTalks:
+          "Material nachgeliefert, Zufahrt freigeräumt und Arbeitsbereich nachverdichtet.\n" +
+          "Abstimmung mit Bauleitung zur nächsten Bohrposition durchgeführt.\n" +
+          "Gerätecheck abgeschlossen, Kompressorleitung geprüft.",
+        taeglicheUeberpruefungBg:
+          "Betriebsflüssigkeiten | Schmierung | Bolzen, Lager | Seile und Tragmittel | Hydraulik | ev. Leckagen",
         signatures: {
           clientOrManagerName: "Herr Bauleiter",
           drillerName: "Max Mustermann",
@@ -2224,10 +2306,35 @@ if (mode === "edit") {
   const MAX_TABLE_ROWS = isRml ? 10 : 5;
   const MAX_UMSETZEN_ROWS = 3;
   const MAX_PEGEL_ROWS = isRml ? 10 : 3;
+  const MAX_WATER_LEVEL_ROWS = 4;
+  const MAX_VERROHRUNG_ROWS = 4;
 
   const safeTableRows = useMemo<TableRow[]>(
     () => (Array.isArray(report.tableRows) && report.tableRows.length ? report.tableRows : [emptyTableRow()]),
     [report.tableRows]
+  );
+  const safeWaterLevelRows = useMemo(
+    () =>
+      Array.isArray(report.waterLevelRows) && report.waterLevelRows.length
+        ? report.waterLevelRows
+        : [{ time: "", meters: "" }],
+    [report.waterLevelRows]
+  );
+  const safeVerrohrungRows = useMemo(
+    () =>
+      Array.isArray(report.verrohrungRows) && report.verrohrungRows.length
+        ? report.verrohrungRows
+        : [{ diameter: "", meters: "" }],
+    [report.verrohrungRows]
+  );
+  const rmlWaterTimeOptions = useMemo(
+    () =>
+      Array.from({ length: 96 }, (_, idx) => {
+        const h = String(Math.floor(idx / 4)).padStart(2, "0");
+        const m = String((idx % 4) * 15).padStart(2, "0");
+        return `${h}:${m}`;
+      }),
+    []
   );
 
   function setRow(i: number, patch: Partial<TableRow>) {
@@ -2235,6 +2342,52 @@ if (mode === "edit") {
       const rows = Array.isArray(p.tableRows) && p.tableRows.length ? [...p.tableRows] : [emptyTableRow()];
       rows[i] = { ...rows[i], ...patch };
       return { ...p, tableRows: rows };
+    });
+  }
+  function setWaterLevelRow(i: number, patch: { time?: string; meters?: string }) {
+    setReport((p) => {
+      const rows = Array.isArray(p.waterLevelRows) && p.waterLevelRows.length ? [...p.waterLevelRows] : [{ time: "", meters: "" }];
+      rows[i] = { ...rows[i], ...patch };
+      return { ...p, waterLevelRows: rows };
+    });
+  }
+  function addWaterLevelRow() {
+    setReport((p) => {
+      const rows = Array.isArray(p.waterLevelRows) && p.waterLevelRows.length ? [...p.waterLevelRows] : [{ time: "", meters: "" }];
+      if (rows.length >= MAX_WATER_LEVEL_ROWS) return { ...p, waterLevelRows: rows };
+      rows.push({ time: "", meters: "" });
+      return { ...p, waterLevelRows: rows };
+    });
+  }
+  function removeLastWaterLevelRow() {
+    setReport((p) => {
+      const rows = Array.isArray(p.waterLevelRows) && p.waterLevelRows.length ? [...p.waterLevelRows] : [{ time: "", meters: "" }];
+      if (rows.length <= 1) return { ...p, waterLevelRows: rows };
+      rows.pop();
+      return { ...p, waterLevelRows: rows };
+    });
+  }
+  function setVerrohrungRow(i: number, patch: { diameter?: string; meters?: string }) {
+    setReport((p) => {
+      const rows = Array.isArray(p.verrohrungRows) && p.verrohrungRows.length ? [...p.verrohrungRows] : [{ diameter: "", meters: "" }];
+      rows[i] = { ...rows[i], ...patch };
+      return { ...p, verrohrungRows: rows };
+    });
+  }
+  function addVerrohrungRow() {
+    setReport((p) => {
+      const rows = Array.isArray(p.verrohrungRows) && p.verrohrungRows.length ? [...p.verrohrungRows] : [{ diameter: "", meters: "" }];
+      if (rows.length >= MAX_VERROHRUNG_ROWS) return { ...p, verrohrungRows: rows };
+      rows.push({ diameter: "", meters: "" });
+      return { ...p, verrohrungRows: rows };
+    });
+  }
+  function removeLastVerrohrungRow() {
+    setReport((p) => {
+      const rows = Array.isArray(p.verrohrungRows) && p.verrohrungRows.length ? [...p.verrohrungRows] : [{ diameter: "", meters: "" }];
+      if (rows.length <= 1) return { ...p, verrohrungRows: rows };
+      rows.pop();
+      return { ...p, verrohrungRows: rows };
     });
   }
 
@@ -3060,15 +3213,32 @@ if (mode === "edit") {
     });
   }
 
+  const parseBgChecks = useCallback((raw: unknown): string[] => {
+    const text = String(raw ?? "").trim();
+    if (!text) return [];
+    if (text.includes("|")) {
+      return text
+        .split("|")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    const parts = text
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const next = new Set(parts);
+    if (next.has("Bolzen") && next.has("Lager")) {
+      next.delete("Bolzen");
+      next.delete("Lager");
+      next.add("Bolzen, Lager");
+    }
+    return Array.from(next);
+  }, []);
+
   const rmlBgCheckSet = useMemo(
-    () =>
-      new Set(
-        String(report.taeglicheUeberpruefungBg ?? "")
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
-      ),
-    [report.taeglicheUeberpruefungBg]
+    () => new Set(parseBgChecks(report.taeglicheUeberpruefungBg)),
+    [parseBgChecks, report.taeglicheUeberpruefungBg]
   );
 
   const toggleRmlBgCheck = (item: string, checked: boolean) => {
@@ -3078,7 +3248,7 @@ if (mode === "edit") {
     } else {
       next.delete(item);
     }
-    update("taeglicheUeberpruefungBg", Array.from(next).join(", "));
+    update("taeglicheUeberpruefungBg", Array.from(next).join(BG_CHECK_DELIMITER));
   };
 
   function addPegelRow() {
@@ -3722,6 +3892,30 @@ if (mode === "edit") {
             {(showStep(2) && isRml) ? (
               <SubGroup title="Bohrdaten (Aufschluss / Krone / Tiefe)">
                 <div className="space-y-3 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="text-sm font-medium text-slate-700">Bohrrichtung</div>
+                    <div className="mt-2 flex flex-wrap gap-4">
+                      {(["vertikal", "horizontal", "schräg"] as const).map((dir) => {
+                        const checked =
+                          dir === "schräg"
+                            ? ["schräg", "schraeg"].includes(String(report.bohrrichtung ?? "").toLowerCase())
+                            : String(report.bohrrichtung ?? "").toLowerCase() === dir;
+                        return (
+                          <label key={dir} className="flex items-center gap-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                if (e.target.checked) update("bohrrichtung", dir);
+                                else update("bohrrichtung", "");
+                              }}
+                            />
+                            <span>{dir}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <RowActions
                     addLabel="+ Zeile"
                     removeLabel="– Zeile"
@@ -3733,8 +3927,12 @@ if (mode === "edit") {
                   <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
                     <div className="col-span-4">Bohrverfahren / Bohrwerkzeug / Spülung</div>
                     <div className="col-span-2">Krone Ø (Bohr-Ø)</div>
-                    <div className="col-span-3">Tiefe ab GOK von (m)</div>
-                    <div className="col-span-3">Tiefe ab GOK bis (m)</div>
+                    <div className="col-span-6 grid grid-cols-2 gap-2">
+                      <div className="col-span-2 text-center normal-case">Tiefe ab GOK in m</div>
+                      <div className="col-span-2 h-px bg-slate-300/50" />
+                      <div className="text-center normal-case">von</div>
+                      <div className="text-center normal-case">bis</div>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     {safeTableRows.map((row, i) => {
@@ -4012,6 +4210,90 @@ if (mode === "edit") {
       ) : null}
 
       {showStep(3) && isRml ? (
+        <GroupCard title="Wasserspiegel / Verrohrung ab GOK" badge="RML">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
+              <RowActions
+                addLabel="+ Zeile"
+                removeLabel="– Zeile"
+                onAdd={addWaterLevelRow}
+                onRemove={removeLastWaterLevelRow}
+                countLabel={`Wasserspiegel: ${safeWaterLevelRows.length} / ${MAX_WATER_LEVEL_ROWS}`}
+                disableAdd={safeWaterLevelRows.length >= MAX_WATER_LEVEL_ROWS}
+              />
+              <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                <div className="col-span-7">Uhr</div>
+                <div className="col-span-5 normal-case">Stand in Metern (m)</div>
+              </div>
+              <div className="space-y-2">
+                {safeWaterLevelRows.map((row, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                    <select
+                      className="col-span-7 rounded-lg border px-3 py-2 text-sm"
+                      value={row.time ?? ""}
+                      onChange={(e) => setWaterLevelRow(i, { time: e.target.value })}
+                    >
+                      <option value="">Bitte wählen...</option>
+                      {rmlWaterTimeOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className="col-span-5 rounded-lg border px-3 py-2 text-sm"
+                      value={row.meters ?? ""}
+                      onChange={(e) => setWaterLevelRow(i, { meters: e.target.value })}
+                      placeholder="m"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
+              <RowActions
+                addLabel="+ Zeile"
+                removeLabel="– Zeile"
+                onAdd={addVerrohrungRow}
+                onRemove={removeLastVerrohrungRow}
+                countLabel={`Verrohrung: ${safeVerrohrungRows.length} / ${MAX_VERROHRUNG_ROWS}`}
+                disableAdd={safeVerrohrungRows.length >= MAX_VERROHRUNG_ROWS}
+              />
+              <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                <div className="col-span-7">Ø</div>
+                <div className="col-span-5 normal-case">Länge in Metern (m)</div>
+              </div>
+              <div className="space-y-2">
+                {safeVerrohrungRows.map((row, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                    <select
+                      className="col-span-7 rounded-lg border px-3 py-2 text-sm"
+                      value={row.diameter ?? ""}
+                      onChange={(e) => setVerrohrungRow(i, { diameter: e.target.value })}
+                    >
+                      <option value="">Bitte wählen...</option>
+                      {RML_KRONE_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className="col-span-5 rounded-lg border px-3 py-2 text-sm"
+                      value={row.meters ?? ""}
+                      onChange={(e) => setVerrohrungRow(i, { meters: e.target.value })}
+                      placeholder="m"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </GroupCard>
+      ) : null}
+
+      {showStep(4) && isRml ? (
         <GroupCard title="Beschreibung der Tätigkeiten" badge="Leistungsbericht">
           <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-2">
@@ -4034,7 +4316,7 @@ if (mode === "edit") {
         </GroupCard>
       ) : null}
 
-      {showStep(4) && isRml ? (
+      {showStep(5) && isRml ? (
         <GroupCard title="Ausbau" badge="RML">
           <div className="space-y-3 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
             <div className="space-y-1">
@@ -4062,8 +4344,8 @@ if (mode === "edit") {
             />
             <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
               <div className="col-span-12 md:col-span-4">Ausbau-Art</div>
-              <div className="col-span-12 md:col-span-4">von (m)</div>
-              <div className="col-span-12 md:col-span-4">bis (m)</div>
+              <div className="col-span-12 md:col-span-4 normal-case">von (m)</div>
+              <div className="col-span-12 md:col-span-4 normal-case">bis (m)</div>
             </div>
             <div className="space-y-2">
               {safePegel.map((row, i) => {
@@ -4171,7 +4453,7 @@ if (mode === "edit") {
         </GroupCard>
       ) : null}
 
-      {showStep(5) && isRml ? (
+      {showStep(6) && isRml ? (
         <GroupCard title="Verfüllung" badge="RML">
           <div className="space-y-3 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
             <RowActions
@@ -4183,8 +4465,8 @@ if (mode === "edit") {
               disableAdd={safePegel.length >= MAX_PEGEL_ROWS}
             />
             <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
-              <div className="col-span-4">Verfüllung von (m)</div>
-              <div className="col-span-4">Verfüllung bis (m)</div>
+              <div className="col-span-4 normal-case">Verfüllung von (m)</div>
+              <div className="col-span-4 normal-case">Verfüllung bis (m)</div>
               <div className="col-span-4">Material</div>
             </div>
             <div className="space-y-2">
@@ -4244,7 +4526,7 @@ if (mode === "edit") {
         </GroupCard>
       ) : null}
 
-      {showStep(6) && isRml ? (
+      {showStep(7) && isRml ? (
         <GroupCard title="SPT-Versuche" badge="RML">
           <div className="space-y-3 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
             <RowActions
@@ -4256,8 +4538,8 @@ if (mode === "edit") {
               disableAdd={safeTableRows.length >= MAX_TABLE_ROWS}
             />
             <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
-              <div className="col-span-2">von (m)</div>
-              <div className="col-span-2">bis (m)</div>
+              <div className="col-span-2 normal-case">von (m)</div>
+              <div className="col-span-2 normal-case">bis (m)</div>
               <div className="col-span-2">0-15 cm</div>
               <div className="col-span-3">15-30 cm</div>
               <div className="col-span-3">30-45 cm</div>
@@ -5470,7 +5752,7 @@ if (mode === "edit") {
         ))}
       </GroupCard> : null}
       {/* ======================= SONSTIGE / BEMERKUNGEN / UNTERSCHRIFTEN ======================= */}
-      {(isRml ? showStep(7) : showStep(8)) ? <GroupCard title={isRml ? "Bemerkungen" : "Sonstige / Bemerkungen / Unterschriften"} badge="Abschluss">
+      {showStep(8) ? <GroupCard title={isRml ? "Bemerkungen" : "Sonstige / Bemerkungen / Unterschriften"} badge="Abschluss">
 
     {/* Texte */}
     {reportType === "tagesbericht_rhein_main_link" ? (
@@ -5704,7 +5986,7 @@ if (mode === "edit") {
       ) : null}
     </GroupCard> : null}
 
-      {showStep(8) && isRml ? (
+      {showStep(9) && isRml ? (
         <GroupCard title="Prüfung & Unterschriften" badge="Abschluss">
           <div className="mt-2 space-y-4">
             <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
@@ -5885,6 +6167,19 @@ if (mode === "edit") {
           >
             Vorschau
           </button>
+          {isRmlDevTestUser ? (
+            <button
+              type="button"
+              className="btn border-amber-700 bg-amber-600 text-white hover:bg-amber-700"
+              onClick={() => {
+                forceMyReportsSaveOnceRef.current = true;
+                void triggerSaveReport();
+              }}
+              title="Nur für Dev-Test: Speichert diesen RML-Bericht in Meine Berichte statt ins Projekt."
+            >
+              Dev: In Meine Berichte speichern
+            </button>
+          ) : null}
         </div>
         {useStepper ? (
           <div className="flex items-center gap-2">
@@ -5926,7 +6221,7 @@ if (mode === "edit") {
                   reportRef.current = legalBreakCheck.report;
                   setReport(legalBreakCheck.report);
                 }
-                if (stepIndex === 4) {
+                if (!isRml && stepIndex === 4) {
                   const invalid = safeWorkers.some((w) => hasInvalidStunden(w));
                   if (invalid) {
                     alert("Nur Viertelstunden erlaubt (z.B. 0.25, 0.5, 0.75).");
