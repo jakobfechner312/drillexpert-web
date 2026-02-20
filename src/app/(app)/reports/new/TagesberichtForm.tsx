@@ -4894,7 +4894,7 @@ if (mode === "edit") {
         <GroupCard title="Ausbau" badge="RML">
           <div className="space-y-3 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
             <div className="space-y-1">
-              <label className="block text-sm text-slate-600">Rohrdurchmesser Ø</label>
+              <label className="block text-sm text-slate-600">Ausbaudurchmesser Ø</label>
               <select
                 className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base text-slate-900 md:max-w-md"
                 value={rmlPegelDmValue}
