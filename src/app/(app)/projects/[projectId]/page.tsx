@@ -49,6 +49,12 @@ type ProjectFile = {
   created_at: string;
   metadata?: { size?: number };
 };
+type PendingUploadFile = {
+  file: File;
+  baseName: string;
+  extension: string;
+  editedBaseName: string;
+};
 type TeamMember = {
   user_id: string;
   role_in_project: string | null;
@@ -119,6 +125,19 @@ const deriveReportDateRange = (rows: ReportRow[]) => {
   return {
     startDate: toDateInputValue(new Date(minTs).toISOString()),
     endDate: toDateInputValue(new Date(maxTs).toISOString()),
+  };
+};
+
+const splitFilename = (name: string): { baseName: string; extension: string } => {
+  const normalized = String(name ?? "").trim();
+  if (!normalized) return { baseName: "Datei", extension: "" };
+  const lastDot = normalized.lastIndexOf(".");
+  if (lastDot <= 0 || lastDot === normalized.length - 1) {
+    return { baseName: normalized, extension: "" };
+  }
+  return {
+    baseName: normalized.slice(0, lastDot),
+    extension: normalized.slice(lastDot + 1),
   };
 };
 
@@ -250,6 +269,8 @@ export default function ProjectDetailPage() {
   const [filesLoading, setFilesLoading] = useState(false);
   const [filesErr, setFilesErr] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [renameUploadOpen, setRenameUploadOpen] = useState(false);
+  const [pendingUploadFiles, setPendingUploadFiles] = useState<PendingUploadFile[]>([]);
   const maxFileSizeMb = 25;
   const [filter, setFilter] = useState<"all" | "reports" | "files" | "images">("all");
   const [addingMember, setAddingMember] = useState(false);
@@ -1450,12 +1471,11 @@ export default function ProjectDetailPage() {
     return `Code ${code}`;
   };
 
-  const uploadFiles = async (fileList: FileList | File[]) => {
-    if (!fileList || fileList.length === 0) return;
+  const uploadFiles = async (items: Array<{ file: File; fileName: string }>) => {
+    if (!items || items.length === 0) return;
     setUploading(true);
     setFilesErr(null);
 
-    const list = Array.from(fileList);
     const supabase = createClient();
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     const user = userRes?.user;
@@ -1465,13 +1485,15 @@ export default function ProjectDetailPage() {
       return;
     }
 
-    for (const file of list) {
+    for (const item of items) {
+      const file = item.file;
       if (file.size > maxFileSizeMb * 1024 * 1024) {
         setFilesErr(`"${file.name}" ist größer als ${maxFileSizeMb} MB.`);
         continue;
       }
 
-      const path = `${projectId}/${Date.now()}-${file.name}`;
+      const safeName = String(item.fileName ?? "").trim() || file.name;
+      const path = `${projectId}/${Date.now()}-${safeName}`;
       const { error } = await supabase.storage
         .from("dropData")
         .upload(path, file, {
@@ -1495,6 +1517,37 @@ export default function ProjectDetailPage() {
     }
 
     setUploading(false);
+  };
+
+  const queueUploadFiles = (fileList: FileList | File[]) => {
+    if (!fileList || fileList.length === 0) return;
+    const list = Array.from(fileList);
+    const pending = list.map((file) => {
+      const parts = splitFilename(file.name);
+      return {
+        file,
+        baseName: parts.baseName,
+        extension: parts.extension,
+        editedBaseName: parts.baseName,
+      } satisfies PendingUploadFile;
+    });
+    setPendingUploadFiles(pending);
+    setRenameUploadOpen(true);
+  };
+
+  const submitRenamedUpload = async () => {
+    if (pendingUploadFiles.length === 0) {
+      setRenameUploadOpen(false);
+      return;
+    }
+    const items = pendingUploadFiles.map((entry) => {
+      const cleanBase = String(entry.editedBaseName ?? "").trim() || entry.baseName || "Datei";
+      const fileName = entry.extension ? `${cleanBase}.${entry.extension}` : cleanBase;
+      return { file: entry.file, fileName };
+    });
+    setRenameUploadOpen(false);
+    setPendingUploadFiles([]);
+    await uploadFiles(items);
   };
 
   const openFile = async (name: string) => {
@@ -2202,7 +2255,7 @@ export default function ProjectDetailPage() {
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
-              uploadFiles(e.dataTransfer.files);
+              queueUploadFiles(e.dataTransfer.files);
             }}
           >
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-600 ring-1 ring-slate-200">
@@ -2219,7 +2272,11 @@ export default function ProjectDetailPage() {
                 type="file"
                 multiple
                 className="hidden"
-                onChange={(e) => e.target.files && uploadFiles(e.target.files)}
+                onChange={(e) => {
+                  if (!e.target.files) return;
+                  queueUploadFiles(e.target.files);
+                  e.currentTarget.value = "";
+                }}
                 accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.csv,.xlsx,.xls,.doc,.docx,.txt,.rtf"
               />
             </label>
@@ -2366,6 +2423,92 @@ export default function ProjectDetailPage() {
             )}
           </div>
         </SectionCard>
+      )}
+
+      {renameUploadOpen && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setRenameUploadOpen(false);
+              setPendingUploadFiles([]);
+            }
+          }}
+        >
+          <div className="mx-auto my-6 w-full max-w-2xl rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">Dateinamen anpassen</h3>
+                <p className="text-xs text-slate-500">Die Dateiendung bleibt fix und wird automatisch beibehalten.</p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                onClick={() => {
+                  setRenameUploadOpen(false);
+                  setPendingUploadFiles([]);
+                }}
+                disabled={uploading}
+              >
+                Abbrechen
+              </button>
+            </div>
+
+            <div className="max-h-[55vh] space-y-3 overflow-y-auto px-5 py-4">
+              {pendingUploadFiles.map((entry, idx) => (
+                <div key={`${entry.file.name}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                  <div className="mb-2 text-xs text-slate-500">Original: {entry.file.name}</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      className="w-full rounded-xl border border-slate-300 bg-white p-2 text-sm"
+                      value={entry.editedBaseName}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setPendingUploadFiles((prev) =>
+                          prev.map((row, rowIdx) =>
+                            rowIdx === idx ? { ...row, editedBaseName: value } : row
+                          )
+                        );
+                      }}
+                      placeholder="Dateiname"
+                    />
+                    {entry.extension ? (
+                      <span className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">
+                        .{entry.extension}
+                      </span>
+                    ) : (
+                      <span className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-400">
+                        ohne Endung
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setRenameUploadOpen(false);
+                  setPendingUploadFiles([]);
+                }}
+                disabled={uploading}
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={submitRenamedUpload}
+                disabled={uploading || pendingUploadFiles.length === 0}
+              >
+                {uploading ? "Lädt…" : "Mit diesen Namen hochladen"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {settingsOpen && (
