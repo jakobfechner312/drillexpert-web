@@ -141,6 +141,16 @@ const splitFilename = (name: string): { baseName: string; extension: string } =>
   };
 };
 
+const buildUploadName = (rawName: string, index: number): string => {
+  const normalized = String(rawName ?? "")
+    .trim()
+    .replace(/[\\/]/g, "-");
+  const { baseName, extension } = splitFilename(normalized);
+  const safeBase = baseName || "Datei";
+  const suffix = index <= 1 ? "" : `-${index}`;
+  return extension ? `${safeBase}${suffix}.${extension}` : `${safeBase}${suffix}`;
+};
+
 const ProjectMapEmbed = memo(function ProjectMapEmbed({
   mapUrl,
   mapTitle,
@@ -1492,17 +1502,30 @@ export default function ProjectDetailPage() {
         continue;
       }
 
-      const safeName = String(item.fileName ?? "").trim() || file.name;
-      const path = `${projectId}/${Date.now()}-${safeName}`;
-      const { error } = await supabase.storage
-        .from("dropData")
-        .upload(path, file, {
-          upsert: false,
-          contentType: file.type || "application/octet-stream",
-        });
-
-      if (error) {
-        setFilesErr(`Upload fehlgeschlagen: ${error.message}`);
+      const rawName = String(item.fileName ?? "").trim() || file.name;
+      let uploaded = false;
+      for (let attempt = 1; attempt <= 50 && !uploaded; attempt += 1) {
+        const candidateName = buildUploadName(rawName, attempt);
+        const path = `${projectId}/${candidateName}`;
+        const { error } = await supabase.storage
+          .from("dropData")
+          .upload(path, file, {
+            upsert: false,
+            contentType: file.type || "application/octet-stream",
+          });
+        if (!error) {
+          uploaded = true;
+          break;
+        }
+        const maybeStatus = (error as { statusCode?: string | number }).statusCode;
+        const statusCode = typeof maybeStatus === "number" ? maybeStatus : Number(maybeStatus ?? 0);
+        const isDuplicate =
+          statusCode === 409 ||
+          /already exists|duplicate/i.test(String(error.message ?? ""));
+        if (!isDuplicate || attempt === 50) {
+          setFilesErr(`Upload fehlgeschlagen: ${error.message}`);
+          break;
+        }
       }
     }
 
