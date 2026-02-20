@@ -1,14 +1,18 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useRef } from "react";
+import React, { createContext, useCallback, useContext, useRef, useState } from "react";
 
-type Handler = (() => Promise<void>) | null;
+type Handler = (() => Promise<void> | void) | null;
 
 type DraftActionsCtx = {
   setSaveDraftHandler: (fn: Handler) => void;
   setSaveReportHandler: (fn: Handler) => void;
+  setUndoHandler: (fn: Handler) => void;
+  setUndoCount: (count: number) => void;
   triggerSaveDraft: () => Promise<void>;
   triggerSaveReport: () => Promise<void>;
+  triggerUndo: () => Promise<void>;
+  undoCount: number;
 };
 
 const Ctx = createContext<DraftActionsCtx | null>(null);
@@ -16,10 +20,13 @@ const Ctx = createContext<DraftActionsCtx | null>(null);
 export function DraftActionsProvider({ children }: { children: React.ReactNode }) {
   const draftHandlerRef = useRef<Handler>(null);
   const reportHandlerRef = useRef<Handler>(null);
+  const undoHandlerRef = useRef<Handler>(null);
+  const [undoCount, setUndoCount] = useState(0);
 
   // Hard mutex: verhindert doppeltes gleichzeitiges Ausführen
   const runningDraftRef = useRef(false);
   const runningReportRef = useRef(false);
+  const runningUndoRef = useRef(false);
 
   const setSaveDraftHandler = useCallback((fn: Handler) => {
     draftHandlerRef.current = fn; // ✅ überschreibt immer
@@ -27,6 +34,10 @@ export function DraftActionsProvider({ children }: { children: React.ReactNode }
 
   const setSaveReportHandler = useCallback((fn: Handler) => {
     reportHandlerRef.current = fn; // ✅ überschreibt immer
+  }, []);
+
+  const setUndoHandler = useCallback((fn: Handler) => {
+    undoHandlerRef.current = fn;
   }, []);
 
   const triggerSaveDraft = useCallback(async () => {
@@ -49,13 +60,27 @@ export function DraftActionsProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
+  const triggerUndo = useCallback(async () => {
+    if (runningUndoRef.current) return;
+    runningUndoRef.current = true;
+    try {
+      await undoHandlerRef.current?.();
+    } finally {
+      runningUndoRef.current = false;
+    }
+  }, []);
+
   return (
     <Ctx.Provider
       value={{
         setSaveDraftHandler,
         setSaveReportHandler,
+        setUndoHandler,
+        setUndoCount,
         triggerSaveDraft,
         triggerSaveReport,
+        triggerUndo,
+        undoCount,
       }}
     >
       {children}

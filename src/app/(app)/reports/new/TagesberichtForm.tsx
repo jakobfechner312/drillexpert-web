@@ -100,16 +100,26 @@ const DEVICE_OPTIONS = [
   "Fraste alt",
 ] as const;
 const RML_GERAETE_OPTIONS = ["LKW", "Radlader/Dumper", "Wasserwagen", "Kompressor"] as const;
+const RML_BOHRHELFER_OPTIONS = [
+  "Jens Gerth",
+  "Michel Otto",
+  "Fabian Fiedler",
+  "Paul Sasu",
+  "Serhii Vakhterov",
+  "Daniel Ziebold",
+  "Daniel Reglin",
+  "Maxi Flegler",
+] as const;
 const RML_KRONE_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509", "700", "800", "1.180", "1.500"] as const;
 const RML_VERFUELLUNG_OPTIONS = ["Tonformling", "Sand", "Kies", "Zement-Bentonit", "ortsuebliches Material", "Beton", "Individuell"] as const;
 const RML_BOHRVERFAHREN_OPTIONS = [
   "Rammkernbohrung",
   "Rotationsbohrung",
   "Vollbohrung",
-  "Greiferbohrung",
-  "Seilkernbohrung",
 ] as const;
-const PEGEL_DM_OPTIONS = ['2"', '3"', '4"', '5"', '6"', '8"', "DN300", "DN400", "DN500", "DN600", "DN700", "DN800"] as const;
+const RML_AUFSCHLUSS_KRONE_146_TO_509 = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
+const RML_AUFSCHLUSS_KRONE_178_TO_509 = ["178", "220", "273", "324", "368", "419", "509"] as const;
+const PEGEL_DM_OPTIONS = ['2"', '3"', '4"', '5"', '6"'] as const;
 const BG_CHECK_OPTIONS = [
   "Betriebsflüssigkeiten",
   "Schmierung",
@@ -126,6 +136,7 @@ const DEV_RML_TEST_SAVE_USER_EMAIL = (process.env.NEXT_PUBLIC_RML_TEST_SAVE_USER
 const SPT_MAX_SCHLAEGE = 50;
 const SPT_DEFAULT_SEGMENT_CM = 15;
 const DRILLER_DEVICE_HISTORY_KEY = "tagesbericht_driller_device_history_v1";
+const RML_BOHRHELFER_HISTORY_BY_USER_KEY = "tagesbericht_rml_bohrhelfer_history_by_user_v1";
 
   const normalizeDrillerName = (value: unknown) =>
   String(value ?? "")
@@ -134,6 +145,15 @@ const DRILLER_DEVICE_HISTORY_KEY = "tagesbericht_driller_device_history_v1";
     .toLowerCase();
 const isKnownDeviceOption = (value: unknown): value is (typeof DEVICE_OPTIONS)[number] =>
   typeof value === "string" && DEVICE_OPTIONS.includes(value as (typeof DEVICE_OPTIONS)[number]);
+const isKnownRmlBohrhelferOption = (value: unknown): value is (typeof RML_BOHRHELFER_OPTIONS)[number] =>
+  typeof value === "string" && RML_BOHRHELFER_OPTIONS.includes(value as (typeof RML_BOHRHELFER_OPTIONS)[number]);
+const getRmlAufschlussKronenOptions = (bohrverfahren: unknown): readonly string[] => {
+  const value = String(bohrverfahren ?? "").trim();
+  if (value === "Rotationsbohrung") return ["146"];
+  if (value === "Rammkernbohrung") return RML_AUFSCHLUSS_KRONE_178_TO_509;
+  if (value === "Vollbohrung") return RML_AUFSCHLUSS_KRONE_146_TO_509;
+  return RML_AUFSCHLUSS_KRONE_146_TO_509;
+};
 
 type GeoSuggestion = {
   id: string;
@@ -873,6 +893,10 @@ export default function TagesberichtForm({
     [isRml]
   );
   const [stepIndex, setStepIndex] = useState(0);
+  const undoHistoryRef = useRef<Array<{ report: Tagesbericht; stepIndex: number }>>([]);
+  const undoLastSnapshotRef = useRef<string>("");
+  const undoApplyingRef = useRef(false);
+  const [undoCount, setUndoCount] = useState(0);
   const setStepIndexKeepingScroll = useCallback((next: SetStateAction<number>) => {
     if (typeof window === "undefined") {
       setStepIndex(next);
@@ -885,6 +909,14 @@ export default function TagesberichtForm({
         window.scrollTo({ top: currentY, behavior: "auto" });
       });
     });
+  }, []);
+  const undoLastChange = useCallback(() => {
+    const previous = undoHistoryRef.current.shift();
+    setUndoCount(undoHistoryRef.current.length);
+    if (!previous) return;
+    undoApplyingRef.current = true;
+    setReport(previous.report);
+    setStepIndex(previous.stepIndex);
   }, []);
   const openNativePicker = (input: HTMLInputElement | null) => {
     if (!input) return;
@@ -919,6 +951,25 @@ export default function TagesberichtForm({
       return { ...prev, date: today };
     });
   }, [isRml, mode]);
+  useEffect(() => {
+    const currentSnapshot = JSON.stringify({ report, stepIndex });
+    if (!undoLastSnapshotRef.current) {
+      undoLastSnapshotRef.current = currentSnapshot;
+      return;
+    }
+    if (undoApplyingRef.current) {
+      undoApplyingRef.current = false;
+      undoLastSnapshotRef.current = currentSnapshot;
+      return;
+    }
+    if (undoLastSnapshotRef.current === currentSnapshot) return;
+    undoHistoryRef.current = [
+      JSON.parse(undoLastSnapshotRef.current) as { report: Tagesbericht; stepIndex: number },
+      ...undoHistoryRef.current,
+    ].slice(0, 10);
+    setUndoCount(undoHistoryRef.current.length);
+    undoLastSnapshotRef.current = currentSnapshot;
+  }, [report, stepIndex]);
   const focusDictationTarget = useCallback((key: string) => {
     const target = dictationTargetsRef.current[key];
     if (!target) return;
@@ -1106,7 +1157,9 @@ export default function TagesberichtForm({
    // ✅ hält immer den aktuellsten Report
   const reportRef = useRef(report);
   const drillerDeviceHistoryRef = useRef<Record<string, string>>({});
+  const rmlBohrhelferHistoryByUserRef = useRef<Record<string, string[]>>({});
   const prevDrillerNameRef = useRef<string>("");
+  const prevRmlHelperUserKeyRef = useRef<string>("");
 
   useEffect(() => {
     reportRef.current = report;
@@ -1121,6 +1174,26 @@ export default function TagesberichtForm({
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         drillerDeviceHistoryRef.current = parsed as Record<string, string>;
       }
+    } catch {
+      // ignore malformed cache
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(RML_BOHRHELFER_HISTORY_BY_USER_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+      const normalized: Record<string, string[]> = {};
+      Object.entries(parsed).forEach(([userKey, helperList]) => {
+        if (!Array.isArray(helperList)) return;
+        normalized[userKey] = helperList
+          .map((v) => String(v ?? "").trim())
+          .filter((v) => isKnownRmlBohrhelferOption(v));
+      });
+      rmlBohrhelferHistoryByUserRef.current = normalized;
     } catch {
       // ignore malformed cache
     }
@@ -1379,7 +1452,32 @@ export default function TagesberichtForm({
   }, [effectiveProjectId, mode, hasDraftId]);
 
   // ================== DRAFT + REPORT SAVE HANDLERS ==================
-  const { setSaveDraftHandler, setSaveReportHandler, triggerSaveReport } = useDraftActions();
+  const {
+    setSaveDraftHandler,
+    setSaveReportHandler,
+    setUndoHandler,
+    setUndoCount: setGlobalUndoCount,
+    triggerSaveReport,
+  } = useDraftActions();
+
+  useEffect(() => {
+    setUndoHandler(() => {
+      undoLastChange();
+    });
+    return () => {
+      setUndoHandler(null);
+    };
+  }, [setUndoHandler, undoLastChange]);
+
+  useEffect(() => {
+    setGlobalUndoCount(undoCount);
+  }, [undoCount, setGlobalUndoCount]);
+
+  useEffect(() => {
+    return () => {
+      setGlobalUndoCount(0);
+    };
+  }, [setGlobalUndoCount]);
   const saveDraftToServer = useCallback(
     async ({
       showSuccess = false,
@@ -2014,7 +2112,8 @@ if (mode === "edit") {
         ],
         tableRows: Array.from({ length: 10 }, (_, i) => {
           const bohrverfahren = RML_BOHRVERFAHREN_OPTIONS[i % RML_BOHRVERFAHREN_OPTIONS.length];
-          const bohrkrone = RML_KRONE_OPTIONS[(i + 2) % RML_KRONE_OPTIONS.length];
+          const bohrkronenOptions = getRmlAufschlussKronenOptions(bohrverfahren);
+          const bohrkrone = bohrkronenOptions[i % bohrkronenOptions.length] ?? "146";
           const von = "0.0";
           const bis = String(6 + i * 1.5);
           const verrohrungDm = RML_KRONE_OPTIONS[i % RML_KRONE_OPTIONS.length];
@@ -2313,6 +2412,24 @@ if (mode === "edit") {
     () => (Array.isArray(report.tableRows) && report.tableRows.length ? report.tableRows : [emptyTableRow()]),
     [report.tableRows]
   );
+  useEffect(() => {
+    if (!isRml) return;
+    setReport((prev) => {
+      const rows = Array.isArray(prev.tableRows) && prev.tableRows.length ? prev.tableRows : [emptyTableRow()];
+      let changed = false;
+      const nextRows = rows.map((row) => {
+        const bohrverfahren = String(row.verrohrtFlags?.[0] ?? "").trim();
+        const allowedKronen = getRmlAufschlussKronenOptions(bohrverfahren);
+        const currentKrone = String(row.boNr ?? "").trim();
+        if (!allowedKronen.length) return row;
+        if (currentKrone && allowedKronen.includes(currentKrone)) return row;
+        changed = true;
+        return { ...row, boNr: allowedKronen[0] ?? "" };
+      });
+      if (!changed) return prev;
+      return { ...prev, tableRows: nextRows };
+    });
+  }, [isRml]);
   const safeWaterLevelRows = useMemo(
     () =>
       Array.isArray(report.waterLevelRows) && report.waterLevelRows.length
@@ -2835,6 +2952,54 @@ if (mode === "edit") {
     const helpers = rows.slice(1).map((w) => String(w?.name ?? ""));
     return helpers.length ? helpers : [""];
   }, [report.workers]);
+
+  useEffect(() => {
+    if (!isRml || mode !== "create") return;
+    const userKey = currentUserId || currentUserEmail;
+    if (!userKey) return;
+    const helperNames = bohrhelferNames.map((name) => String(name ?? "").trim());
+    if (!helperNames.some(Boolean)) return;
+    const previous = rmlBohrhelferHistoryByUserRef.current[userKey] ?? [];
+    if (
+      previous.length === helperNames.length &&
+      previous.every((name, idx) => name === helperNames[idx])
+    ) {
+      return;
+    }
+    rmlBohrhelferHistoryByUserRef.current = {
+      ...rmlBohrhelferHistoryByUserRef.current,
+      [userKey]: helperNames,
+    };
+    try {
+      localStorage.setItem(
+        RML_BOHRHELFER_HISTORY_BY_USER_KEY,
+        JSON.stringify(rmlBohrhelferHistoryByUserRef.current)
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [isRml, mode, currentUserId, currentUserEmail, bohrhelferNames]);
+
+  useEffect(() => {
+    if (!isRml || mode !== "create") return;
+    const userKey = currentUserId || currentUserEmail;
+    if (!userKey) return;
+    if (prevRmlHelperUserKeyRef.current === userKey) return;
+    prevRmlHelperUserKeyRef.current = userKey;
+    const rememberedHelpers = rmlBohrhelferHistoryByUserRef.current[userKey] ?? [];
+    if (!rememberedHelpers.length) return;
+    setReport((prev) => {
+      const rows = Array.isArray(prev.workers) && prev.workers.length ? [...prev.workers] : [emptyWorker()];
+      const currentHelpers = rows.slice(1).map((w) => String(w?.name ?? "").trim());
+      if (currentHelpers.some(Boolean)) return prev;
+      while (rows.length < rememberedHelpers.length + 1) rows.push(emptyWorker());
+      rememberedHelpers.forEach((name, idx) => {
+        rows[idx + 1] = { ...rows[idx + 1], name };
+      });
+      return { ...prev, workers: rows };
+    });
+  }, [isRml, mode, currentUserId, currentUserEmail]);
+
   const setBohrhelferNameAt = (helperIndex: number, name: string) => {
     setWorkerNameAt(helperIndex + 1, name);
   };
@@ -3751,13 +3916,22 @@ if (mode === "edit") {
                         </div>
                         <div className="space-y-2">
                           {bohrhelferNames.map((name, idx) => (
-                            <input
+                            <select
                               key={idx}
                               className="w-full rounded-xl border p-3"
                               value={name}
                               onChange={(e) => setBohrhelferNameAt(idx, e.target.value)}
-                              placeholder={`Bohrhelfer ${idx + 1}`}
-                            />
+                            >
+                              <option value="">{`Bohrhelfer ${idx + 1} wählen...`}</option>
+                              {name && !isKnownRmlBohrhelferOption(name) ? (
+                                <option value={name}>{name}</option>
+                              ) : null}
+                              {RML_BOHRHELFER_OPTIONS.map((helper) => (
+                                <option key={helper} value={helper}>
+                                  {helper}
+                                </option>
+                              ))}
+                            </select>
                           ))}
                         </div>
                       </div>
@@ -3937,6 +4111,7 @@ if (mode === "edit") {
                   <div className="space-y-2">
                     {safeTableRows.map((row, i) => {
                       const aufschlussValue = (row.verrohrtFlags?.[0] ?? "") as VerrohrtFlag | "";
+                      const allowedAufschlussKronen = getRmlAufschlussKronenOptions(aufschlussValue);
                       return (
                         <div key={i} className="grid grid-cols-12 gap-2 rounded-xl border border-slate-200 bg-white p-2">
                           <select
@@ -3944,7 +4119,15 @@ if (mode === "edit") {
                             value={aufschlussValue}
                             onChange={(e) => {
                               const next = e.target.value as VerrohrtFlag | "";
-                              setRow(i, { verrohrtFlags: next ? [next] : [] });
+                              const allowedKronen = getRmlAufschlussKronenOptions(next);
+                              const currentKrone = String(row.boNr ?? "").trim();
+                              const nextKrone = allowedKronen.includes(currentKrone)
+                                ? currentKrone
+                                : (allowedKronen[0] ?? "");
+                              setRow(i, {
+                                verrohrtFlags: next ? [next] : [],
+                                boNr: nextKrone,
+                              });
                             }}
                           >
                             <option value="">Bitte wählen...</option>
@@ -3960,7 +4143,7 @@ if (mode === "edit") {
                             onChange={(e) => setRow(i, { boNr: e.target.value })}
                           >
                             <option value="">Bitte wählen…</option>
-                            {RML_KRONE_OPTIONS.map((opt) => (
+                            {allowedAufschlussKronen.map((opt) => (
                               <option key={opt} value={opt}>
                                 {opt}
                               </option>

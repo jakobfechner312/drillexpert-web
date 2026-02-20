@@ -1028,6 +1028,10 @@ export default function SchichtenverzeichnisForm({
     []
   );
   const [stepIndex, setStepIndex] = useState(0);
+  const undoHistoryRef = useRef<string[]>([]);
+  const undoLastSnapshotRef = useRef<string>("");
+  const undoApplyingRef = useRef(false);
+  const [undoCount, setUndoCount] = useState(0);
   const setStepIndexKeepingScroll = useCallback((next: SetStateAction<number>) => {
     if (typeof window === "undefined") {
       setStepIndex(next);
@@ -1041,6 +1045,35 @@ export default function SchichtenverzeichnisForm({
       });
     });
   }, []);
+  const applyUndoSnapshot = useCallback((snapshotRaw: string) => {
+    const snapshot = JSON.parse(snapshotRaw) as {
+      data: FormData;
+      bohrungen: BohrungEntry[];
+      filterRows: FilterRow[];
+      filterPairRowCounts: Record<string, number>;
+      grundwasserRows: GroundwaterRow[];
+      schichtRows: SchichtRow[];
+      probeRows: ProbeRow[];
+      sptRows: SptEntry[];
+      stepIndex: number;
+    };
+    setData(snapshot.data);
+    setBohrungen(snapshot.bohrungen);
+    setFilterRows(snapshot.filterRows);
+    setFilterPairRowCounts(snapshot.filterPairRowCounts);
+    setGrundwasserRows(snapshot.grundwasserRows);
+    setSchichtRows(snapshot.schichtRows);
+    setProbeRows(snapshot.probeRows);
+    setSptRows(snapshot.sptRows);
+    setStepIndex(snapshot.stepIndex);
+  }, []);
+  const undoLastChange = useCallback(() => {
+    const previous = undoHistoryRef.current.shift();
+    setUndoCount(undoHistoryRef.current.length);
+    if (!previous) return;
+    undoApplyingRef.current = true;
+    applyUndoSnapshot(previous);
+  }, [applyUndoSnapshot]);
   const focusDictationTarget = useCallback((key: string) => {
     const target = dictationTargetsRef.current[key];
     if (!target) return;
@@ -1486,6 +1519,42 @@ export default function SchichtenverzeichnisForm({
       firstIncompleteStep: firstIncompleteStep === -1 ? null : firstIncompleteStep,
     };
   }, [data, bohrungen, filterRows, grundwasserRows, probeRows, schichtRows, sptRows]);
+  useEffect(() => {
+    const currentSnapshot = JSON.stringify({
+      data,
+      bohrungen,
+      filterRows,
+      filterPairRowCounts,
+      grundwasserRows,
+      schichtRows,
+      probeRows,
+      sptRows,
+      stepIndex,
+    });
+    if (!undoLastSnapshotRef.current) {
+      undoLastSnapshotRef.current = currentSnapshot;
+      return;
+    }
+    if (undoApplyingRef.current) {
+      undoApplyingRef.current = false;
+      undoLastSnapshotRef.current = currentSnapshot;
+      return;
+    }
+    if (undoLastSnapshotRef.current === currentSnapshot) return;
+    undoHistoryRef.current = [undoLastSnapshotRef.current, ...undoHistoryRef.current].slice(0, 10);
+    setUndoCount(undoHistoryRef.current.length);
+    undoLastSnapshotRef.current = currentSnapshot;
+  }, [
+    data,
+    bohrungen,
+    filterRows,
+    filterPairRowCounts,
+    grundwasserRows,
+    schichtRows,
+    probeRows,
+    sptRows,
+    stepIndex,
+  ]);
   const effectiveDurchfuehrungszeit = useMemo(
     () =>
       composeDurchfuehrungszeit(
@@ -1587,7 +1656,32 @@ export default function SchichtenverzeichnisForm({
   }, [normalizedFilterRowsForPayload]);
 
   const supabase = useMemo(() => createClient(), []);
-  const { setSaveDraftHandler, setSaveReportHandler, triggerSaveReport } = useDraftActions();
+  const {
+    setSaveDraftHandler,
+    setSaveReportHandler,
+    setUndoHandler,
+    setUndoCount: setGlobalUndoCount,
+    triggerSaveReport,
+  } = useDraftActions();
+
+  useEffect(() => {
+    setUndoHandler(() => {
+      undoLastChange();
+    });
+    return () => {
+      setUndoHandler(null);
+    };
+  }, [setUndoHandler, undoLastChange]);
+
+  useEffect(() => {
+    setGlobalUndoCount(undoCount);
+  }, [undoCount, setGlobalUndoCount]);
+
+  useEffect(() => {
+    return () => {
+      setGlobalUndoCount(0);
+    };
+  }, [setGlobalUndoCount]);
 
   useEffect(() => {
     if (mode !== "create") return;

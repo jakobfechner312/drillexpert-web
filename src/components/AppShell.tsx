@@ -112,7 +112,7 @@ function AppTopbar({
   topbarHiddenMobile: boolean;
   onToggleSidebar: () => void;
 }) {
-  const { triggerSaveDraft, triggerSaveReport } = useDraftActions();
+  const { triggerSaveDraft, triggerSaveReport, triggerUndo, undoCount } = useDraftActions();
   const pathname = usePathname();
   const isReportEditor =
     pathname.includes("/reports/new") ||
@@ -236,6 +236,18 @@ function AppTopbar({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {isReportEditor ? (
+            <button
+              type="button"
+              onClick={triggerUndo}
+              disabled={undoCount <= 0}
+              title={undoCount > 0 ? `Rückgängig (${undoCount})` : "Nichts zum Rückgängig machen"}
+              className="btn border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Rückgängig {undoCount > 0 ? `(${undoCount})` : ""}
+            </button>
+          ) : null}
+
           {userEmail ? (
             <button
               onClick={handleLogout}
