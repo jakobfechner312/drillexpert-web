@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
 
+const RML_REPORT_COUNTER_BY_USER_KEY = "tagesbericht_rml_report_counter_by_user_v1";
+
 export default function SettingsPage() {
   const supabase = useMemo(() => createClient(), []);
 
@@ -31,6 +33,8 @@ export default function SettingsPage() {
   const [customWorkCycles, setCustomWorkCycles] = useState<string[]>([]);
   const [customCycleDraft, setCustomCycleDraft] = useState<string>("");
   const [savingCycles, setSavingCycles] = useState(false);
+  const [rmlReportCounter, setRmlReportCounter] = useState<string>("1");
+  const [savingRmlCounter, setSavingRmlCounter] = useState(false);
 
   useEffect(() => {
     const run = async () => {
@@ -59,6 +63,35 @@ export default function SettingsPage() {
         .single();
       if (!profileErr && Array.isArray(profile?.custom_work_cycles)) {
         setCustomWorkCycles(profile.custom_work_cycles);
+      }
+      const { data: counterProfile, error: counterErr } = await supabase
+        .from("profiles")
+        .select("rml_report_counter")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!counterErr) {
+        const rawCounter = String(
+          (counterProfile as { rml_report_counter?: unknown } | null)?.rml_report_counter ?? ""
+        ).trim();
+        const parsedCounter = Number.parseInt(rawCounter, 10);
+        if (Number.isFinite(parsedCounter) && parsedCounter >= 1) {
+          setRmlReportCounter(String(parsedCounter));
+        }
+      }
+
+      try {
+        const raw = localStorage.getItem(RML_REPORT_COUNTER_BY_USER_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        const userKey = String(user.id ?? "").trim() || String(user.email ?? "").trim().toLowerCase();
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && userKey) {
+          const localRaw = String((parsed as Record<string, unknown>)[userKey] ?? "").trim();
+          const localCounter = Number.parseInt(localRaw, 10);
+          if (Number.isFinite(localCounter) && localCounter >= 1) {
+            setRmlReportCounter(String(localCounter));
+          }
+        }
+      } catch {
+        // ignore
       }
 
       try {
@@ -247,6 +280,63 @@ export default function SettingsPage() {
     setCustomWorkCycles(cleaned);
     setSuccess("Arbeitstakte gespeichert ✅");
     setSavingCycles(false);
+  };
+
+  const saveRmlCounter = async () => {
+    const parsed = Number.parseInt(String(rmlReportCounter ?? "").trim(), 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      setError("Rhein-Main-Link Berichtzähler muss mindestens 1 sein.");
+      setSuccess(null);
+      return;
+    }
+
+    setSavingRmlCounter(true);
+    setError(null);
+    setSuccess(null);
+    const { data } = await supabase.auth.getUser();
+    const user = data?.user;
+    if (!user) {
+      setError("Nicht eingeloggt.");
+      setSavingRmlCounter(false);
+      return;
+    }
+
+    try {
+      const raw = localStorage.getItem(RML_REPORT_COUNTER_BY_USER_KEY);
+      const parsedMap = raw ? JSON.parse(raw) : null;
+      const map =
+        parsedMap && typeof parsedMap === "object" && !Array.isArray(parsedMap)
+          ? (parsedMap as Record<string, unknown>)
+          : {};
+      const userKey = String(user.id ?? "").trim() || String(user.email ?? "").trim().toLowerCase();
+      if (userKey) {
+        map[userKey] = parsed;
+        localStorage.setItem(RML_REPORT_COUNTER_BY_USER_KEY, JSON.stringify(map));
+      }
+    } catch {
+      // ignore local storage issues
+    }
+
+    const { error: upErr } = await supabase.from("profiles").upsert(
+      {
+        id: user.id,
+        email: user.email ?? null,
+        rml_report_counter: parsed,
+      },
+      { onConflict: "id" }
+    );
+    if (upErr) {
+      const code = String((upErr as { code?: unknown })?.code ?? "");
+      if (code !== "PGRST204" && code !== "42703") {
+        setError("Speichern fehlgeschlagen: " + upErr.message);
+        setSavingRmlCounter(false);
+        return;
+      }
+    }
+
+    setRmlReportCounter(String(parsed));
+    setSuccess("Rhein-Main-Link Berichtzähler gespeichert ✅");
+    setSavingRmlCounter(false);
   };
 
   return (
@@ -504,6 +594,34 @@ export default function SettingsPage() {
                 onClick={() => saveCustomCycles(customWorkCycles)}
               >
                 {savingCycles ? "Speichere…" : "Arbeitstakte speichern"}
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-sm lg:col-span-2">
+            <h2 className="text-lg font-semibold text-slate-900">Rhein-Main-Link Berichtzähler</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Persönlicher Startwert für die nächste Berichtnummer beim Rhein-Main-Link.
+            </p>
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <label className="space-y-1">
+                <span className="text-sm text-slate-600">Nächste Nummer</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  className="w-44 rounded-xl border p-3"
+                  value={rmlReportCounter}
+                  onChange={(e) => setRmlReportCounter(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-60"
+                disabled={savingRmlCounter}
+                onClick={saveRmlCounter}
+              >
+                {savingRmlCounter ? "Speichere…" : "Berichtzähler speichern"}
               </button>
             </div>
           </section>

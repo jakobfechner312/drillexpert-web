@@ -137,6 +137,7 @@ const SPT_MAX_SCHLAEGE = 50;
 const SPT_DEFAULT_SEGMENT_CM = 15;
 const DRILLER_DEVICE_HISTORY_KEY = "tagesbericht_driller_device_history_v1";
 const RML_BOHRHELFER_HISTORY_BY_USER_KEY = "tagesbericht_rml_bohrhelfer_history_by_user_v1";
+const RML_REPORT_COUNTER_BY_USER_KEY = "tagesbericht_rml_report_counter_by_user_v1";
 
   const normalizeDrillerName = (value: unknown) =>
   String(value ?? "")
@@ -147,6 +148,13 @@ const isKnownDeviceOption = (value: unknown): value is (typeof DEVICE_OPTIONS)[n
   typeof value === "string" && DEVICE_OPTIONS.includes(value as (typeof DEVICE_OPTIONS)[number]);
 const isKnownRmlBohrhelferOption = (value: unknown): value is (typeof RML_BOHRHELFER_OPTIONS)[number] =>
   typeof value === "string" && RML_BOHRHELFER_OPTIONS.includes(value as (typeof RML_BOHRHELFER_OPTIONS)[number]);
+const parsePositiveInteger = (value: unknown): number | null => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return null;
+  return parsed;
+};
 const getRmlAufschlussKronenOptions = (bohrverfahren: unknown): readonly string[] => {
   const value = String(bohrverfahren ?? "").trim();
   if (value === "Rotationsbohrung") return ["146"];
@@ -559,6 +567,7 @@ export default function TagesberichtForm({
   const weatherPrefillProjectRef = useRef<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [rmlNextReportNr, setRmlNextReportNr] = useState<number>(1);
   const isAutoSaveBlocked = () => {
     try {
       return localStorage.getItem(draftBlockStorageKey) === "1";
@@ -1244,22 +1253,93 @@ export default function TagesberichtForm({
   }, [report.signatures?.drillerName, report.device]);
 
   useEffect(() => {
-    if (!isRml || mode !== "create" || !effectiveProjectId) return;
+    if (!isRml || mode !== "create") return;
     let mounted = true;
     (async () => {
-      const { count, error } = await supabase
-        .from("reports")
-        .select("id", { count: "exact", head: true })
-        .eq("project_id", effectiveProjectId)
-        .eq("report_type", "tagesbericht_rhein_main_link");
-      if (!mounted || error) return;
-      const nextNr = String((count ?? 0) + 1);
-      setReport((prev) => ({ ...prev, berichtNr: nextNr }));
+      const { data } = await supabase.auth.getUser();
+      if (!mounted) return;
+      const user = data?.user;
+      const userKey =
+        String(user?.id ?? "").trim() || String(user?.email ?? "").trim().toLowerCase();
+      if (!userKey) return;
+
+      let nextCounter = 1;
+      if (user?.id) {
+        const { data: profile, error: profileErr } = await supabase
+          .from("profiles")
+          .select("rml_report_counter")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (!profileErr) {
+          const fromProfile = parsePositiveInteger(
+            (profile as { rml_report_counter?: unknown } | null)?.rml_report_counter
+          );
+          if (fromProfile != null) nextCounter = fromProfile;
+        }
+      }
+
+      if (typeof window !== "undefined") {
+        try {
+          const raw = localStorage.getItem(RML_REPORT_COUNTER_BY_USER_KEY);
+          const parsed = raw ? JSON.parse(raw) : null;
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            const fromLocal = parsePositiveInteger((parsed as Record<string, unknown>)[userKey]);
+            if (fromLocal != null) nextCounter = fromLocal;
+          }
+        } catch {
+          // ignore malformed storage
+        }
+      }
+
+      if (!mounted) return;
+      setRmlNextReportNr(nextCounter);
+      setReport((prev) => ({ ...prev, berichtNr: String(nextCounter) }));
     })();
     return () => {
       mounted = false;
     };
-  }, [effectiveProjectId, isRml, mode, supabase]);
+  }, [isRml, mode, supabase]);
+
+  const persistRmlCounter = useCallback(
+    async (nextCounter: number) => {
+      const safeNext = Math.max(1, Math.floor(nextCounter));
+      const { data } = await supabase.auth.getUser();
+      const user = data?.user;
+      const userKey =
+        String(user?.id ?? "").trim() || String(user?.email ?? "").trim().toLowerCase();
+      if (!userKey) return;
+
+      if (typeof window !== "undefined") {
+        try {
+          const raw = localStorage.getItem(RML_REPORT_COUNTER_BY_USER_KEY);
+          const parsed = raw ? JSON.parse(raw) : null;
+          const map =
+            parsed && typeof parsed === "object" && !Array.isArray(parsed)
+              ? (parsed as Record<string, unknown>)
+              : {};
+          map[userKey] = safeNext;
+          localStorage.setItem(RML_REPORT_COUNTER_BY_USER_KEY, JSON.stringify(map));
+        } catch {
+          // ignore storage errors
+        }
+      }
+
+      if (!user?.id) return;
+      const { error } = await supabase.from("profiles").upsert(
+        {
+          id: user.id,
+          email: user.email ?? null,
+          rml_report_counter: safeNext,
+        },
+        { onConflict: "id" }
+      );
+      if (!error) return;
+      const code = String((error as { code?: unknown })?.code ?? "");
+      if (code === "PGRST204" || code === "42703") return;
+      console.warn("[rml_report_counter] save failed", error);
+    },
+    [supabase]
+  );
 
   useEffect(() => {
     if (mode !== "create") return;
@@ -1600,7 +1680,13 @@ export default function TagesberichtForm({
           setReport(legalBreakCheck.report);
         }
         const projectScoped = finalProjectId;
-        const reportForSave = await hydrateReportWithProject(currentReport, projectScoped);
+        let reportForSave = await hydrateReportWithProject(currentReport, projectScoped);
+        let usedRmlReportNr: number | null = null;
+        if (reportType === "tagesbericht_rhein_main_link") {
+          const currentNr = parsePositiveInteger(reportForSave.berichtNr) ?? rmlNextReportNr ?? 1;
+          usedRmlReportNr = currentNr;
+          reportForSave = { ...reportForSave, berichtNr: String(currentNr) };
+        }
         if (projectScoped && prefillProjectId && prefillProjectId !== projectScoped) {
           console.warn("[PROJECT PREFILL GUARD] prefill project changed before save", {
             prefillProjectId,
@@ -1720,6 +1806,12 @@ if (mode === "edit") {
   }
 
   reportSaveKeyRef.current = null;
+  if (reportType === "tagesbericht_rhein_main_link") {
+    const nextCounter = Math.max(1, (usedRmlReportNr ?? rmlNextReportNr ?? 1) + 1);
+    setRmlNextReportNr(nextCounter);
+    setReport((prev) => ({ ...prev, berichtNr: String(nextCounter) }));
+    await persistRmlCounter(nextCounter);
+  }
   alert("Bericht gespeichert ✅");
       } finally {
         savingRef.current = false;
@@ -1744,6 +1836,8 @@ if (mode === "edit") {
     reportId,
     reportTitleLabel,
     reportType,
+    rmlNextReportNr,
+    persistRmlCounter,
     saveDraftToServer,
     saveScope,
     useStepper,
