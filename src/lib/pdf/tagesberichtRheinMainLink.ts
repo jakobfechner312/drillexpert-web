@@ -290,7 +290,7 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   } as const;
   const verrohrungRows = Array.isArray(data?.verrohrungRows) && data.verrohrungRows.length
     ? data.verrohrungRows
-    : rows.map((row) => ({ diameter: row?.verrohrtBis, meters: row?.verrohrtVon }));
+    : rows.map((row: any) => ({ diameter: row?.verrohrtBis, meters: row?.verrohrtVon }));
   for (let i = 0; i < Math.min(verrohrungLayout.maxRows, verrohrungRows.length); i++) {
     const row = verrohrungRows[i] ?? {};
     const y = verrohrungLayout.startY - i * verrohrungLayout.rowStep;
@@ -429,7 +429,7 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     sptB: 527,
     sptC: 552,
   } as const;
-  const selectedPegelDm = pegelRows.find((row) => String(row?.pegelDm ?? "").trim().length > 0)?.pegelDm;
+  const selectedPegelDm = pegelRows.find((row: any) => String(row?.pegelDm ?? "").trim().length > 0)?.pegelDm;
   draw(selectedPegelDm, 195, 360, 9, 14);
   for (let i = 0; i < Math.min(10, pegelRows.length); i++) {
     const p = pegelRows[i] ?? {};
