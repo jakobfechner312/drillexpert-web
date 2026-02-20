@@ -621,7 +621,6 @@ export default function TagesberichtForm({
 
   useEffect(() => {
     if (mode !== "create") return;
-    if (reportType !== "tagesbericht_rhein_main_link") return;
     let mounted = true;
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -629,7 +628,12 @@ export default function TagesberichtForm({
       const fullName = String(
         ((data?.user?.user_metadata as { full_name?: unknown } | undefined)?.full_name ?? "")
       ).trim();
-      if (!fullName) return;
+      const fallbackFromEmail = String(data?.user?.email ?? "")
+        .trim()
+        .split("@")[0]
+        ?.trim();
+      const actorName = fullName || fallbackFromEmail;
+      if (!actorName) return;
       setReport((prev) => {
         const currentName = String(prev?.signatures?.drillerName ?? "").trim();
         const currentWorkerName = String(prev?.workers?.[0]?.name ?? "").trim();
@@ -638,12 +642,12 @@ export default function TagesberichtForm({
 
         const nextWorkers = Array.isArray(prev.workers) && prev.workers.length ? [...prev.workers] : [emptyWorker()];
         if (!String(nextWorkers[0]?.name ?? "").trim()) {
-          nextWorkers[0] = { ...nextWorkers[0], name: fullName };
+          nextWorkers[0] = { ...nextWorkers[0], name: actorName };
         }
         const nextWorkTimeRows =
           Array.isArray(prev.workTimeRows) && prev.workTimeRows.length ? [...prev.workTimeRows] : [emptyTimeRow()];
         if (!String(nextWorkTimeRows[0]?.name ?? "").trim()) {
-          nextWorkTimeRows[0] = { ...nextWorkTimeRows[0], name: fullName };
+          nextWorkTimeRows[0] = { ...nextWorkTimeRows[0], name: actorName };
         }
         return {
           ...prev,
@@ -651,7 +655,7 @@ export default function TagesberichtForm({
           workTimeRows: nextWorkTimeRows,
           signatures: {
             ...(prev.signatures ?? {}),
-            drillerName: currentName || fullName,
+            drillerName: currentName || actorName,
           },
         };
       });
