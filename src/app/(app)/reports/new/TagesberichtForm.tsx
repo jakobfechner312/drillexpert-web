@@ -1722,6 +1722,17 @@ export default function TagesberichtForm({
           }
 
           title = `${auftragsnummer}_${name}_${datum}`;
+        } else if (reportType === "tagesbericht_rhein_main_link") {
+          const geraeteRaw = String(reportForSave?.vehicles ?? "");
+          const geraeteCount = geraeteRaw
+            .split(",")
+            .map((v) => v.trim())
+            .filter(Boolean).length;
+          const deCount = Math.max(1, geraeteCount);
+          const datum = normalizeTitlePart(reportForSave?.date);
+          const bohrung = normalizeTitlePart(reportForSave?.bohrungNr);
+          const safeBohrung = bohrung || "Bohrung";
+          title = `BTB_DE${deCount}_${datum}_${safeBohrung}`;
         } else {
           title =
             reportForSave?.project?.trim()
