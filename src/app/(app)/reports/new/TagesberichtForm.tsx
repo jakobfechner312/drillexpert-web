@@ -154,6 +154,26 @@ const getRmlAufschlussKronenOptions = (bohrverfahren: unknown): readonly string[
   if (value === "Vollbohrung") return RML_AUFSCHLUSS_KRONE_146_TO_509;
   return RML_AUFSCHLUSS_KRONE_146_TO_509;
 };
+type PegelRohrArt = "sumpfrohr" | "filter" | "aufsatz_pvc" | "aufsatz_stahl";
+const PEGEL_ROHRART_OPTIONS: Array<{ value: PegelRohrArt; label: string }> = [
+  { value: "sumpfrohr", label: "Sumpfrohr" },
+  { value: "filter", label: "Filter" },
+  { value: "aufsatz_pvc", label: "Aufsatz PVC" },
+  { value: "aufsatz_stahl", label: "Aufsatz Stahl" },
+];
+type PegelVerfuellungArt =
+  | "ton"
+  | "sand"
+  | "zement"
+  | "bohrgut"
+  | "filterkies";
+const PEGEL_VERFUELLUNG_OPTIONS: Array<{ value: PegelVerfuellungArt; label: string }> = [
+  { value: "ton", label: "Ton" },
+  { value: "sand", label: "Sand" },
+  { value: "zement", label: "Zement" },
+  { value: "bohrgut", label: "Bohrgut" },
+  { value: "filterkies", label: "Filterkies" },
+];
 
 type GeoSuggestion = {
   id: string;
@@ -168,6 +188,8 @@ function emptyPegelAusbauRow(): PegelAusbauRow {
   return {
     bohrNr: "",
     pegelDm: "",
+    ausbauArtType: "",
+    ausbauArtCustom: "",
 
     // ROHRE
     sumpfVon: "",
@@ -859,8 +881,10 @@ export default function TagesberichtForm({
   const [transportRouteLoading, setTransportRouteLoading] = useState<Record<number, boolean>>({});
   const [rmlSptCmOverrides, setRmlSptCmOverrides] = useState<Record<string, string>>({});
   const geoSearchDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
-  const [pegelSumpfEnabled, setPegelSumpfEnabled] = useState<Record<number, boolean>>({});
-  const [pegelStahlEnabled, setPegelStahlEnabled] = useState<Record<number, boolean>>({});
+  const [pegelRohrTypesByRow, setPegelRohrTypesByRow] = useState<Record<number, PegelRohrArt[]>>({});
+  const [pegelVerfuellungTypesByRow, setPegelVerfuellungTypesByRow] = useState<Record<number, PegelVerfuellungArt[]>>({});
+  const pegelRohrInitCountRef = useRef(0);
+  const pegelVerfuellungInitCountRef = useRef(0);
   const [clientSigEnabled, setClientSigEnabled] = useState(false);
   const isRml = reportType === "tagesbericht_rhein_main_link";
   const useStepper = stepper;
@@ -3286,22 +3310,40 @@ if (mode === "edit") {
     areHourValuesEqual(sharedTotalHours, sharedExpectedHours);
 
   useEffect(() => {
-    const workers = Array.isArray(report.workers) ? report.workers : [];
-    const workRows = Array.isArray(report.workTimeRows) ? report.workTimeRows : [];
-    const validRows = workRows.filter((r) => parseTimeToMinutes(r?.from) != null && parseTimeToMinutes(r?.to) != null);
-    const requiredWorkers = validRows.length >= 2 ? 2 : workers.length || 1;
+    const workers = Array.isArray(report.workers) && report.workers.length ? report.workers : [emptyWorker()];
+    const currentWorkRows = Array.isArray(report.workTimeRows) && report.workTimeRows.length ? report.workTimeRows : [emptyTimeRow()];
+    const currentBreakRows = Array.isArray(report.breakRows) && report.breakRows.length ? report.breakRows : [emptyTimeRow()];
 
-    const nameSlots = workRows.map((r) => String(r?.name ?? ""));
+    const targetLen = report.workCyclesSame ? 1 : Math.max(1, workers.length);
+    const baseWork = currentWorkRows[0] ?? emptyTimeRow();
+    const baseBreak = currentBreakRows[0] ?? emptyTimeRow();
+    const nextWorkRows = Array.from({ length: targetLen }, (_, idx) => {
+      const src = currentWorkRows[idx] ?? baseWork;
+      const workerName = report.workCyclesSame ? String(workers[0]?.name ?? "") : String(workers[idx]?.name ?? "");
+      return { ...src, name: workerName };
+    });
+    const nextBreakRows = Array.from({ length: targetLen }, (_, idx) => {
+      const src = currentBreakRows[idx] ?? baseBreak;
+      const workerName = report.workCyclesSame ? String(workers[0]?.name ?? "") : String(workers[idx]?.name ?? "");
+      return { ...src, name: workerName };
+    });
 
-    let changed = false;
-    const nextWorkers = [...workers];
-    while (nextWorkers.length < Math.max(requiredWorkers, nameSlots.length || 1)) {
-      nextWorkers.push(emptyWorker());
-      changed = true;
-    }
+    const workRowsChanged =
+      nextWorkRows.length !== currentWorkRows.length ||
+      nextWorkRows.some((row, idx) => {
+        const current = currentWorkRows[idx] ?? emptyTimeRow();
+        return (row.name ?? "") !== (current.name ?? "") || (row.from ?? "") !== (current.from ?? "") || (row.to ?? "") !== (current.to ?? "");
+      });
 
-    for (let idx = 0; idx < nextWorkers.length; idx++) {
-      const w = nextWorkers[idx];
+    const breakRowsChanged =
+      nextBreakRows.length !== currentBreakRows.length ||
+      nextBreakRows.some((row, idx) => {
+        const current = currentBreakRows[idx] ?? emptyTimeRow();
+        return (row.name ?? "") !== (current.name ?? "") || (row.from ?? "") !== (current.from ?? "") || (row.to ?? "") !== (current.to ?? "");
+      });
+
+    let workersChanged = false;
+    const nextWorkers = workers.map((w) => {
       const workerCycles = Array.isArray(w.workCycles) && w.workCycles.length
         ? w.workCycles
         : Array.isArray(report.workCycles) && report.workCycles.length
@@ -3310,20 +3352,21 @@ if (mode === "edit") {
       const taktHours = calcTaktHoursForWorker(w, workerCycles);
       const reine = formatHoursFromHours(taktHours) || "0";
       if (w.reineArbeitsStd !== reine) {
-        nextWorkers[idx] = { ...w, reineArbeitsStd: reine };
-        changed = true;
+        workersChanged = true;
+        return { ...w, reineArbeitsStd: reine };
       }
+      return w;
+    });
 
-      if (idx < nameSlots.length && w.name !== nameSlots[idx]) {
-        nextWorkers[idx] = { ...nextWorkers[idx], name: nameSlots[idx] };
-        changed = true;
-      }
-    }
+    if (!workRowsChanged && !breakRowsChanged && !workersChanged) return;
 
-    if (changed) {
-      setReport((p) => ({ ...p, workers: nextWorkers }));
-    }
-  }, [report.workTimeRows, report.breakRows, report.workers]);
+    setReport((p) => ({
+      ...p,
+      workers: nextWorkers,
+      workTimeRows: nextWorkRows,
+      breakRows: nextBreakRows,
+    }));
+  }, [report.workTimeRows, report.breakRows, report.workers, report.workCyclesSame]);
   function addWorker() {
     setReport((p) => {
       const rows = Array.isArray(p.workers) && p.workers.length ? [...p.workers] : [emptyWorker()];
@@ -3364,6 +3407,117 @@ if (mode === "edit") {
       return { ...p, pegelAusbauRows: rows };
     });
   }
+
+  const getPegelRohrValues = useCallback((row: PegelAusbauRow, art: PegelRohrArt) => {
+    if (art === "sumpfrohr") {
+      return { von: String(row.sumpfVon ?? ""), bis: String(row.sumpfBis ?? "") };
+    }
+    if (art === "aufsatz_pvc") {
+      return { von: String(row.aufsatzPvcVon ?? ""), bis: String(row.aufsatzPvcBis ?? "") };
+    }
+    if (art === "aufsatz_stahl") {
+      return { von: String(row.aufsatzStahlVon ?? ""), bis: String(row.aufsatzStahlBis ?? "") };
+    }
+    return { von: String(row.filterVon ?? ""), bis: String(row.filterBis ?? "") };
+  }, []);
+
+  const buildPegelRohrPatch = useCallback((art: PegelRohrArt, von: string, bis: string): Partial<PegelAusbauRow> => {
+    if (art === "sumpfrohr") return { sumpfVon: von, sumpfBis: bis };
+    if (art === "aufsatz_pvc") return { aufsatzPvcVon: von, aufsatzPvcBis: bis };
+    if (art === "aufsatz_stahl") return { aufsatzStahlVon: von, aufsatzStahlBis: bis };
+    return { filterVon: von, filterBis: bis };
+  }, []);
+
+  const getInitialRohrTypesForPegelRow = useCallback((row: PegelAusbauRow): PegelRohrArt[] => {
+    const active = PEGEL_ROHRART_OPTIONS
+      .map((opt) => opt.value)
+      .filter((art) => {
+        const values = getPegelRohrValues(row, art);
+        return Boolean(values.von.trim() || values.bis.trim());
+      });
+    return active.length ? active : ["filter"];
+  }, [getPegelRohrValues]);
+
+  useEffect(() => {
+    const rowCount = safePegel.length;
+    if (pegelRohrInitCountRef.current === rowCount) return;
+    pegelRohrInitCountRef.current = rowCount;
+    setPegelRohrTypesByRow(() => {
+      const next: Record<number, PegelRohrArt[]> = {};
+      safePegel.forEach((row, idx) => {
+        next[idx] = getInitialRohrTypesForPegelRow(row);
+      });
+      return next;
+    });
+  }, [safePegel, getInitialRohrTypesForPegelRow]);
+
+  const getRohrTypesForRow = useCallback(
+    (rowIndex: number, row: PegelAusbauRow) => pegelRohrTypesByRow[rowIndex] ?? getInitialRohrTypesForPegelRow(row),
+    [pegelRohrTypesByRow, getInitialRohrTypesForPegelRow]
+  );
+
+  const getPegelVerfuellungValues = useCallback((row: PegelAusbauRow, art: PegelVerfuellungArt) => {
+    if (art === "ton") {
+      return { von: String(row.tonVon ?? ""), bis: String(row.tonBis ?? ""), value: "" };
+    }
+    if (art === "sand") {
+      return { von: String(row.sandVon ?? ""), bis: String(row.sandBis ?? ""), value: "" };
+    }
+    if (art === "zement") {
+      return { von: String(row.zementBentVon ?? ""), bis: String(row.zementBentBis ?? ""), value: "" };
+    }
+    if (art === "bohrgut") {
+      return { von: String(row.bohrgutVon ?? ""), bis: String(row.bohrgutBis ?? ""), value: "" };
+    }
+    if (art === "filterkies") {
+      return { von: String(row.filterkiesVon ?? ""), bis: String(row.filterkiesBis ?? ""), value: "" };
+    }
+    return { von: "", bis: "", value: "" };
+  }, []);
+
+  const buildPegelVerfuellungPatch = useCallback(
+    (art: PegelVerfuellungArt, payload: { von?: string; bis?: string; value?: string }): Partial<PegelAusbauRow> => {
+      if (art === "ton") return { tonVon: payload.von ?? "", tonBis: payload.bis ?? "" };
+      if (art === "sand") return { sandVon: payload.von ?? "", sandBis: payload.bis ?? "" };
+      if (art === "zement") return { zementBentVon: payload.von ?? "", zementBentBis: payload.bis ?? "" };
+      if (art === "bohrgut") return { bohrgutVon: payload.von ?? "", bohrgutBis: payload.bis ?? "" };
+      if (art === "filterkies") return { filterkiesVon: payload.von ?? "", filterkiesBis: payload.bis ?? "" };
+      return {};
+    },
+    []
+  );
+
+  const getInitialVerfuellungTypesForPegelRow = useCallback(
+    (row: PegelAusbauRow): PegelVerfuellungArt[] => {
+      const active = PEGEL_VERFUELLUNG_OPTIONS
+        .map((opt) => opt.value)
+        .filter((art) => {
+          const values = getPegelVerfuellungValues(row, art);
+          return Boolean(values.von.trim() || values.bis.trim());
+        });
+      return active.length ? active : ["ton"];
+    },
+    [getPegelVerfuellungValues]
+  );
+
+  useEffect(() => {
+    const rowCount = safePegel.length;
+    if (pegelVerfuellungInitCountRef.current === rowCount) return;
+    pegelVerfuellungInitCountRef.current = rowCount;
+    setPegelVerfuellungTypesByRow(() => {
+      const next: Record<number, PegelVerfuellungArt[]> = {};
+      safePegel.forEach((row, idx) => {
+        next[idx] = getInitialVerfuellungTypesForPegelRow(row);
+      });
+      return next;
+    });
+  }, [safePegel, getInitialVerfuellungTypesForPegelRow]);
+
+  const getVerfuellungTypesForRow = useCallback(
+    (rowIndex: number, row: PegelAusbauRow) =>
+      pegelVerfuellungTypesByRow[rowIndex] ?? getInitialVerfuellungTypesForPegelRow(row),
+    [pegelVerfuellungTypesByRow, getInitialVerfuellungTypesForPegelRow]
+  );
 
   const rmlPegelDmValue = useMemo(
     () => safePegel.find((row) => String(row.pegelDm ?? "").trim().length > 0)?.pegelDm ?? "",
@@ -3420,7 +3574,13 @@ if (mode === "edit") {
     setReport((p) => {
       const rows = Array.isArray(p.pegelAusbauRows) && p.pegelAusbauRows.length ? [...p.pegelAusbauRows] : [];
       if (rows.length >= MAX_PEGEL_ROWS) return { ...p, pegelAusbauRows: rows.length ? rows : [emptyPegelAusbauRow()] };
-      rows.push(emptyPegelAusbauRow());
+      const nextRow = emptyPegelAusbauRow();
+      if (!isRml && bohrNrOptions.length > 0) {
+        const used = new Set(rows.map((row) => String(row.bohrNr ?? "").trim()).filter(Boolean));
+        const nextBohrNr = bohrNrOptions.find((opt) => !used.has(opt)) ?? "";
+        if (nextBohrNr) nextRow.bohrNr = nextBohrNr;
+      }
+      rows.push(nextRow);
       return { ...p, pegelAusbauRows: rows.length ? rows : [emptyPegelAusbauRow()] };
     });
   }
@@ -3984,79 +4144,216 @@ if (mode === "edit") {
 
                 {showStep(3) && !isRml ? (
                   <div className="mt-4 min-w-0 rounded-xl border border-slate-200/60 bg-slate-50/50 p-3">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <h4 className="font-medium">Arbeitszeit & Pausen</h4>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-medium">Arbeiter & Arbeitszeiten</h4>
                       <RowActions
-                        addLabel="+ Zeit"
-                        removeLabel="– Zeit"
-                        onAdd={addWorkAndBreakRow}
-                        onRemove={removeLastWorkAndBreakRow}
-                        className=""
+                        addLabel="+ Arbeiter"
+                        removeLabel="– Arbeiter"
+                        onAdd={addWorker}
+                        onRemove={removeLastWorker}
+                        countLabel={`Arbeiter: ${safeWorkers.length}`}
                       />
                     </div>
-                    <div className="mt-3 space-y-4">
-                      {safeWorkTimes.slice(0, 3).map((r, i) => {
-                        const b = safeBreaks[i] ?? { from: "", to: "" };
-                        return (
-                          <div key={i} className="min-w-0 rounded-xl border border-slate-200/70 bg-white p-3">
-                            <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[1.1fr_1fr_1fr_1fr_1fr]">
-                              <label className="min-w-0 space-y-1">
-                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Name</span>
+                    <div className="mt-3 space-y-3">
+                      {safeWorkers.map((worker, idx) => (
+                        <div key={idx} className="grid gap-3 rounded-xl border border-slate-200/70 bg-white p-3 md:grid-cols-2">
+                          <label className="min-w-0 space-y-1">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                              {idx === 0 ? "Bohrmeister" : `Arbeiter ${idx + 1}`}
+                            </span>
+                            <input
+                              className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                              value={worker.name ?? ""}
+                              onChange={(e) => setWorkerNameAt(idx, e.target.value)}
+                              placeholder={idx === 0 ? "Bohrmeister" : `Name Arbeiter ${idx + 1}`}
+                            />
+                          </label>
+                          <div className="space-y-1">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Auslöse</span>
+                            <div className="flex h-[42px] items-center gap-5 rounded-lg border px-3 text-sm">
+                              <label className="flex items-center gap-2">
                                 <input
-                                  className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
-                                  value={r.name ?? ""}
-                                  onChange={(e) => setTimeRowName(i, e.target.value)}
-                                  placeholder="Name"
+                                  type="checkbox"
+                                  checked={!!worker.ausloeseT}
+                                  onChange={(e) => setWorker(idx, { ausloeseT: e.target.checked })}
                                 />
+                                T
                               </label>
-                              <label className="min-w-0 space-y-1">
-                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Arbeitszeit von</span>
+                              <label className="flex items-center gap-2">
                                 <input
-                                  type="time"
-                                  className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
-                                  value={r.from ?? ""}
-                                  onChange={(e) => setWorkTimeRow(i, { from: e.target.value })}
-                                  onFocus={(e) => openNativePicker(e.currentTarget)}
-                                  onClick={(e) => openNativePicker(e.currentTarget)}
+                                  type="checkbox"
+                                  checked={!!worker.ausloeseN}
+                                  onChange={(e) => setWorker(idx, { ausloeseN: e.target.checked })}
                                 />
-                              </label>
-                              <label className="min-w-0 space-y-1">
-                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Arbeitszeit bis</span>
-                                <input
-                                  type="time"
-                                  className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
-                                  value={r.to ?? ""}
-                                  onChange={(e) => setWorkTimeRow(i, { to: e.target.value })}
-                                  onFocus={(e) => openNativePicker(e.currentTarget)}
-                                  onClick={(e) => openNativePicker(e.currentTarget)}
-                                />
-                              </label>
-                              <label className="min-w-0 space-y-1">
-                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pause von</span>
-                                <input
-                                  type="time"
-                                  className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
-                                  value={b.from ?? ""}
-                                  onChange={(e) => setBreakRow(i, { from: e.target.value })}
-                                  onFocus={(e) => openNativePicker(e.currentTarget)}
-                                  onClick={(e) => openNativePicker(e.currentTarget)}
-                                />
-                              </label>
-                              <label className="min-w-0 space-y-1">
-                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pause bis</span>
-                                <input
-                                  type="time"
-                                  className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
-                                  value={b.to ?? ""}
-                                  onChange={(e) => setBreakRow(i, { to: e.target.value })}
-                                  onFocus={(e) => openNativePicker(e.currentTarget)}
-                                  onClick={(e) => openNativePicker(e.currentTarget)}
-                                />
+                                N
                               </label>
                             </div>
                           </div>
-                        );
-                      })}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 rounded-xl border border-slate-200/70 bg-white p-3">
+                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={!!report.workCyclesSame}
+                          onChange={(e) => {
+                            const next = e.target.checked;
+                            setReport((p) => {
+                              const workers = Array.isArray(p.workers) && p.workers.length ? p.workers : [emptyWorker()];
+                              const currentWork = Array.isArray(p.workTimeRows) && p.workTimeRows.length ? [...p.workTimeRows] : [emptyTimeRow()];
+                              const currentBreak = Array.isArray(p.breakRows) && p.breakRows.length ? [...p.breakRows] : [emptyTimeRow()];
+                              const firstWork = currentWork[0] ?? emptyTimeRow();
+                              const firstBreak = currentBreak[0] ?? emptyTimeRow();
+                              const nextWorkRows = next
+                                ? [
+                                    {
+                                      ...firstWork,
+                                      name: String(workers[0]?.name ?? ""),
+                                    },
+                                  ]
+                                : workers.map((w, idx) => ({
+                                    ...(currentWork[idx] ?? firstWork ?? emptyTimeRow()),
+                                    name: String(w?.name ?? ""),
+                                  }));
+                              const nextBreakRows = next
+                                ? [
+                                    {
+                                      ...firstBreak,
+                                      name: String(workers[0]?.name ?? ""),
+                                    },
+                                  ]
+                                : workers.map((w, idx) => ({
+                                    ...(currentBreak[idx] ?? firstBreak ?? emptyTimeRow()),
+                                    name: String(w?.name ?? ""),
+                                  }));
+                              return {
+                                ...p,
+                                workCyclesSame: next,
+                                workTimeRows: nextWorkRows,
+                                breakRows: nextBreakRows,
+                              };
+                            });
+                          }}
+                        />
+                        Sind die Arbeitstakte alle gleich?
+                      </label>
+                    </div>
+                    <div className="mt-3 space-y-4">
+                      {report.workCyclesSame ? (
+                        (() => {
+                          const work = safeWorkTimes[0] ?? emptyTimeRow();
+                          const br = safeBreaks[0] ?? emptyTimeRow();
+                          return (
+                            <div className="min-w-0 rounded-xl border border-slate-200/70 bg-white p-3">
+                              <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <label className="min-w-0 space-y-1">
+                                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Arbeitszeit von</span>
+                                  <input
+                                    type="time"
+                                    className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                    value={work.from ?? ""}
+                                    onChange={(e) => setWorkTimeRow(0, { from: e.target.value })}
+                                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                                    onClick={(e) => openNativePicker(e.currentTarget)}
+                                  />
+                                </label>
+                                <label className="min-w-0 space-y-1">
+                                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Arbeitszeit bis</span>
+                                  <input
+                                    type="time"
+                                    className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                    value={work.to ?? ""}
+                                    onChange={(e) => setWorkTimeRow(0, { to: e.target.value })}
+                                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                                    onClick={(e) => openNativePicker(e.currentTarget)}
+                                  />
+                                </label>
+                                <label className="min-w-0 space-y-1">
+                                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pause von</span>
+                                  <input
+                                    type="time"
+                                    className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                    value={br.from ?? ""}
+                                    onChange={(e) => setBreakRow(0, { from: e.target.value })}
+                                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                                    onClick={(e) => openNativePicker(e.currentTarget)}
+                                  />
+                                </label>
+                                <label className="min-w-0 space-y-1">
+                                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pause bis</span>
+                                  <input
+                                    type="time"
+                                    className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                    value={br.to ?? ""}
+                                    onChange={(e) => setBreakRow(0, { to: e.target.value })}
+                                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                                    onClick={(e) => openNativePicker(e.currentTarget)}
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        safeWorkers.map((worker, i) => {
+                          const r = safeWorkTimes[i] ?? emptyTimeRow();
+                          const b = safeBreaks[i] ?? emptyTimeRow();
+                          return (
+                            <div key={i} className="min-w-0 rounded-xl border border-slate-200/70 bg-white p-3">
+                              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                {worker.name?.trim() || `Arbeiter ${i + 1}`}
+                              </div>
+                              <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <label className="min-w-0 space-y-1">
+                                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Arbeitszeit von</span>
+                                  <input
+                                    type="time"
+                                    className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                    value={r.from ?? ""}
+                                    onChange={(e) => setWorkTimeRow(i, { from: e.target.value })}
+                                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                                    onClick={(e) => openNativePicker(e.currentTarget)}
+                                  />
+                                </label>
+                                <label className="min-w-0 space-y-1">
+                                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Arbeitszeit bis</span>
+                                  <input
+                                    type="time"
+                                    className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                    value={r.to ?? ""}
+                                    onChange={(e) => setWorkTimeRow(i, { to: e.target.value })}
+                                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                                    onClick={(e) => openNativePicker(e.currentTarget)}
+                                  />
+                                </label>
+                                <label className="min-w-0 space-y-1">
+                                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pause von</span>
+                                  <input
+                                    type="time"
+                                    className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                    value={b.from ?? ""}
+                                    onChange={(e) => setBreakRow(i, { from: e.target.value })}
+                                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                                    onClick={(e) => openNativePicker(e.currentTarget)}
+                                  />
+                                </label>
+                                <label className="min-w-0 space-y-1">
+                                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Pause bis</span>
+                                  <input
+                                    type="time"
+                                    className="w-full max-w-full min-w-0 rounded-lg border px-2.5 py-2 text-sm"
+                                    value={b.to ?? ""}
+                                    onChange={(e) => setBreakRow(i, { to: e.target.value })}
+                                    onFocus={(e) => openNativePicker(e.currentTarget)}
+                                    onClick={(e) => openNativePicker(e.currentTarget)}
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 ) : null}
@@ -4532,12 +4829,22 @@ if (mode === "edit") {
             </div>
             <div className="space-y-2">
               {safePegel.map((row, i) => {
-                const ausbauArt: "filter" | "vollrohr" | "stahlaufsatz" =
+                const derivedAusbauArt: "filter" | "vollrohr" | "stahlaufsatz" | "individuell" =
                   row.aufsatzStahlVon || row.aufsatzStahlBis
                     ? "stahlaufsatz"
                     : row.rohrePvcVon || row.rohrePvcBis
                       ? "vollrohr"
+                      : String(row.ausbauArtCustom ?? "").trim()
+                        ? "individuell"
                       : "filter";
+                const explicitAusbauArt = row.ausbauArtType;
+                const ausbauArt: "filter" | "vollrohr" | "stahlaufsatz" | "individuell" =
+                  explicitAusbauArt === "filter" ||
+                  explicitAusbauArt === "vollrohr" ||
+                  explicitAusbauArt === "stahlaufsatz" ||
+                  explicitAusbauArt === "individuell"
+                    ? explicitAusbauArt
+                    : derivedAusbauArt;
                 const fromValue =
                   ausbauArt === "stahlaufsatz"
                     ? row.aufsatzStahlVon ?? ""
@@ -4557,9 +4864,10 @@ if (mode === "edit") {
                       className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-4"
                       value={ausbauArt}
                       onChange={(e) => {
-                        const nextArt = e.target.value as "filter" | "vollrohr" | "stahlaufsatz";
+                        const nextArt = e.target.value as "filter" | "vollrohr" | "stahlaufsatz" | "individuell";
                         if (nextArt === "stahlaufsatz") {
                           updatePegel(i, {
+                            ausbauArtType: "stahlaufsatz",
                             filterVon: "",
                             filterBis: "",
                             rohrePvcVon: "",
@@ -4571,6 +4879,7 @@ if (mode === "edit") {
                         }
                         if (nextArt === "vollrohr") {
                           updatePegel(i, {
+                            ausbauArtType: "vollrohr",
                             filterVon: "",
                             filterBis: "",
                             rohrePvcVon: fromValue,
@@ -4580,7 +4889,21 @@ if (mode === "edit") {
                           });
                           return;
                         }
+                        if (nextArt === "individuell") {
+                          updatePegel(i, {
+                            ausbauArtType: "individuell",
+                            filterVon: fromValue,
+                            filterBis: toValue,
+                            rohrePvcVon: "",
+                            rohrePvcBis: "",
+                            aufsatzStahlVon: "",
+                            aufsatzStahlBis: "",
+                            ausbauArtCustom: row.ausbauArtCustom ?? "",
+                          });
+                          return;
+                        }
                         updatePegel(i, {
+                          ausbauArtType: "filter",
                           filterVon: fromValue,
                           filterBis: toValue,
                           rohrePvcVon: "",
@@ -4593,6 +4916,7 @@ if (mode === "edit") {
                       <option value="filter">Filter</option>
                       <option value="vollrohr">Vollrohr</option>
                       <option value="stahlaufsatz">Stahlaufsatz</option>
+                      <option value="individuell">Individuell</option>
                     </select>
                     <input
                       className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-4"
@@ -4628,6 +4952,14 @@ if (mode === "edit") {
                       }}
                       placeholder="bis"
                     />
+                    {ausbauArt === "individuell" ? (
+                      <input
+                        className="col-span-12 rounded-lg border px-3 py-2 text-sm"
+                        value={row.ausbauArtCustom ?? ""}
+                        onChange={(e) => updatePegel(i, { ausbauArtCustom: e.target.value, ausbauArtType: "individuell" })}
+                        placeholder="Individuelle Ausbau-Art"
+                      />
+                    ) : null}
                   </div>
                 );
               })}
@@ -4849,32 +5181,10 @@ if (mode === "edit") {
       {/* ======================= ARBEITER (TABELLENLAYOUT) ======================= */}
       {!isRml && showStep(4) ? <GroupCard title="Arbeitstakte / Stunden" badge="Personal">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <RowActions
-            addLabel="+ Arbeiter"
-            removeLabel="– Arbeiter"
-            onAdd={addWorker}
-            onRemove={removeLastWorker}
-            countLabel={`Arbeiter: ${safeWorkers.length}`}
-          />
+          <div className="text-xs text-slate-600">
+            Arbeiter werden in Schritt 4 gepflegt.
+          </div>
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 text-xs text-slate-600">
-              <input
-                type="checkbox"
-                checked={!!report.workCyclesSame}
-                onChange={(e) => {
-                  const next = e.target.checked;
-                  if (next) {
-                    setReport((p) => ({
-                      ...p,
-                      workCyclesSame: true,
-                    }));
-                  } else {
-                    setReport((p) => ({ ...p, workCyclesSame: false }));
-                  }
-                }}
-              />
-              Alle Arbeitstakte gleich
-            </label>
             {report.workCyclesSame ? (
               <>
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Arbeitstakte</span>
@@ -4927,53 +5237,65 @@ if (mode === "edit") {
                 Soll: {sharedExpectedHours || "—"} Std. | Ist: {sharedTotalHours || "—"} Std.
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
               {(Array.isArray(report.workCycles) && report.workCycles.length ? report.workCycles : [""]).map((val, i) => (
                 <div key={i} className="rounded-lg border border-slate-200/70 p-3 space-y-2">
                   <div className="text-xs font-semibold text-slate-500">Takt {i + 1}</div>
-                  <select
-                    className="w-full rounded border px-2 py-2 text-sm"
-                    value={val ?? ""}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setReport((p) => {
-                        const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
-                        list[i] = next;
-                        return { ...p, workCycles: list };
-                      });
-                      if (next !== "__custom__") {
-                        setCustomCycleDraft((p) => ({ ...p, [`shared-${i}`]: "" }));
-                      }
-                    }}
-                  >
-                    <option value="">Bitte wählen…</option>
-                    <option value="Transport">1 Transport</option>
-                    <option value="Einrichten und Aufstellen">2 Einrichten und Aufstellen</option>
-                    <option value="Umsetzen">3 Umsetzen</option>
-                    <option value="Rammbohren/EK-bohren">4 Rammbohren/EK-bohren</option>
-                    <option value="Kernbohren">5 Kernbohren</option>
-                    <option value="Vollbohren">6 Vollbohren</option>
-                    <option value="Hindernisse durchbohren">7 Hindernisse durchbohren</option>
-                    <option value="Schachten">8 Schachten</option>
-                    <option value="Proben/Bohrung aufnehmen">9 Proben/Bohrung aufnehmen</option>
-                    <option value="Bo. aufnehmen m. GA">10 Bo. aufnehmen m. GA</option>
-                    <option value="Pumpversuche">11 Pumpversuche</option>
-                    <option value="Bohrloch Versuche">12 Bohrloch Versuche</option>
-                    <option value="Bohrloch Verfüllung">13 Bohrloch Verfüllung</option>
-                    <option value="Pegel:einbau mit Verfüllung">14 Pegel:einbau mit Verfüllung</option>
-                    <option value="Fahrten">15 Fahrten</option>
-                    <option value="Bohrstelle räumen, Flurschäden beseitigen">16 Bohrstelle räumen, Flurschäden beseitigen</option>
-                    <option value="Baustelle räumen">17 Baustelle räumen</option>
-                    <option value="Werkstatt/Laden">18 Werkstatt/Laden</option>
-                    <option value="Geräte-Pflege/Reparatur">19 Geräte-Pflege/Reparatur</option>
-                    <option value="Kampfmittel">20 Kampfmittel</option>
-                    <option value="Wasser fahren">21 Wasser fahren</option>
-                    <option value="Platten legen">22 Platten legen</option>
-                    {customWorkCycles.map((c, idx) => (
-                      <option key={`custom-${c}`} value={c}>{23 + idx} {c}</option>
-                    ))}
-                    <option value="__custom__">Eigener Takt…</option>
-                  </select>
+                  <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_140px]">
+                    <select
+                      className="w-full rounded border px-2 py-2 text-sm"
+                      value={val ?? ""}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setReport((p) => {
+                          const list = Array.isArray(p.workCycles) ? [...p.workCycles] : [];
+                          list[i] = next;
+                          return { ...p, workCycles: list };
+                        });
+                        if (next !== "__custom__") {
+                          setCustomCycleDraft((p) => ({ ...p, [`shared-${i}`]: "" }));
+                        }
+                      }}
+                    >
+                      <option value="">Bitte wählen…</option>
+                      <option value="Transport">1 Transport</option>
+                      <option value="Einrichten und Aufstellen">2 Einrichten und Aufstellen</option>
+                      <option value="Umsetzen">3 Umsetzen</option>
+                      <option value="Rammbohren/EK-bohren">4 Rammbohren/EK-bohren</option>
+                      <option value="Kernbohren">5 Kernbohren</option>
+                      <option value="Vollbohren">6 Vollbohren</option>
+                      <option value="Hindernisse durchbohren">7 Hindernisse durchbohren</option>
+                      <option value="Schachten">8 Schachten</option>
+                      <option value="Proben/Bohrung aufnehmen">9 Proben/Bohrung aufnehmen</option>
+                      <option value="Bo. aufnehmen m. GA">10 Bo. aufnehmen m. GA</option>
+                      <option value="Pumpversuche">11 Pumpversuche</option>
+                      <option value="Bohrloch Versuche">12 Bohrloch Versuche</option>
+                      <option value="Bohrloch Verfüllung">13 Bohrloch Verfüllung</option>
+                      <option value="Pegel:einbau mit Verfüllung">14 Pegel:einbau mit Verfüllung</option>
+                      <option value="Fahrten">15 Fahrten</option>
+                      <option value="Bohrstelle räumen, Flurschäden beseitigen">16 Bohrstelle räumen, Flurschäden beseitigen</option>
+                      <option value="Baustelle räumen">17 Baustelle räumen</option>
+                      <option value="Werkstatt/Laden">18 Werkstatt/Laden</option>
+                      <option value="Geräte-Pflege/Reparatur">19 Geräte-Pflege/Reparatur</option>
+                      <option value="Kampfmittel">20 Kampfmittel</option>
+                      <option value="Wasser fahren">21 Wasser fahren</option>
+                      <option value="Platten legen">22 Platten legen</option>
+                      {customWorkCycles.map((c, idx) => (
+                        <option key={`custom-${c}`} value={c}>{23 + idx} {c}</option>
+                      ))}
+                      <option value="__custom__">Eigener Takt…</option>
+                    </select>
+                    <input
+                      className={`w-full rounded border px-2 py-2 text-sm ${isQuarterInput(sharedStunden[i] ?? "") ? "" : "border-rose-400 bg-rose-50"}`}
+                      value={sharedStunden[i] ?? ""}
+                      onChange={(e) => {
+                        const next = [...sharedStunden];
+                        next[i] = e.target.value;
+                        applySharedStunden(next);
+                      }}
+                      placeholder="Std."
+                    />
+                  </div>
                   {val === "__custom__" ? (
                     <div className="flex items-center gap-2">
                       <input
@@ -5013,19 +5335,6 @@ if (mode === "edit") {
                       </button>
                     </div>
                   ) : null}
-                  <div className="space-y-1">
-                    <div className="text-xs text-slate-500">Stunden</div>
-                    <input
-                      className={`w-full rounded border px-2 py-2 text-sm ${isQuarterInput(sharedStunden[i] ?? "") ? "" : "border-rose-400 bg-rose-50"}`}
-                      value={sharedStunden[i] ?? ""}
-                      onChange={(e) => {
-                        const next = [...sharedStunden];
-                        next[i] = e.target.value;
-                        applySharedStunden(next);
-                      }}
-                      placeholder="Std."
-                    />
-                  </div>
                 </div>
               ))}
             </div>
@@ -5039,16 +5348,15 @@ if (mode === "edit") {
               const timeStr = getTimeHoursStringForWorker(idx);
               const invalid = hasInvalidStunden(w);
               const matches = !invalid && Boolean(taktStr) && Boolean(timeStr) && areHourValuesEqual(taktStr, timeStr);
-              const mismatch = !invalid && Boolean(taktStr) && Boolean(timeStr) && !areHourValuesEqual(taktStr, timeStr);
               const workerCycles = getWorkerCycles(w);
               return (
                 <div key={idx} className="rounded-xl border p-4 space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="grid items-center gap-3 md:grid-cols-[minmax(180px,1fr)_280px_auto]">
                     <div className="text-sm font-semibold text-slate-800">
                       {w.name?.trim() ? w.name : `Arbeiter ${idx + 1}`}
                     </div>
                     <div
-                      className={`rounded-xl border px-5 py-2 text-sm font-semibold ${
+                      className={`rounded-xl border px-5 py-2 text-center text-sm font-semibold ${
                         matches
                           ? "border-emerald-300 bg-emerald-50 text-emerald-700"
                           : "border-rose-300 bg-rose-50 text-rose-700"
@@ -5084,79 +5392,66 @@ if (mode === "edit") {
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="space-y-1">
-                      <span className="text-xs text-slate-500">Reine Std.</span>
-                      <input className={`w-full rounded border px-2 py-2 text-sm ${invalid ? "bg-rose-50 border-rose-300" : matches ? "bg-emerald-50 border-emerald-300" : mismatch ? "bg-rose-50 border-rose-300" : "bg-slate-50"}`} value={w.reineArbeitsStd ?? ""} readOnly />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-xs text-slate-500">Wochenend</span>
-                      <input className="w-full rounded border px-2 py-2 text-sm" value={w.wochenendfahrt ?? ""} onChange={(e) => setWorker(idx, { wochenendfahrt: e.target.value })} />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-xs text-slate-500">Ausfall</span>
-                      <input className="w-full rounded border px-2 py-2 text-sm" value={w.ausfallStd ?? ""} onChange={(e) => setWorker(idx, { ausfallStd: e.target.value })} />
-                    </label>
-                  </div>
-
-                  <div className="flex items-center gap-4 text-sm">
-                    <label className="flex items-center gap-2">
-                      <input type="checkbox" checked={!!w.ausloeseT} onChange={(e) => setWorker(idx, { ausloeseT: e.target.checked })} />
-                      Auslöse T
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input type="checkbox" checked={!!w.ausloeseN} onChange={(e) => setWorker(idx, { ausloeseN: e.target.checked })} />
-                      Auslöse N
-                    </label>
-                  </div>
-
                   <div className="space-y-2">
                     <div className="text-xs font-semibold text-slate-500">Arbeitstakte je Arbeiter</div>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
                       {workerCycles.map((val, j) => (
                         <div key={j} className="rounded-lg border border-slate-200/70 p-3 space-y-2">
                           <div className="text-xs font-semibold text-slate-500">Takt {j + 1}</div>
-                          <select
-                            className="w-full rounded border px-2 py-2 text-sm"
-                            value={val ?? ""}
-                            onChange={(e) => {
-                              const next = e.target.value;
-                              const list = [...workerCycles];
-                              list[j] = next;
-                              setWorkerCycles(idx, list);
-                              if (next !== "__custom__") {
-                                setCustomCycleDraft((p) => ({ ...p, [`w${idx}-${j}`]: "" }));
-                              }
-                            }}
-                          >
-                            <option value="">Bitte wählen…</option>
-                            <option value="Transport">1 Transport</option>
-                            <option value="Einrichten und Aufstellen">2 Einrichten und Aufstellen</option>
-                            <option value="Umsetzen">3 Umsetzen</option>
-                            <option value="Rammbohren/EK-bohren">4 Rammbohren/EK-bohren</option>
-                            <option value="Kernbohren">5 Kernbohren</option>
-                            <option value="Vollbohren">6 Vollbohren</option>
-                            <option value="Hindernisse durchbohren">7 Hindernisse durchbohren</option>
-                            <option value="Schachten">8 Schachten</option>
-                            <option value="Proben/Bohrung aufnehmen">9 Proben/Bohrung aufnehmen</option>
-                            <option value="Bo. aufnehmen m. GA">10 Bo. aufnehmen m. GA</option>
-                            <option value="Pumpversuche">11 Pumpversuche</option>
-                            <option value="Bohrloch Versuche">12 Bohrloch Versuche</option>
-                            <option value="Bohrloch Verfüllung">13 Bohrloch Verfüllung</option>
-                            <option value="Pegel:einbau mit Verfüllung">14 Pegel:einbau mit Verfüllung</option>
-                            <option value="Fahrten">15 Fahrten</option>
-                            <option value="Bohrstelle räumen, Flurschäden beseitigen">16 Bohrstelle räumen, Flurschäden beseitigen</option>
-                            <option value="Baustelle räumen">17 Baustelle räumen</option>
-                            <option value="Werkstatt/Laden">18 Werkstatt/Laden</option>
-                            <option value="Geräte-Pflege/Reparatur">19 Geräte-Pflege/Reparatur</option>
-                            <option value="Kampfmittel">20 Kampfmittel</option>
-                            <option value="Wasser fahren">21 Wasser fahren</option>
-                            <option value="Platten legen">22 Platten legen</option>
-                            {customWorkCycles.map((c, idx2) => (
-                              <option key={`custom-${c}`} value={c}>{23 + idx2} {c}</option>
-                            ))}
-                            <option value="__custom__">Eigener Takt…</option>
-                          </select>
+                          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_140px]">
+                            <select
+                              className="w-full rounded border px-2 py-2 text-sm"
+                              value={val ?? ""}
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                const list = [...workerCycles];
+                                list[j] = next;
+                                setWorkerCycles(idx, list);
+                                if (next !== "__custom__") {
+                                  setCustomCycleDraft((p) => ({ ...p, [`w${idx}-${j}`]: "" }));
+                                }
+                              }}
+                            >
+                              <option value="">Bitte wählen…</option>
+                              <option value="Transport">1 Transport</option>
+                              <option value="Einrichten und Aufstellen">2 Einrichten und Aufstellen</option>
+                              <option value="Umsetzen">3 Umsetzen</option>
+                              <option value="Rammbohren/EK-bohren">4 Rammbohren/EK-bohren</option>
+                              <option value="Kernbohren">5 Kernbohren</option>
+                              <option value="Vollbohren">6 Vollbohren</option>
+                              <option value="Hindernisse durchbohren">7 Hindernisse durchbohren</option>
+                              <option value="Schachten">8 Schachten</option>
+                              <option value="Proben/Bohrung aufnehmen">9 Proben/Bohrung aufnehmen</option>
+                              <option value="Bo. aufnehmen m. GA">10 Bo. aufnehmen m. GA</option>
+                              <option value="Pumpversuche">11 Pumpversuche</option>
+                              <option value="Bohrloch Versuche">12 Bohrloch Versuche</option>
+                              <option value="Bohrloch Verfüllung">13 Bohrloch Verfüllung</option>
+                              <option value="Pegel:einbau mit Verfüllung">14 Pegel:einbau mit Verfüllung</option>
+                              <option value="Fahrten">15 Fahrten</option>
+                              <option value="Bohrstelle räumen, Flurschäden beseitigen">16 Bohrstelle räumen, Flurschäden beseitigen</option>
+                              <option value="Baustelle räumen">17 Baustelle räumen</option>
+                              <option value="Werkstatt/Laden">18 Werkstatt/Laden</option>
+                              <option value="Geräte-Pflege/Reparatur">19 Geräte-Pflege/Reparatur</option>
+                              <option value="Kampfmittel">20 Kampfmittel</option>
+                              <option value="Wasser fahren">21 Wasser fahren</option>
+                              <option value="Platten legen">22 Platten legen</option>
+                              {customWorkCycles.map((c, idx2) => (
+                                <option key={`custom-${c}`} value={c}>{23 + idx2} {c}</option>
+                              ))}
+                              <option value="__custom__">Eigener Takt…</option>
+                            </select>
+                            <input
+                              className={`w-full rounded border px-2 py-2 text-sm ${isQuarterInput((Array.isArray(w.stunden) ? w.stunden[j] : "") ?? "") ? "" : "border-rose-400 bg-rose-50"}`}
+                              value={(Array.isArray(w.stunden) ? w.stunden[j] : "") ?? ""}
+                              onChange={(e) => {
+                                const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
+                                while (st.length < workerCycles.length) st.push("");
+                                st[j] = e.target.value;
+                                setWorker(idx, { stunden: st });
+                              }}
+                              placeholder="Std."
+                            />
+                          </div>
                           {val === "__custom__" ? (
                             <div className="flex items-center gap-2">
                               <input
@@ -5194,23 +5489,28 @@ if (mode === "edit") {
                               </button>
                             </div>
                           ) : null}
-                          <div className="space-y-1">
-                            <div className="text-xs text-slate-500">Stunden</div>
-                            <input
-                              className={`w-full rounded border px-2 py-2 text-sm ${isQuarterInput((Array.isArray(w.stunden) ? w.stunden[j] : "") ?? "") ? "" : "border-rose-400 bg-rose-50"}`}
-                              value={(Array.isArray(w.stunden) ? w.stunden[j] : "") ?? ""}
-                              onChange={(e) => {
-                                const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
-                                while (st.length < workerCycles.length) st.push("");
-                                st[j] = e.target.value;
-                                setWorker(idx, { stunden: st });
-                              }}
-                              placeholder="Std."
-                            />
-                          </div>
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1">
+                      <span className="text-xs text-slate-500">Ausfall</span>
+                      <input
+                        className="w-full rounded border px-2 py-2 text-sm"
+                        value={w.ausfallStd ?? ""}
+                        onChange={(e) => setWorker(idx, { ausfallStd: e.target.value })}
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs text-slate-500">Wochenendfahrt</span>
+                      <input
+                        className="w-full rounded border px-2 py-2 text-sm"
+                        value={w.wochenendfahrt ?? ""}
+                        onChange={(e) => setWorker(idx, { wochenendfahrt: e.target.value })}
+                      />
+                    </label>
                   </div>
                 </div>
               );
@@ -5372,12 +5672,12 @@ if (mode === "edit") {
                         />
                       </div>
                       <div className="space-y-1">
-                        <div className="text-[11px] text-slate-500">SPT</div>
+                        <div className="text-[11px] text-slate-500">SPT (Anzahl gesamt)</div>
                         <input
                           className="w-full rounded-lg border px-3 py-2 text-sm"
                           value={row.spt ?? ""}
                           onChange={(e) => setRow(i, { spt: e.target.value })}
-                          placeholder="12/30"
+                          placeholder="3"
                         />
                       </div>
                     </div>
@@ -5790,6 +6090,11 @@ if (mode === "edit") {
 
         {safePegel.map((r, i) => (
           <div key={i} className="mt-4 rounded-xl border p-4 space-y-5">
+            {String(r.bohrNr ?? "").trim() ? null : (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                Bitte zuerst eine Bohrung auswählen.
+              </div>
+            )}
             {/* Kopf */}
             <div className="grid lg:grid-cols-4 gap-3">
               {bohrNrOptions.length ? (
@@ -5808,102 +6113,208 @@ if (mode === "edit") {
               ) : (
                 <input className="rounded-xl border p-3" placeholder="Bohr Nr." value={r.bohrNr} onChange={(e) => updatePegel(i, { bohrNr: e.target.value })} />
               )}
-              <select
-                className="rounded-xl border p-3"
-                value={r.pegelDm ?? ""}
-                onChange={(e) => updatePegel(i, { pegelDm: e.target.value })}
-              >
-                <option value="">Pegel Ø</option>
-                {['2"', '3"', '4"', '5"', '6"', '8"', "DN300", "DN400", "DN500", "DN600", "DN700", "DN800"].map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
+              {String(r.bohrNr ?? "").trim() ? (
+                <select
+                  className="rounded-xl border p-3"
+                  value={r.pegelDm ?? ""}
+                  onChange={(e) => updatePegel(i, { pegelDm: e.target.value })}
+                >
+                  <option value="">Pegel Ø</option>
+                  {['2"', '3"', '4"', '5"', '6"', '8"', "DN300", "DN400", "DN500", "DN600", "DN700", "DN800"].map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
             </div>
 
-            {/* ROHRE (wie PDF: Sumpf, Filter, Rohre, Aufsatz PVC, Aufsatz Stahl, Filterkies) */}
+            {String(r.bohrNr ?? "").trim() ? (
+              <>
+            {/* ROHRE (UI vereinfacht; Mapping bleibt auf den bestehenden PDF-Feldern) */}
             <div className="rounded-xl border p-4">
               <div className="font-medium mb-3">ROHRE</div>
-
-              <div className="grid lg:grid-cols-6 gap-3">
-                <div className="lg:col-span-6 flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
-                  <label className="flex items-center gap-2 text-sm font-semibold text-sky-900">
-                    <input
-                      type="checkbox"
-                      checked={pegelSumpfEnabled[i] ?? Boolean(r.sumpfVon || r.sumpfBis)}
-                      onChange={(e) => {
-                        const next = e.target.checked;
-                        setPegelSumpfEnabled((p) => ({ ...p, [i]: next }));
-                        if (!next) {
-                          updatePegel(i, { sumpfVon: "", sumpfBis: "" });
-                        }
-                      }}
-                    />
-                    Sumpfrohr anzeigen
-                  </label>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => {
+                      const current = getRohrTypesForRow(i, r);
+                      const nextType = PEGEL_ROHRART_OPTIONS.map((opt) => opt.value).find((opt) => !current.includes(opt));
+                      if (!nextType) return;
+                      setPegelRohrTypesByRow((prev) => ({ ...prev, [i]: [...current, nextType] }));
+                    }}
+                    disabled={getRohrTypesForRow(i, r).length >= PEGEL_ROHRART_OPTIONS.length}
+                  >
+                    + Rohr
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => {
+                      const current = getRohrTypesForRow(i, r);
+                      if (current.length <= 1) return;
+                      const removedType = current[current.length - 1];
+                      const next = current.slice(0, -1);
+                      setPegelRohrTypesByRow((prev) => ({ ...prev, [i]: next }));
+                      updatePegel(i, buildPegelRohrPatch(removedType, "", ""));
+                    }}
+                    disabled={getRohrTypesForRow(i, r).length <= 1}
+                  >
+                    - Rohr
+                  </button>
                 </div>
 
-                {(pegelSumpfEnabled[i] ?? Boolean(r.sumpfVon || r.sumpfBis)) ? (
-                  <>
-                    <input className="rounded-xl border p-3" placeholder="Sumpf von" value={r.sumpfVon} onChange={(e) => updatePegel(i, { sumpfVon: e.target.value })} />
-                    <input className="rounded-xl border p-3" placeholder="Sumpf bis" value={r.sumpfBis} onChange={(e) => updatePegel(i, { sumpfBis: e.target.value })} />
-                  </>
-                ) : null}
-
-                <input className="rounded-xl border p-3" placeholder="Filter von" value={r.filterVon} onChange={(e) => updatePegel(i, { filterVon: e.target.value })} />
-                <input className="rounded-xl border p-3" placeholder="Filter bis" value={r.filterBis} onChange={(e) => updatePegel(i, { filterBis: e.target.value })} />
-
-                <input className="rounded-xl border p-3" placeholder="Aufsatz PVC von" value={r.aufsatzPvcVon} onChange={(e) => updatePegel(i, { aufsatzPvcVon: e.target.value })} />
-                <input className="rounded-xl border p-3" placeholder="Aufsatz PVC bis" value={r.aufsatzPvcBis} onChange={(e) => updatePegel(i, { aufsatzPvcBis: e.target.value })} />
-
-                <div className="lg:col-span-6 flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
-                  <label className="flex items-center gap-2 text-sm font-semibold text-sky-900">
-                    <input
-                      type="checkbox"
-                      checked={pegelStahlEnabled[i] ?? Boolean(r.aufsatzStahlVon || r.aufsatzStahlBis)}
-                      onChange={(e) => {
-                        const next = e.target.checked;
-                        setPegelStahlEnabled((p) => ({ ...p, [i]: next }));
-                        if (!next) {
-                          updatePegel(i, { aufsatzStahlVon: "", aufsatzStahlBis: "" });
-                        }
-                      }}
-                    />
-                    Aufsatz Stahl anzeigen
-                  </label>
-                </div>
-
-                {(pegelStahlEnabled[i] ?? Boolean(r.aufsatzStahlVon || r.aufsatzStahlBis)) ? (
-                  <>
-                    <input className="rounded-xl border p-3" placeholder="Aufsatz Stahl von" value={r.aufsatzStahlVon} onChange={(e) => updatePegel(i, { aufsatzStahlVon: e.target.value })} />
-                    <input className="rounded-xl border p-3" placeholder="Aufsatz Stahl bis" value={r.aufsatzStahlBis} onChange={(e) => updatePegel(i, { aufsatzStahlBis: e.target.value })} />
-                  </>
-                ) : null}
-
+                {getRohrTypesForRow(i, r).map((rohrType, rohrIdx) => {
+                  const values = getPegelRohrValues(r, rohrType);
+                  return (
+                    <div key={`${i}-${rohrIdx}-${rohrType}`} className="grid gap-2 md:grid-cols-3">
+                      <select
+                        className="rounded-xl border p-3"
+                        value={rohrType}
+                        onChange={(e) => {
+                          const nextType = e.target.value as PegelRohrArt;
+                          const current = getRohrTypesForRow(i, r);
+                          if (!nextType || nextType === rohrType) return;
+                          if (current.some((t, idx) => idx !== rohrIdx && t === nextType)) return;
+                          const next = [...current];
+                          next[rohrIdx] = nextType;
+                          setPegelRohrTypesByRow((prev) => ({ ...prev, [i]: next }));
+                          updatePegel(i, {
+                            ...buildPegelRohrPatch(rohrType, "", ""),
+                            ...buildPegelRohrPatch(nextType, values.von, values.bis),
+                          });
+                        }}
+                      >
+                        {PEGEL_ROHRART_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        className="rounded-xl border p-3"
+                        placeholder="von"
+                        value={values.von}
+                        onChange={(e) => updatePegel(i, buildPegelRohrPatch(rohrType, e.target.value, values.bis))}
+                      />
+                      <input
+                        className="rounded-xl border p-3"
+                        placeholder="bis"
+                        value={values.bis}
+                        onChange={(e) => updatePegel(i, buildPegelRohrPatch(rohrType, values.von, e.target.value))}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
             {/* DICHTUNG-VERFÜLLUNG (Ton, Sand, Zement-Bent, Bohrgut) */}
             <div className="rounded-xl border p-4">
               <div className="font-medium mb-3">DICHTUNG / VERFÜLLUNG</div>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => {
+                      const current = getVerfuellungTypesForRow(i, r);
+                      const nextType = PEGEL_VERFUELLUNG_OPTIONS.map((opt) => opt.value).find(
+                        (opt) => !current.includes(opt)
+                      );
+                      if (!nextType) return;
+                      setPegelVerfuellungTypesByRow((prev) => ({ ...prev, [i]: [...current, nextType] }));
+                    }}
+                    disabled={getVerfuellungTypesForRow(i, r).length >= PEGEL_VERFUELLUNG_OPTIONS.length}
+                  >
+                    + Verfüllung
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => {
+                      const current = getVerfuellungTypesForRow(i, r);
+                      if (current.length <= 1) return;
+                      const removedType = current[current.length - 1];
+                      const next = current.slice(0, -1);
+                      setPegelVerfuellungTypesByRow((prev) => ({ ...prev, [i]: next }));
+                      updatePegel(i, buildPegelVerfuellungPatch(removedType, { von: "", bis: "", value: "" }));
+                    }}
+                    disabled={getVerfuellungTypesForRow(i, r).length <= 1}
+                  >
+                    - Verfüllung
+                  </button>
+                </div>
 
-              <div className="grid lg:grid-cols-8 gap-3">
-                <input className="rounded-xl border p-3" placeholder="Ton von" value={r.tonVon} onChange={(e) => updatePegel(i, { tonVon: e.target.value })} />
-                <input className="rounded-xl border p-3" placeholder="Ton bis" value={r.tonBis} onChange={(e) => updatePegel(i, { tonBis: e.target.value })} />
-
-                <input className="rounded-xl border p-3" placeholder="Sand von" value={r.sandVon} onChange={(e) => updatePegel(i, { sandVon: e.target.value })} />
-                <input className="rounded-xl border p-3" placeholder="Sand bis" value={r.sandBis} onChange={(e) => updatePegel(i, { sandBis: e.target.value })} />
-
-                <input className="rounded-xl border p-3" placeholder="Zement-Bent. von" value={r.zementBentVon} onChange={(e) => updatePegel(i, { zementBentVon: e.target.value })} />
-                <input className="rounded-xl border p-3" placeholder="Zement-Bent. bis" value={r.zementBentBis} onChange={(e) => updatePegel(i, { zementBentBis: e.target.value })} />
-
-                <input className="rounded-xl border p-3" placeholder="Bohrgut von" value={r.bohrgutVon} onChange={(e) => updatePegel(i, { bohrgutVon: e.target.value })} />
-                <input className="rounded-xl border p-3" placeholder="Bohrgut bis" value={r.bohrgutBis} onChange={(e) => updatePegel(i, { bohrgutBis: e.target.value })} />
-
-                <input className="rounded-xl border p-3" placeholder="Filterkies von" value={r.filterkiesVon ?? ""} onChange={(e) => updatePegel(i, { filterkiesVon: e.target.value })} />
-                <input className="rounded-xl border p-3" placeholder="Filterkies bis" value={r.filterkiesBis ?? ""} onChange={(e) => updatePegel(i, { filterkiesBis: e.target.value })} />
-                <input className="rounded-xl border p-3 lg:col-span-2" placeholder="Filterkies Körnung" value={r.filterkiesKoernung ?? ""} onChange={(e) => updatePegel(i, { filterkiesKoernung: e.target.value })} />
+                {getVerfuellungTypesForRow(i, r).map((verfuellungType, verIdx) => {
+                  const values = getPegelVerfuellungValues(r, verfuellungType);
+                  return (
+                    <div key={`${i}-vf-${verIdx}-${verfuellungType}`} className="grid gap-2 md:grid-cols-3">
+                      <select
+                        className="rounded-xl border p-3"
+                        value={verfuellungType}
+                        onChange={(e) => {
+                          const nextType = e.target.value as PegelVerfuellungArt;
+                          const current = getVerfuellungTypesForRow(i, r);
+                          if (!nextType || nextType === verfuellungType) return;
+                          if (current.some((t, idx) => idx !== verIdx && t === nextType)) return;
+                          const next = [...current];
+                          next[verIdx] = nextType;
+                          setPegelVerfuellungTypesByRow((prev) => ({ ...prev, [i]: next }));
+                          updatePegel(i, {
+                            ...buildPegelVerfuellungPatch(verfuellungType, { von: "", bis: "", value: "" }),
+                            ...buildPegelVerfuellungPatch(nextType, {
+                              von: values.von,
+                              bis: values.bis,
+                              value: values.value,
+                            }),
+                          });
+                        }}
+                      >
+                        {PEGEL_VERFUELLUNG_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        className="rounded-xl border p-3"
+                        placeholder="von"
+                        value={values.von}
+                        onChange={(e) =>
+                          updatePegel(
+                            i,
+                            buildPegelVerfuellungPatch(verfuellungType, { von: e.target.value, bis: values.bis })
+                          )
+                        }
+                      />
+                      <input
+                        className="rounded-xl border p-3"
+                        placeholder="bis"
+                        value={values.bis}
+                        onChange={(e) =>
+                          updatePegel(
+                            i,
+                            buildPegelVerfuellungPatch(verfuellungType, { von: values.von, bis: e.target.value })
+                          )
+                        }
+                      />
+                    </div>
+                  );
+                })}
+                <div className="grid gap-2 md:grid-cols-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+                    Filterkieskörnung
+                  </div>
+                  <input
+                    className="rounded-xl border p-3 md:col-span-2"
+                    placeholder="Körnung (mm)"
+                    value={r.filterkiesKoernung ?? ""}
+                    onChange={(e) => updatePegel(i, { filterkiesKoernung: e.target.value })}
+                  />
+                </div>
               </div>
             </div>
 
@@ -5931,6 +6342,8 @@ if (mode === "edit") {
                 />
               </div>
             </div>
+              </>
+            ) : null}
           </div>
         ))}
       </GroupCard> : null}

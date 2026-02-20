@@ -109,6 +109,8 @@ export type TableSectionsEnabled = {
 export type PegelAusbauRow = {
   bohrNr: string;
   pegelDm: string;
+  ausbauArtType: "filter" | "vollrohr" | "stahlaufsatz" | "individuell" | "";
+  ausbauArtCustom: string;
 
   // ROHRE
   sumpfVon: string;

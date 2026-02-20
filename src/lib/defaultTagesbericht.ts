@@ -116,6 +116,8 @@ export function createDefaultTagesbericht(): Tagesbericht {
       {
         bohrNr: "",
         pegelDm: "",
+        ausbauArtType: "",
+        ausbauArtCustom: "",
 
         // ROHRE
         sumpfVon: "",
