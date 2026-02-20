@@ -121,6 +121,17 @@
   .floaty {
     animation: floaty 3.5s ease-in-out infinite;
   }
+
+  .hide-native-time-icon::-webkit-calendar-picker-indicator {
+    opacity: 0;
+    display: none;
+    pointer-events: none;
+  }
+
+  .hide-native-time-icon::-webkit-clear-button,
+  .hide-native-time-icon::-webkit-inner-spin-button {
+    display: none;
+  }
 }
 
 @keyframes spin {

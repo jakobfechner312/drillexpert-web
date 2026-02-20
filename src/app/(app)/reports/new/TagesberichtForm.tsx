@@ -345,7 +345,7 @@ const TimePickerInput = ({
         ref={inputRef}
         type="time"
         step={stepSeconds}
-        className={[className ?? "", "pr-11"].filter(Boolean).join(" ")}
+        className={[className ?? "", "pr-11 hide-native-time-icon"].filter(Boolean).join(" ")}
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
         onFocus={(e) => onOpenPicker(e.currentTarget)}
