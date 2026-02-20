@@ -80,6 +80,10 @@ type SchichtRow = {
   spt_schlag_2: string;
   spt_schlag_3: string;
 };
+type ProbeRow = {
+  art: string;
+  tiefe: string;
+};
 
 type GroundwaterRow = {
   grundwasserstand: string;
@@ -511,6 +515,82 @@ const normalizeProbeType = (value: string | undefined | null) => {
   if (normalized === "BG") return "BG";
   return "GP";
 };
+const emptyProbeRow = (): ProbeRow => ({
+  art: "GP",
+  tiefe: "",
+});
+const normalizeProbeRows = (raw: unknown): ProbeRow[] => {
+  if (!Array.isArray(raw)) return [emptyProbeRow()];
+  const normalized = raw
+    .map((entry) => ({
+      art: normalizeProbeType((entry as Partial<ProbeRow>)?.art),
+      tiefe: String((entry as Partial<ProbeRow>)?.tiefe ?? ""),
+    }))
+    .filter((row) => String(row.tiefe ?? "").trim() !== "" || String(row.art ?? "").trim() !== "");
+  return normalized.length > 0 ? normalized : [emptyProbeRow()];
+};
+const deriveProbeRowsFromSchichtRows = (rows: Partial<SchichtRow>[]): ProbeRow[] => {
+  const derived: ProbeRow[] = [];
+  rows.forEach((row) => {
+    const depthList = Array.isArray(row?.proben_tiefen)
+      ? row.proben_tiefen.map((value) => String(value ?? "").trim())
+      : [];
+    if (depthList.length > 0) {
+      const sourceTypes = Array.isArray(row?.proben_arten) ? row.proben_arten : [];
+      depthList.forEach((tiefe, idx) => {
+        if (!tiefe) return;
+        derived.push({
+          art: normalizeProbeType(sourceTypes[idx] ?? row?.proben_art),
+          tiefe,
+        });
+      });
+      return;
+    }
+    const tiefe = String(row?.proben_tiefe ?? "").trim();
+    if (!tiefe) return;
+    derived.push({
+      art: normalizeProbeType(row?.proben_art),
+      tiefe,
+    });
+  });
+  return derived.length > 0 ? derived : [emptyProbeRow()];
+};
+const normalizeStandaloneSptRows = (raw: unknown): SptEntry[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => ({
+      von_m: String((entry as Partial<SptEntry>)?.von_m ?? ""),
+      bis_m: computeSptBisFromEntry(entry as Partial<SptEntry>) || String((entry as Partial<SptEntry>)?.bis_m ?? ""),
+      schlag_1: String((entry as Partial<SptEntry>)?.schlag_1 ?? ""),
+      schlag_2: String((entry as Partial<SptEntry>)?.schlag_2 ?? ""),
+      schlag_3: String((entry as Partial<SptEntry>)?.schlag_3 ?? ""),
+      schlag_1_cm: String((entry as Partial<SptEntry>)?.schlag_1_cm ?? ""),
+      schlag_2_cm: String((entry as Partial<SptEntry>)?.schlag_2_cm ?? ""),
+      schlag_3_cm: String((entry as Partial<SptEntry>)?.schlag_3_cm ?? ""),
+    }))
+    .slice(0, 10);
+};
+const deriveStandaloneSptRowsFromSchichtRows = (rows: Partial<SchichtRow>[]): SptEntry[] => {
+  const derived: SptEntry[] = [];
+  rows.forEach((row) => {
+    const entries = Array.isArray(row?.spt_eintraege) ? row.spt_eintraege : [];
+    entries.forEach((entry) => {
+      derived.push({
+        ...emptySptEntry(),
+        ...entry,
+        von_m: String(entry?.von_m ?? ""),
+        bis_m: computeSptBisFromEntry(entry) || String(entry?.bis_m ?? ""),
+        schlag_1: String(entry?.schlag_1 ?? ""),
+        schlag_2: String(entry?.schlag_2 ?? ""),
+        schlag_3: String(entry?.schlag_3 ?? ""),
+        schlag_1_cm: String(entry?.schlag_1_cm ?? ""),
+        schlag_2_cm: String(entry?.schlag_2_cm ?? ""),
+        schlag_3_cm: String(entry?.schlag_3_cm ?? ""),
+      });
+    });
+  });
+  return derived.slice(0, 10);
+};
 const computeProbeKiFromBohrungen = (rows: Array<Pick<BohrungEntry, "bohrung_bis">>) => {
   const values = rows
     .map((entry) => parseDepthNumeric(entry.bohrung_bis))
@@ -862,6 +942,8 @@ export default function SchichtenverzeichnisForm({
   const [schichtRows, setSchichtRows] = useState<SchichtRow[]>([
     emptySchichtRow(),
   ]);
+  const [probeRows, setProbeRows] = useState<ProbeRow[]>([emptyProbeRow()]);
+  const [sptRows, setSptRows] = useState<SptEntry[]>([]);
   const [bohrungen, setBohrungen] = useState<BohrungEntry[]>([emptyBohrungEntry()]);
   const [filterRows, setFilterRows] = useState<FilterRow[]>([emptyFilterRow()]);
   const [filterPairRowCounts, setFilterPairRowCounts] = useState<Record<string, number>>(() =>
@@ -1367,21 +1449,18 @@ export default function SchichtenverzeichnisForm({
         total: Math.max(1, schichtRows.length) * 11,
       },
       {
-        filled: schichtRows.reduce((acc, row) => {
-          const sptFilled = (Array.isArray(row.spt_eintraege) ? row.spt_eintraege : []).reduce(
-            (innerAcc, entry) =>
-              innerAcc +
-              countFilled([entry?.von_m, entry?.bis_m, entry?.schlag_1, entry?.schlag_2, entry?.schlag_3]),
+        filled:
+          probeRows.reduce(
+            (acc, row) => acc + countFilled([row.art, row.tiefe]),
             0
-          );
-          return (
-            acc +
-            countFilled([row.proben_art, row.proben_nr, row.proben_tiefe]) +
-            countFilled(row.proben_tiefen) +
-            sptFilled
-          );
-        }, 0),
-        total: Math.max(1, schichtRows.length) * 18,
+          ) +
+          sptRows.reduce(
+            (acc, row) =>
+              acc +
+              countFilled([row.von_m, row.bis_m, row.schlag_1, row.schlag_2, row.schlag_3]),
+            0
+          ),
+        total: Math.max(1, probeRows.length) * 2 + Math.max(1, sptRows.length) * 5,
       },
       {
         filled: countFilled([
@@ -1406,7 +1485,7 @@ export default function SchichtenverzeichnisForm({
       percent,
       firstIncompleteStep: firstIncompleteStep === -1 ? null : firstIncompleteStep,
     };
-  }, [data, bohrungen, filterRows, grundwasserRows, schichtRows]);
+  }, [data, bohrungen, filterRows, grundwasserRows, probeRows, schichtRows, sptRows]);
   const effectiveDurchfuehrungszeit = useMemo(
     () =>
       composeDurchfuehrungszeit(
@@ -1754,11 +1833,17 @@ export default function SchichtenverzeichnisForm({
         return;
       }
 
-      const db = row.data as Record<string, any>;
-      setData((prev) => ({ ...prev, ...(db ?? {}) }));
-      setBohrungen(normalizeBohrungen(db?.bohrungen, { ...initialData, ...(db ?? {}) }));
+      const db = row.data as Record<string, unknown>;
+      const dbFormValues = Object.fromEntries(
+        Object.keys(initialData).map((key) => [
+          key,
+          typeof db[key] === "string" ? (db[key] as string) : initialData[key as keyof FormData],
+        ])
+      ) as FormData;
+      setData((prev) => ({ ...prev, ...dbFormValues }));
+      setBohrungen(normalizeBohrungen(db?.bohrungen, { ...initialData, ...dbFormValues }));
       {
-        const normalizedFilter = normalizeFilterRows(db?.filter_rows, { ...initialData, ...(db ?? {}) });
+        const normalizedFilter = normalizeFilterRows(db?.filter_rows, { ...initialData, ...dbFormValues });
         setFilterRows(normalizedFilter);
         setFilterPairRowCounts(buildFilterPairRowCounts(normalizedFilter));
       }
@@ -1766,6 +1851,20 @@ export default function SchichtenverzeichnisForm({
         Array.isArray(db?.schicht_rows) && db.schicht_rows.length
           ? db.schicht_rows.map((row: Partial<SchichtRow>) => normalizeSchichtRow(row))
           : [emptySchichtRow()]
+      );
+      setProbeRows(
+        Array.isArray(db?.proben_rows) && db.proben_rows.length
+          ? normalizeProbeRows(db.proben_rows)
+          : deriveProbeRowsFromSchichtRows(
+              Array.isArray(db?.schicht_rows) ? (db.schicht_rows as Partial<SchichtRow>[]) : []
+            )
+      );
+      setSptRows(
+        Array.isArray(db?.spt_rows) && db.spt_rows.length
+          ? normalizeStandaloneSptRows(db.spt_rows)
+          : deriveStandaloneSptRowsFromSchichtRows(
+              Array.isArray(db?.schicht_rows) ? (db.schicht_rows as Partial<SchichtRow>[]) : []
+            )
       );
       setGrundwasserRows(Array.isArray(db?.grundwasser_rows) && db.grundwasser_rows.length ? db.grundwasser_rows : [emptyGroundwaterRow()]);
 
@@ -1776,8 +1875,14 @@ export default function SchichtenverzeichnisForm({
       if (db?.schicht_x_offset_page_2 != null) setSchichtXOffsetPage2(String(db.schicht_x_offset_page_2));
       if (db?.schicht_rows_per_page_1 != null) setSchichtRowsPerPage1(String(db.schicht_rows_per_page_1));
       if (db?.schicht_rows_per_page_2 != null) setSchichtRowsPerPage2(String(db.schicht_rows_per_page_2));
-      if (db?.schicht_x_offsets_page_1 != null) setSchichtXOffsetsPage1((prev) => ({ ...prev, ...db.schicht_x_offsets_page_1 }));
-      if (db?.schicht_x_offsets_page_2 != null) setSchichtXOffsetsPage2((prev) => ({ ...prev, ...db.schicht_x_offsets_page_2 }));
+      if (db?.schicht_x_offsets_page_1 != null) {
+        const offsets = db.schicht_x_offsets_page_1 as Record<string, string>;
+        setSchichtXOffsetsPage1((prev) => ({ ...prev, ...offsets }));
+      }
+      if (db?.schicht_x_offsets_page_2 != null) {
+        const offsets = db.schicht_x_offsets_page_2 as Record<string, string>;
+        setSchichtXOffsetsPage2((prev) => ({ ...prev, ...offsets }));
+      }
       if (db?.field_offsets_page_1 != null && typeof db.field_offsets_page_1 === "object") {
         setFieldOffsetsPage1(
           buildFieldOffsetState(
@@ -1824,6 +1929,8 @@ export default function SchichtenverzeichnisForm({
         filterRows?: unknown;
         grundwasserRows?: unknown;
         schichtRows?: unknown;
+        probeRows?: unknown;
+        sptRows?: unknown;
         stepIndex?: number;
       };
       if (saved.data && typeof saved.data === "object") {
@@ -1847,6 +1954,16 @@ export default function SchichtenverzeichnisForm({
             : [emptySchichtRow()]
         );
       }
+      if (Array.isArray(saved.probeRows)) {
+        setProbeRows(normalizeProbeRows(saved.probeRows));
+      } else if (Array.isArray(saved.schichtRows)) {
+        setProbeRows(deriveProbeRowsFromSchichtRows(saved.schichtRows as Partial<SchichtRow>[]));
+      }
+      if (Array.isArray(saved.sptRows)) {
+        setSptRows(normalizeStandaloneSptRows(saved.sptRows));
+      } else if (Array.isArray(saved.schichtRows)) {
+        setSptRows(deriveStandaloneSptRowsFromSchichtRows(saved.schichtRows as Partial<SchichtRow>[]));
+      }
       if (typeof saved.stepIndex === "number" && Number.isFinite(saved.stepIndex)) {
         setStepIndex(Math.max(0, Math.min(saved.stepIndex, steps.length - 1)));
       }
@@ -1868,13 +1985,15 @@ export default function SchichtenverzeichnisForm({
           filterRows,
           grundwasserRows,
           schichtRows,
+          probeRows,
+          sptRows,
           stepIndex,
         })
       );
     } catch {
       // ignore quota/private mode issues
     }
-  }, [mode, data, bohrungen, filterRows, grundwasserRows, schichtRows, stepIndex]);
+  }, [mode, data, bohrungen, filterRows, grundwasserRows, schichtRows, probeRows, sptRows, stepIndex]);
 
   useEffect(() => {
     const onPageShow = () => setLoading(false);
@@ -2000,34 +2119,7 @@ export default function SchichtenverzeichnisForm({
         return false;
       }
 
-      const draftData = {
-        ...data,
-        probe_ki: effectiveProbeKi,
-        ...legacyBohrungsFields,
-        ...legacyFilterFields,
-        durchfuehrungszeit: effectiveDurchfuehrungszeit,
-        bohrungen: normalizedBohrungenForPayload,
-        filter_rows: normalizedFilterRowsForPayload,
-        grundwasser_rows: grundwasserRows,
-        schicht_rows: schichtRows,
-        schicht_row_height: Number(schichtRowHeight) || 200,
-        schicht_start_offset_page_1: Number(schichtStartOffsetPage1) || 0,
-        schicht_start_offset_page_2: Number(schichtStartOffsetPage2) || 0,
-        schicht_x_offset_page_1: Number(schichtXOffsetPage1) || 0,
-        schicht_x_offset_page_2: Number(schichtXOffsetPage2) || 0,
-        schicht_rows_per_page: Number(schichtRowsPerPage1) || 4,
-        schicht_rows_per_page_1: Number(schichtRowsPerPage1) || 4,
-        schicht_rows_per_page_2: Number(schichtRowsPerPage2) || 8,
-        schicht_x_offsets_page_1: Object.fromEntries(
-          Object.entries(schichtXOffsetsPage1).map(([k, v]) => [k, Number(v) || 0])
-        ),
-        schicht_x_offsets_page_2: Object.fromEntries(
-          Object.entries(schichtXOffsetsPage2).map(([k, v]) => [k, Number(v) || 0])
-        ),
-        field_offsets_page_1: fieldOffsetsPage1Payload,
-        schicht_row_field_offsets_page_1: rowFieldOffsetsPage1Payload,
-        schicht_row_offsets_page_2: schichtRowOffsetsPage2.map((v) => Number(v) || 0),
-      };
+      const draftData = buildReportDataPayload();
 
       const title =
         data.projekt_name?.trim()
@@ -2064,6 +2156,8 @@ export default function SchichtenverzeichnisForm({
       legacyFilterFields,
       normalizedBohrungenForPayload,
       normalizedFilterRowsForPayload,
+      probeRows,
+      sptRows,
       rowFieldOffsetsPage1Payload,
       schichtRows,
       schichtRowHeight,
@@ -2203,6 +2297,8 @@ export default function SchichtenverzeichnisForm({
     normalizedFilterRowsForPayload,
     filterRows,
     grundwasserRows,
+    probeRows,
+    sptRows,
     schichtRows,
     schichtRowHeight,
     schichtStartOffsetPage1,
@@ -2427,7 +2523,7 @@ export default function SchichtenverzeichnisForm({
       localStorage.setItem("sv_offsets", JSON.stringify(snapshot));
       const historyRaw = localStorage.getItem("sv_offsets_history");
       const parsedHistory = historyRaw ? JSON.parse(historyRaw) : null;
-      const history = Array.isArray(parsedHistory) ? (parsedHistory as any[]) : [];
+      const history = Array.isArray(parsedHistory) ? (parsedHistory as unknown[]) : [];
       history.push(snapshot);
       localStorage.setItem("sv_offsets_history", JSON.stringify(history.slice(-20)));
     } catch {
@@ -2453,6 +2549,8 @@ export default function SchichtenverzeichnisForm({
           filterRows,
           grundwasserRows,
           schichtRows,
+          probeRows,
+          sptRows,
           stepIndex,
         })
       );
@@ -2496,29 +2594,26 @@ export default function SchichtenverzeichnisForm({
     bohrungen: normalizedBohrungenForPayload,
     filter_rows: normalizedFilterRowsForPayload,
     grundwasser_rows: grundwasserRows,
+    proben_rows: probeRows.map((row) => ({
+      art: normalizeProbeType(row.art),
+      tiefe: String(row.tiefe ?? ""),
+    })),
+    spt_rows: sptRows.map((entry) => ({
+      ...entry,
+      bis_m: computeSptBisFromEntry(entry),
+    })),
     schicht_rows: schichtRows.map((row) => {
-      const entries = Array.isArray(row.spt_eintraege) ? row.spt_eintraege : [];
-      const rawDepths = Array.isArray(row.proben_tiefen)
-        ? row.proben_tiefen.map((value) => String(value ?? ""))
-        : [String(row.proben_tiefe ?? "")];
-      const normalizedDepths = rawDepths.length ? rawDepths : [""];
-      const rawTypes = Array.isArray(row.proben_arten) ? row.proben_arten : [];
-      const fallbackType = normalizeProbeType(rawTypes[0] ?? row.proben_art);
-      const normalizedTypes = normalizedDepths.map((_, idx) =>
-        normalizeProbeType(rawTypes[idx] ?? fallbackType)
-      );
-      const firstNonEmptyDepth =
-        normalizedDepths.find((value) => value.trim() !== "") ?? String(row.proben_tiefe ?? "");
       return {
         ...row,
-        proben_tiefen: normalizedDepths,
-        proben_arten: normalizedTypes,
-        proben_art: normalizedTypes[0] ?? fallbackType,
-        proben_tiefe: firstNonEmptyDepth,
-        spt_eintraege: entries.map((entry) => ({
-          ...entry,
-          bis_m: computeSptBisFromEntry(entry),
-        })),
+        proben_tiefen: [],
+        proben_arten: [],
+        proben_art: "",
+        proben_tiefe: "",
+        spt_eintraege: [],
+        spt_gemacht: false,
+        spt_schlag_1: "",
+        spt_schlag_2: "",
+        spt_schlag_3: "",
       };
     }),
     schicht_row_height: Number(schichtRowHeight) || 200,
@@ -2782,11 +2877,11 @@ export default function SchichtenverzeichnisForm({
         g: "g",
         h: "h",
         feststellungen: "Feststellung: keine Besonderheiten.",
-        proben_art: "GP",
-        proben_nr: `P-${idx + 1}`,
-        proben_tiefe: "3,2",
-        proben_tiefen: ["0,0 - 2,3", "3,2", "4,1 - 5,0"],
-        proben_arten: ["GP", "EP", "UP", "BG"],
+        proben_art: "",
+        proben_nr: "",
+        proben_tiefe: "",
+        proben_tiefen: [],
+        proben_arten: [],
         spt_eintraege:
           idx === 0
             ? [
@@ -2831,6 +2926,26 @@ export default function SchichtenverzeichnisForm({
         spt_schlag_3: idx === 0 ? "15" : idx === 1 ? "12" : "",
       }))
     );
+    setProbeRows(
+      Array.from({ length: 30 }, (_, idx) => {
+        const from = (idx * 0.5).toFixed(1).replace(".", ",");
+        const to = ((idx + 1) * 0.5).toFixed(1).replace(".", ",");
+        const art = idx % 4 === 0 ? "GP" : idx % 4 === 1 ? "EP" : idx % 4 === 2 ? "UP" : "BG";
+        return { art, tiefe: `${from} - ${to}` };
+      })
+    );
+    setSptRows(
+      Array.from({ length: 10 }, (_, idx) => ({
+        von_m: `${(idx * 1.5).toFixed(1).replace(".", ",")}`,
+        bis_m: `${((idx + 1) * 1.5).toFixed(1).replace(".", ",")}`,
+        schlag_1: "12",
+        schlag_2: "10",
+        schlag_3: "8",
+        schlag_1_cm: "",
+        schlag_2_cm: "",
+        schlag_3_cm: "",
+      }))
+    );
   };
 
   const resetAllInputs = () => {
@@ -2842,6 +2957,8 @@ export default function SchichtenverzeichnisForm({
     setFilterRows([emptyFilterRow()]);
     setFilterPairRowCounts(buildFilterPairRowCounts([emptyFilterRow()]));
     setSchichtRows([emptySchichtRow()]);
+    setProbeRows([emptyProbeRow()]);
+    setSptRows([]);
     setGrundwasserRows([emptyGroundwaterRow()]);
     try {
       sessionStorage.removeItem(SV_FORM_STATE_KEY);
@@ -3838,7 +3955,8 @@ export default function SchichtenverzeichnisForm({
         </details>
         ) : null}
         <div className="mt-4 space-y-4">
-          {schichtRows.map((row, idx) => (
+          {isSchichtStep
+            ? schichtRows.map((row, idx) => (
             <div
               key={idx}
               className="rounded-2xl border border-slate-200/80 bg-slate-50/30 p-3"
@@ -3848,7 +3966,7 @@ export default function SchichtenverzeichnisForm({
                   Schichtzeile {idx + 1}
                 </div>
                 <div className="flex gap-2">
-                  {isSchichtStep || isProbenSptStep ? (
+                  {isSchichtStep ? (
                   <button
                     type="button"
                     className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
@@ -3859,19 +3977,21 @@ export default function SchichtenverzeichnisForm({
                       })
                     }
                   >
-                    {isSchichtStep ? "Nächste Schicht" : "+ Schichtzeile"}
+                    Nächste Schicht
                   </button>
                   ) : null}
-                  <button
-                    type="button"
-                    className="rounded-md border border-rose-200 bg-white px-2 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50"
-                    onClick={() =>
-                      setSchichtRows((prev) => (prev.length > 1 ? prev.filter((_, rowIndex) => rowIndex !== idx) : prev))
-                    }
-                    disabled={schichtRows.length <= 1}
-                  >
-                    Entfernen
-                  </button>
+                  {isSchichtStep ? (
+                    <button
+                      type="button"
+                      className="rounded-md border border-rose-200 bg-white px-2 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                      onClick={() =>
+                        setSchichtRows((prev) => (prev.length > 1 ? prev.filter((_, rowIndex) => rowIndex !== idx) : prev))
+                      }
+                      disabled={schichtRows.length <= 1}
+                    >
+                      Entfernen
+                    </button>
+                  ) : null}
                 </div>
               </div>
               <div
@@ -4175,7 +4295,7 @@ export default function SchichtenverzeichnisForm({
                     </div>
                   </>
                 ) : null}
-                {isProbenSptStep ? (
+                {false ? (
                   <label className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700">
                   <input
                     type="checkbox"
@@ -4214,7 +4334,7 @@ export default function SchichtenverzeichnisForm({
                   SPT durchgeführt
                   </label>
                 ) : null}
-                {isProbenSptStep && (row.spt_eintraege?.length ?? 0) > 0 ? (
+                {false ? (
                   <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -4564,88 +4684,58 @@ export default function SchichtenverzeichnisForm({
                   </div>
                 ) : null}
               </div>
-              {isProbenSptStep ? (
-              <div className="order-1 rounded-xl border border-slate-200 p-3 h-full">
-                <div className="text-xs font-semibold text-slate-600">Entnommene Proben</div>
-                <div className="mt-3 grid gap-2">
-                  <div className="flex items-center justify-between">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                      Tiefe (mehrere Zeilen)
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] hover:bg-slate-50 disabled:opacity-50"
-                        onClick={() =>
-                          setSchichtRows((prev) => {
-                            const next = [...prev];
-                            const current = Array.isArray(next[idx].proben_tiefen)
-                              ? [...next[idx].proben_tiefen]
-                              : [""];
-                            const currentTypes = Array.isArray(next[idx].proben_arten)
-                              ? [...next[idx].proben_arten]
-                              : current.map(() => normalizeProbeType(next[idx].proben_art));
-                            const defaultType = normalizeProbeType(currentTypes[0] ?? next[idx].proben_art);
-                            const previousDepth = String(current[current.length - 1] ?? "");
-                            const previousEnd = extractDepthEndValue(previousDepth);
-                            const nextDepthSuggestion = previousEnd ? previousEnd : "";
-                            current.push(nextDepthSuggestion);
-                            currentTypes.push(defaultType);
-                            next[idx] = { ...next[idx], proben_tiefen: current, proben_arten: currentTypes };
-                            return next;
-                          })
-                        }
-                      >
-                        + Probe
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] hover:bg-slate-50 disabled:opacity-50"
-                        onClick={() =>
-                          setSchichtRows((prev) => {
-                            const next = [...prev];
-                            const current = Array.isArray(next[idx].proben_tiefen)
-                              ? [...next[idx].proben_tiefen]
-                              : [""];
-                            const currentTypes = Array.isArray(next[idx].proben_arten)
-                              ? [...next[idx].proben_arten]
-                              : current.map(() => normalizeProbeType(next[idx].proben_art));
-                            if (current.length <= 1) return prev;
-                            current.pop();
-                            currentTypes.pop();
-                            next[idx] = { ...next[idx], proben_tiefen: current, proben_arten: currentTypes };
-                            return next;
-                          })
-                        }
-                        disabled={(row.proben_tiefen?.length ?? 1) <= 1}
-                      >
-                        – Probe
-                      </button>
-                    </div>
+            </div>
+            </div>
+          ))
+            : null}
+          {isProbenSptStep ? (
+            <>
+              <div className="rounded-2xl border border-slate-200/80 bg-slate-50/30 p-3">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Entnommene Proben (unabhängig von Schichtzeilen)
                   </div>
-                  {(Array.isArray(row.proben_tiefen) ? row.proben_tiefen : [""])
-                    .map((_, i) => {
-                      const depthValue = row.proben_tiefen?.[i] ?? "";
-                      const splitDepth = splitDepthRange(depthValue);
-                      return (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] hover:bg-slate-50"
+                      onClick={() =>
+                        setProbeRows((prev) => {
+                          const next = [...prev];
+                          const previousDepth = String(next[next.length - 1]?.tiefe ?? "");
+                          const previousEnd = extractDepthEndValue(previousDepth);
+                          next.push({
+                            art: normalizeProbeType(next[next.length - 1]?.art ?? "GP"),
+                            tiefe: previousEnd || "",
+                          });
+                          return next;
+                        })
+                      }
+                    >
+                      + Probe
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] hover:bg-slate-50 disabled:opacity-50"
+                      onClick={() => setProbeRows((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev))}
+                      disabled={probeRows.length <= 1}
+                    >
+                      - Probe
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {probeRows.map((row, i) => {
+                    const splitDepth = splitDepthRange(row.tiefe);
+                    return (
                       <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[92px_1fr]">
                         <select
                           className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                          value={normalizeProbeType(row.proben_arten?.[i] ?? row.proben_art)}
+                          value={normalizeProbeType(row.art)}
                           onChange={(e) =>
-                            setSchichtRows((prev) => {
+                            setProbeRows((prev) => {
                               const next = [...prev];
-                              const currentTypes = Array.isArray(next[idx].proben_arten)
-                                ? [...next[idx].proben_arten]
-                                : (Array.isArray(next[idx].proben_tiefen)
-                                    ? next[idx].proben_tiefen
-                                    : [""]).map(() => normalizeProbeType(next[idx].proben_art));
-                              currentTypes[i] = normalizeProbeType(e.target.value);
-                              next[idx] = {
-                                ...next[idx],
-                                proben_arten: currentTypes,
-                                proben_art: currentTypes[0] ?? normalizeProbeType(next[idx].proben_art),
-                              };
+                              next[i] = { ...next[i], art: normalizeProbeType(e.target.value) };
                               return next;
                             })
                           }
@@ -4661,13 +4751,9 @@ export default function SchichtenverzeichnisForm({
                             placeholder={`Von ${i + 1}`}
                             value={splitDepth.from}
                             onChange={(e) =>
-                              setSchichtRows((prev) => {
+                              setProbeRows((prev) => {
                                 const next = [...prev];
-                                const current = Array.isArray(next[idx].proben_tiefen)
-                                  ? [...next[idx].proben_tiefen]
-                                  : [""];
-                                current[i] = joinDepthRange(e.target.value, splitDepth.to);
-                                next[idx] = { ...next[idx], proben_tiefen: current };
+                                next[i] = { ...next[i], tiefe: joinDepthRange(e.target.value, splitDepth.to) };
                                 return next;
                               })
                             }
@@ -4678,31 +4764,210 @@ export default function SchichtenverzeichnisForm({
                             placeholder={`Bis ${i + 1}`}
                             value={splitDepth.to}
                             onChange={(e) =>
-                              setSchichtRows((prev) => {
+                              setProbeRows((prev) => {
                                 const next = [...prev];
-                                const current = Array.isArray(next[idx].proben_tiefen)
-                                  ? [...next[idx].proben_tiefen]
-                                  : [""];
                                 const newTo = e.target.value;
-                                current[i] = joinDepthRange(splitDepth.from, newTo);
-                                if (i + 1 < current.length) {
-                                  const nextSplit = splitDepthRange(current[i + 1] ?? "");
-                                  current[i + 1] = joinDepthRange(newTo, nextSplit.to);
+                                next[i] = { ...next[i], tiefe: joinDepthRange(splitDepth.from, newTo) };
+                                if (i + 1 < next.length) {
+                                  const nextSplit = splitDepthRange(next[i + 1]?.tiefe ?? "");
+                                  next[i + 1] = { ...next[i + 1], tiefe: joinDepthRange(newTo, nextSplit.to) };
                                 }
-                                next[idx] = { ...next[idx], proben_tiefen: current };
                                 return next;
                               })
                             }
                           />
                         </div>
                       </div>
-                    )})}
+                    );
+                  })}
                 </div>
               </div>
-              ) : null}
-            </div>
-            </div>
-          ))}
+              <div className="mt-3 rounded-2xl border border-slate-200/80 bg-slate-50/30 p-3">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  SPT (unabhängig von Schichtzeilen)
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] hover:bg-slate-50 disabled:opacity-50"
+                    onClick={() => setSptRows((prev) => (prev.length >= 10 ? prev : [...prev, emptySptEntry()]))}
+                    disabled={sptRows.length >= 10}
+                  >
+                    + SPT
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] hover:bg-slate-50 disabled:opacity-50"
+                    onClick={() => setSptRows((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev))}
+                    disabled={sptRows.length <= 0}
+                  >
+                    - SPT
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {sptRows.length === 0 ? (
+                  <div className="text-xs text-slate-500">Keine SPT-Zeile angelegt.</div>
+                ) : null}
+                {sptRows.map((entry, sptIndex) => {
+                  const computedBis = computeSptBisFromEntry(entry);
+                  const stopAfterSchlag1 = entry?.schlag_1 === String(SPT_MAX_SCHLAEGE);
+                  const stopAfterSchlag2 = stopAfterSchlag1 || entry?.schlag_2 === String(SPT_MAX_SCHLAEGE);
+                  return (
+                    <div key={sptIndex} className="rounded-md border border-slate-200 bg-white p-2">
+                      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        SPT {sptIndex + 1}
+                      </div>
+                      <div className="mb-2 grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
+                        <input
+                          className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                          placeholder="von (m)"
+                          value={entry?.von_m ?? ""}
+                          onChange={(e) =>
+                            setSptRows((prev) => {
+                              const next = [...prev];
+                              const current = next[sptIndex] ?? emptySptEntry();
+                              const nextEntry = { ...current, von_m: e.target.value };
+                              next[sptIndex] = { ...nextEntry, bis_m: computeSptBisFromEntry(nextEntry) };
+                              return next;
+                            })
+                          }
+                        />
+                        <span className="text-[10px] font-semibold text-slate-500">bis</span>
+                        <div className="h-8 rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-xs text-slate-700 flex items-center">
+                          {computedBis || "automatisch"}
+                        </div>
+                        <span className="text-[10px] text-slate-500">m</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
+                          className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                          placeholder="Schlagzahl max. 50"
+                          value={entry?.schlag_1 ?? ""}
+                          onChange={(e) =>
+                            setSptRows((prev) => {
+                              const next = [...prev];
+                              const current = next[sptIndex] ?? emptySptEntry();
+                              const nextSchlag = normalizeSptSchlagInput(e.target.value);
+                              const nextEntry = {
+                                ...current,
+                                schlag_1: nextSchlag,
+                                schlag_1_cm: nextSchlag === String(SPT_MAX_SCHLAEGE) ? current.schlag_1_cm : "",
+                                schlag_2: nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_2,
+                                schlag_2_cm: nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_2_cm,
+                                schlag_3: nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_3,
+                                schlag_3_cm: nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_3_cm,
+                              };
+                              next[sptIndex] = { ...nextEntry, bis_m: computeSptBisFromEntry(nextEntry) };
+                              return next;
+                            })
+                          }
+                        />
+                        {entry?.schlag_1 === String(SPT_MAX_SCHLAEGE) ? (
+                          <input
+                            className="h-8 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-slate-900"
+                            placeholder="cm bei 50"
+                            value={entry?.schlag_1_cm ?? ""}
+                            onChange={(e) =>
+                              setSptRows((prev) => {
+                                const next = [...prev];
+                                const current = next[sptIndex] ?? emptySptEntry();
+                                const nextEntry = { ...current, schlag_1_cm: normalizeSptCmInput(e.target.value) };
+                                next[sptIndex] = { ...nextEntry, bis_m: computeSptBisFromEntry(nextEntry) };
+                                return next;
+                              })
+                            }
+                          />
+                        ) : null}
+                        {!stopAfterSchlag1 ? (
+                          <>
+                            <input
+                              className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                              placeholder="Schlagzahl max. 50"
+                              value={entry?.schlag_2 ?? ""}
+                              onChange={(e) =>
+                                setSptRows((prev) => {
+                                  const next = [...prev];
+                                  const current = next[sptIndex] ?? emptySptEntry();
+                                  const nextSchlag = normalizeSptSchlagInput(e.target.value);
+                                  const nextEntry = {
+                                    ...current,
+                                    schlag_2: nextSchlag,
+                                    schlag_2_cm: nextSchlag === String(SPT_MAX_SCHLAEGE) ? current.schlag_2_cm : "",
+                                    schlag_3: nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_3,
+                                    schlag_3_cm: nextSchlag === String(SPT_MAX_SCHLAEGE) ? "" : current.schlag_3_cm,
+                                  };
+                                  next[sptIndex] = { ...nextEntry, bis_m: computeSptBisFromEntry(nextEntry) };
+                                  return next;
+                                })
+                              }
+                            />
+                            {entry?.schlag_2 === String(SPT_MAX_SCHLAEGE) ? (
+                              <input
+                                className="h-8 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-slate-900"
+                                placeholder="cm bei 50"
+                                value={entry?.schlag_2_cm ?? ""}
+                                onChange={(e) =>
+                                  setSptRows((prev) => {
+                                    const next = [...prev];
+                                    const current = next[sptIndex] ?? emptySptEntry();
+                                    const nextEntry = { ...current, schlag_2_cm: normalizeSptCmInput(e.target.value) };
+                                    next[sptIndex] = { ...nextEntry, bis_m: computeSptBisFromEntry(nextEntry) };
+                                    return next;
+                                  })
+                                }
+                              />
+                            ) : null}
+                          </>
+                        ) : null}
+                        {!stopAfterSchlag2 ? (
+                          <>
+                            <input
+                              className="h-8 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                              placeholder="Schlagzahl max. 50"
+                              value={entry?.schlag_3 ?? ""}
+                              onChange={(e) =>
+                                setSptRows((prev) => {
+                                  const next = [...prev];
+                                  const current = next[sptIndex] ?? emptySptEntry();
+                                  const nextSchlag = normalizeSptSchlagInput(e.target.value);
+                                  const nextEntry = {
+                                    ...current,
+                                    schlag_3: nextSchlag,
+                                    schlag_3_cm: nextSchlag === String(SPT_MAX_SCHLAEGE) ? current.schlag_3_cm : "",
+                                  };
+                                  next[sptIndex] = { ...nextEntry, bis_m: computeSptBisFromEntry(nextEntry) };
+                                  return next;
+                                })
+                              }
+                            />
+                            {entry?.schlag_3 === String(SPT_MAX_SCHLAEGE) ? (
+                              <input
+                                className="h-8 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-slate-900"
+                                placeholder="cm bei 50"
+                                value={entry?.schlag_3_cm ?? ""}
+                                onChange={(e) =>
+                                  setSptRows((prev) => {
+                                    const next = [...prev];
+                                    const current = next[sptIndex] ?? emptySptEntry();
+                                    const nextEntry = { ...current, schlag_3_cm: normalizeSptCmInput(e.target.value) };
+                                    next[sptIndex] = { ...nextEntry, bis_m: computeSptBisFromEntry(nextEntry) };
+                                    return next;
+                                  })
+                                }
+                              />
+                            ) : null}
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              </div>
+            </>
+          ) : null}
         </div>
             </Card>
           )

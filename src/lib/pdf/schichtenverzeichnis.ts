@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, popGraphicsState, pushGraphicsState, rgb, setCharacterSqueeze } from "pdf-lib";
 import fs from "fs";
 import path from "path";
 import { SV_FIELDS } from "@/lib/pdf/schichtenverzeichnis.mapping";
@@ -102,14 +102,15 @@ export async function generateSchichtenverzeichnisPdf(
     : 0;
 
   const inputSchichtRows = Array.isArray(data?.schicht_rows) ? data.schicht_rows : [];
-  const probeTiefeField = SV_FIELDS.find((field) => field.key === "proben_tiefe");
-  const rowHeightForProbeSplit = Number(data?.schicht_row_height) || 95;
-  const probeFixedSizeForSplit = Math.max(7, (probeTiefeField?.size ?? 6) + 1);
+  const probeTiefeFieldForSplit = SV_FIELDS.find((field) => field.key === "proben_tiefe");
+  const rowHeightForSplit = Number(data?.schicht_row_height) || 95;
+  const probeFixedSizeForSplit = Math.max(7, (probeTiefeFieldForSplit?.size ?? 6) + 1);
   const probeLineHeightForSplit = Math.max(8, Math.round(probeFixedSizeForSplit * 1.2));
-  const probeMaxPerSchicht = Math.max(
+  const probeMaxPerTableRow = Math.max(
     1,
-    Math.floor(Math.max(20, rowHeightForProbeSplit - 10) / probeLineHeightForSplit)
+    Math.floor(Math.max(20, rowHeightForSplit - 10) / probeLineHeightForSplit)
   );
+  const sptMaxPerTableRow = 2;
   const normalizeProbeArtForSplit = (value: unknown) => {
     const normalized = String(value ?? "").trim().toUpperCase();
     if (normalized === "EP") return "EP";
@@ -117,56 +118,57 @@ export async function generateSchichtenverzeichnisPdf(
     if (normalized === "BG") return "BG";
     return "GP";
   };
-  const expandedSchichtRows = inputSchichtRows.flatMap((row: any) => {
-    const depthList = Array.isArray(row?.proben_tiefen)
-      ? row.proben_tiefen.map((value: unknown) => String(value ?? "").trim()).filter(Boolean)
-      : [];
-    if (depthList.length <= probeMaxPerSchicht) return [row];
-    const sourceTypes = Array.isArray(row?.proben_arten) ? row.proben_arten : [];
-    const chunks: any[] = [];
-    for (let start = 0; start < depthList.length; start += probeMaxPerSchicht) {
-      const depthChunk = depthList.slice(start, start + probeMaxPerSchicht);
-      const typeChunk = depthChunk.map((_: string, idx: number) =>
-        normalizeProbeArtForSplit(sourceTypes[start + idx] ?? row?.proben_art)
-      );
-      const firstDepth = depthChunk.find((value: string) => String(value).trim() !== "") ?? "";
-      const firstType = typeChunk[0] ?? normalizeProbeArtForSplit(row?.proben_art);
-      if (start === 0) {
-        chunks.push({
-          ...row,
-          proben_tiefen: depthChunk,
-          proben_arten: typeChunk,
-          proben_art: firstType,
-          proben_tiefe: firstDepth || String(row?.proben_tiefe ?? ""),
-        });
-        continue;
-      }
-      chunks.push({
-        ...row,
-        ansatzpunkt_bis: "",
-        a1: "",
-        a2: "",
-        b: "",
-        c: "",
-        d: "",
-        e: "",
-        f: "",
-        g: "",
-        h: "",
-        feststellungen: "",
-        spt_eintraege: [],
-        spt_gemacht: false,
-        spt_schlag_1: "",
-        spt_schlag_2: "",
-        spt_schlag_3: "",
-        proben_tiefen: depthChunk,
-        proben_arten: typeChunk,
-        proben_art: firstType,
-        proben_tiefe: firstDepth,
+  const expandedSchichtRows = inputSchichtRows;
+  const normalizedProbeRows = Array.isArray(data?.proben_rows) && data.proben_rows.length > 0
+    ? data.proben_rows
+        .map((row: any) => ({
+          art: normalizeProbeArtForSplit(row?.art),
+          tiefe: String(row?.tiefe ?? "").trim(),
+        }))
+        .filter((row: { art: string; tiefe: string }) => row.tiefe !== "")
+    : inputSchichtRows.flatMap((row: any) => {
+        const depthList = Array.isArray(row?.proben_tiefen)
+          ? row.proben_tiefen.map((value: unknown) => String(value ?? "").trim()).filter(Boolean)
+          : [];
+        if (depthList.length > 0) {
+          const sourceTypes = Array.isArray(row?.proben_arten) ? row.proben_arten : [];
+          return depthList.map((tiefe: string, idx: number) => ({
+            art: normalizeProbeArtForSplit(sourceTypes[idx] ?? row?.proben_art),
+            tiefe,
+          }));
+        }
+        const tiefe = String(row?.proben_tiefe ?? "").trim();
+        if (!tiefe) return [];
+        return [
+          {
+            art: normalizeProbeArtForSplit(row?.proben_art),
+            tiefe,
+          },
+        ];
       });
-    }
-    return chunks;
-  });
+  const normalizedSptRows = Array.isArray(data?.spt_rows) && data.spt_rows.length > 0
+    ? data.spt_rows
+        .map((row: any) => ({
+          von_m: String(row?.von_m ?? "").trim(),
+          bis_m: String(row?.bis_m ?? "").trim(),
+          schlag_1: String(row?.schlag_1 ?? "").trim(),
+          schlag_2: String(row?.schlag_2 ?? "").trim(),
+          schlag_3: String(row?.schlag_3 ?? "").trim(),
+        }))
+        .filter((row: { von_m: string; bis_m: string }) => row.von_m !== "" || row.bis_m !== "")
+        .slice(0, 10)
+    : inputSchichtRows.flatMap((row: any) => {
+        const entries = Array.isArray(row?.spt_eintraege) ? row.spt_eintraege : [];
+        return entries
+          .map((entry: any) => ({
+            von_m: String(entry?.von_m ?? "").trim(),
+            bis_m: String(computeSptBisFromEntry(entry) || (entry?.bis_m ?? "")).trim(),
+            schlag_1: String(entry?.schlag_1 ?? "").trim(),
+            schlag_2: String(entry?.schlag_2 ?? "").trim(),
+            schlag_3: String(entry?.schlag_3 ?? "").trim(),
+          }))
+          .filter((entry: { von_m: string; bis_m: string }) => entry.von_m !== "" || entry.bis_m !== "");
+      }).slice(0, 10);
 
   const hasRowData = expandedSchichtRows.length > 0;
   const fallbackRowsPerPage = Math.max(1, Number(data?.schicht_rows_per_page) || 4);
@@ -182,7 +184,15 @@ export async function generateSchichtenverzeichnisPdf(
     1,
     Math.min(maxRowsPageN, Number(data?.schicht_rows_per_page_2) || fallbackRowsPerPage)
   );
-  const rowCount = hasRowData ? expandedSchichtRows.length : 0;
+  const probeRowsNeeded =
+    normalizedProbeRows.length > 0
+      ? Math.ceil(normalizedProbeRows.length / probeMaxPerTableRow)
+      : 0;
+  const sptRowsNeeded =
+    normalizedSptRows.length > 0
+      ? Math.ceil(normalizedSptRows.length / sptMaxPerTableRow)
+      : 0;
+  const rowCount = Math.max(hasRowData ? expandedSchichtRows.length : 0, probeRowsNeeded, sptRowsNeeded);
   const remainingAfterPage1 = Math.max(0, rowCount - rowsPerPagePage1);
   const requiredPageNCopies = hasRowData
     ? Math.ceil(remainingAfterPage1 / rowsPerPagePageN)
@@ -250,6 +260,20 @@ export async function generateSchichtenverzeichnisPdf(
     const page = pages[pageIndex];
     if (!page) return;
     page.drawText(text ?? "", { x, y, size, font, color: rgb(0, 0.35, 0.9) });
+  };
+  const drawTextCondensed = (
+    pageIndex: number,
+    text: string,
+    x: number,
+    y: number,
+    size = 10,
+    squeezePercent = 92
+  ) => {
+    const page = pages[pageIndex];
+    if (!page) return;
+    page.pushOperators(pushGraphicsState(), setCharacterSqueeze(squeezePercent));
+    page.drawText(text ?? "", { x, y, size, font, color: rgb(0, 0.35, 0.9) });
+    page.pushOperators(setCharacterSqueeze(100), popGraphicsState());
   };
   const drawHighlight = (
     pageIndex: number,
@@ -672,71 +696,10 @@ export async function generateSchichtenverzeichnisPdf(
     const bucket = getProbeCounterBucket(art);
     probeTotals[bucket as keyof typeof probeTotals] += 1;
   };
-  const getSptEntries = (row: any) => {
-    const explicit = Array.isArray(row?.spt_eintraege)
-      ? row.spt_eintraege
-          .map((entry: any) => ({
-            von_m: String(entry?.von_m ?? "").trim(),
-            bis_m: computeSptBisFromEntry(entry) || String(entry?.bis_m ?? "").trim(),
-            schlag_1: String(entry?.schlag_1 ?? "").trim(),
-            schlag_2: String(entry?.schlag_2 ?? "").trim(),
-            schlag_3: String(entry?.schlag_3 ?? "").trim(),
-          }))
-          .slice(0, 6)
-      : [];
-    if (explicit.length > 0) return explicit;
-    if (!row?.spt_gemacht) return [];
-    return [
-      {
-        von_m: "",
-        bis_m: computeSptBisFromEntry(row),
-        schlag_1: String(row?.spt_schlag_1 ?? "").trim(),
-        schlag_2: String(row?.spt_schlag_2 ?? "").trim(),
-        schlag_3: String(row?.spt_schlag_3 ?? "").trim(),
-      },
-    ];
-  };
-  const buildFeststellungenWithSpt = (row: any, startIndex = 1) => {
-    const baseText = String(row?.feststellungen ?? "").trim();
-    const sptEntries = getSptEntries(row);
-    if (sptEntries.length === 0) {
-      return { text: baseText, count: 0 };
-    }
-    const sptLines = sptEntries
-      .map((entry: { von_m?: string; bis_m?: string; schlag_1: string; schlag_2: string; schlag_3: string }, idx: number) => {
-        const values = [entry.schlag_1, entry.schlag_2, entry.schlag_3].filter(Boolean);
-        const range = entry.von_m || entry.bis_m ? ` von ${entry.von_m ?? ""} bis ${entry.bis_m ?? ""} m` : "";
-        const header = `SPT ${startIndex + idx}${range}`.trim();
-        if (!values.length) return header;
-        return `${header}\n${values.join(" / ")}`;
-      })
-      .join("\n");
-    return {
-      text: baseText ? `${baseText}\n\n${sptLines}` : sptLines,
-      count: sptEntries.length,
-    };
-  };
 
-  if (expandedSchichtRows.length > 0) {
-    expandedSchichtRows.forEach((row: any) => {
-      const depthList = Array.isArray(row?.proben_tiefen)
-        ? row.proben_tiefen.filter((v: any) => String(v ?? "").trim() !== "")
-        : [];
-      const sourceTypes = Array.isArray(row?.proben_arten) ? row.proben_arten : [];
-      const sptEntries = getSptEntries(row);
-      probeTotals.SPT += sptEntries.length;
-
-      if (depthList.length > 0) {
-        depthList.forEach((_: any, i: number) => {
-          addProbeTotal(sourceTypes[i] ?? row?.proben_art ?? "GP");
-        });
-        return;
-      }
-
-      if (String(row?.proben_tiefe ?? "").trim()) {
-        addProbeTotal(row?.proben_art ?? "GP");
-      }
-    });
+  probeTotals.SPT += normalizedSptRows.length;
+  if (normalizedProbeRows.length > 0) {
+    normalizedProbeRows.forEach((row: { art: string }) => addProbeTotal(row.art));
   } else if (String(data?.proben_tiefe ?? "").trim()) {
     addProbeTotal(data?.proben_art ?? "GP");
   }
@@ -841,7 +804,7 @@ export async function generateSchichtenverzeichnisPdf(
     });
   }
 
-  if (hasRowData) {
+  if (hasRowData || normalizedProbeRows.length > 0) {
     const rowHeight = Number(data?.schicht_row_height) || 95;
     const startOffsetPage1 = Number(data?.schicht_start_offset_page_1) || 0;
     const startOffsetPage2 = Number(data?.schicht_start_offset_page_2) || 0;
@@ -869,9 +832,6 @@ export async function generateSchichtenverzeichnisPdf(
       g: "schicht_g",
       h: "schicht_h",
       feststellungen: "feststellungen",
-      proben_art: "proben_art",
-      proben_nr: "proben_nr",
-      proben_tiefe: "proben_tiefe",
     } as const;
 
     const festField = fieldMap.get("feststellungen");
@@ -902,10 +862,9 @@ export async function generateSchichtenverzeichnisPdf(
       return 0;
     };
     const ansatzField = fieldMap.get("schicht_ansatzpunkt_bis");
+    const probenTiefeField = fieldMap.get("proben_tiefe");
     const probenNrField = fieldMap.get("proben_nr");
-    const probeCounters: Record<string, number> = {};
 
-    let sptRunningNumber = 1;
     expandedSchichtRows.forEach((row: any, idx: number) => {
       const pageIndex =
         idx < rowsPerPagePage1
@@ -946,32 +905,16 @@ export async function generateSchichtenverzeichnisPdf(
           );
         }
       }
-      const depthList = Array.isArray(row?.proben_tiefen)
-        ? row.proben_tiefen.filter((v: any) => String(v ?? "").trim() !== "")
-        : [];
-      const hasDepthList = depthList.length > 0;
-      const hasAnyProbeDepth = hasDepthList || String(row?.proben_tiefe ?? "").trim() !== "";
       Object.entries(rowFields).forEach(([rowKey, fieldKey]) => {
         const field = fieldMap.get(fieldKey);
         if (!field) return;
         const alignedFieldKey = pageIndex === 0 ? getAlignedSchichtFieldKey(fieldKey) : fieldKey;
         const alignedField = pageIndex === 0 ? fieldMap.get(alignedFieldKey) ?? field : field;
-        if (hasDepthList && (fieldKey === "proben_art" || fieldKey === "proben_nr")) return;
-        if (!hasAnyProbeDepth && (fieldKey === "proben_art" || fieldKey === "proben_nr")) return;
         const value = row?.[rowKey];
-        const festWithSpt =
-          fieldKey === "feststellungen"
-            ? buildFeststellungenWithSpt(row, sptRunningNumber)
-            : null;
         const text =
-          fieldKey === "feststellungen"
-            ? festWithSpt?.text ?? ""
-            : value == null
-              ? ""
-              : String(value);
-        if (fieldKey === "feststellungen") {
-          sptRunningNumber += festWithSpt?.count ?? 0;
-        }
+          value == null
+            ? ""
+            : String(value);
         if (!text) return;
         if (fieldKey === "feststellungen" && festField && probenArtField) {
           const festX =
@@ -1011,112 +954,6 @@ export async function generateSchichtenverzeichnisPdf(
           );
           return;
         }
-        if (fieldKey === "proben_tiefe" && field?.width) {
-          if (depthList.length) {
-            const x =
-              alignedField.x +
-              pageXOffset +
-              getGroupedSchichtXOffset(rowKey as keyof typeof rowFields, pageIndex) +
-              getAlignedSchichtExtraX(fieldKey) +
-              (pageIndex === 0
-                ? getPage1FieldOffset(alignedFieldKey, "x") +
-                  getRowFieldOffsetPage1X(localIdx, fieldKey)
-                : 0);
-            const yTop =
-              field.y +
-              pageStartOffset -
-              yOffset +
-              (pageIndex === 0
-                ? getPage1FieldOffset(fieldKey, "y") +
-                  getRowFieldOffsetPage1(localIdx, fieldKey, "y")
-                : 0);
-            const maxWidth = Math.max(20, field.width);
-            const maxHeight = Math.max(20, rowHeight - 10);
-            const fixedSize = Math.max(7, (field.size ?? 6) + 1);
-            const lineHeight = Math.max(8, Math.round(fixedSize * 1.2));
-            const maxLines = Math.max(1, Math.floor(maxHeight / lineHeight));
-            const sourceTypes = Array.isArray(row?.proben_arten) ? row.proben_arten : [];
-            const nrX =
-              (probenNrField?.x ?? 0) +
-              pageXOffset +
-              getXOffset("proben_nr", pageIndex) +
-              (pageIndex === 0
-                ? getPage1FieldOffset("proben_nr", "x") +
-                  getRowFieldOffsetPage1(localIdx, "proben_nr", "x")
-                : 0);
-            const artX =
-              (probenArtField?.x ?? 0) +
-              pageXOffset +
-              getXOffset("proben_art", pageIndex) +
-              (pageIndex === 0
-                ? getPage1FieldOffset("proben_art", "x") +
-                  getRowFieldOffsetPage1(localIdx, "proben_art", "x")
-                : 0);
-            depthList.slice(0, maxLines).forEach((val: any, i: number) => {
-              const textLine = wrapText(String(val), maxWidth, fixedSize)[0] ?? "";
-              const lineY = yTop - i * lineHeight;
-              drawText(pageIndex, textLine, x, lineY, fixedSize);
-              const rawType = String(sourceTypes[i] ?? row?.proben_art ?? "").trim();
-              // Keep probe art/number rendering robust for manually entered rows:
-              // if the type is missing, fall back to GP instead of skipping drawing.
-              const artText = normalizeProbeArt(rawType || "GP");
-              if (artText && probenArtField) {
-                drawText(pageIndex, artText, artX, lineY, fixedSize);
-              }
-              if (probenNrField) {
-                const counterBucket = getProbeCounterBucket(artText);
-                const nextNr = (probeCounters[counterBucket] ?? 0) + 1;
-                probeCounters[counterBucket] = nextNr;
-                drawText(pageIndex, String(nextNr), nrX, lineY, fixedSize);
-              }
-            });
-            return;
-          }
-          const x =
-            alignedField.x +
-            pageXOffset +
-            getGroupedSchichtXOffset(rowKey as keyof typeof rowFields, pageIndex) +
-            getAlignedSchichtExtraX(fieldKey) +
-            (pageIndex === 0
-              ? getPage1FieldOffset(alignedFieldKey, "x") +
-                getRowFieldOffsetPage1X(localIdx, fieldKey)
-              : 0);
-          const yTop =
-            field.y +
-            pageStartOffset -
-            yOffset +
-            (pageIndex === 0
-              ? getPage1FieldOffset(fieldKey, "y") +
-                getRowFieldOffsetPage1(localIdx, fieldKey, "y")
-              : 0);
-          const maxWidth = Math.max(20, field.width);
-          const maxHeight = Math.max(20, rowHeight - 10);
-          const baseSize = field.size ?? 6;
-          const fitSizes = [baseSize, Math.max(4, baseSize - 1), Math.max(4, baseSize - 2)];
-          const lineHeightFor = (s: number) => Math.max(10, Math.round(s * 1.25));
-          const maxLinesFor = (s: number) => Math.max(1, Math.floor(maxHeight / lineHeightFor(s)));
-          const linesFor = (s: number) => {
-            const paragraphs = text.split("\n");
-            const lines: string[] = [];
-            paragraphs.forEach((para: string) => {
-              if (!para.trim()) {
-                lines.push("");
-                return;
-              }
-              wrapText(para, maxWidth, s).forEach((ln) => lines.push(ln));
-            });
-            return lines;
-          };
-          let chosenSize = baseSize;
-          for (const s of fitSizes) {
-            if (linesFor(s).length <= maxLinesFor(s)) {
-              chosenSize = s;
-              break;
-            }
-          }
-          drawWrappedText(pageIndex, text, x, yTop, maxWidth, maxHeight, chosenSize);
-          return;
-        }
         drawText(
           pageIndex,
           text,
@@ -1139,6 +976,138 @@ export async function generateSchichtenverzeichnisPdf(
         );
       });
     });
+
+    if (normalizedProbeRows.length > 0 && probenTiefeField && probenArtField) {
+      const probeCounters: Record<string, number> = {};
+      normalizedProbeRows.forEach((probe: { art: string; tiefe: string }, idx: number) => {
+        const tableRowIndex = Math.floor(idx / probeMaxPerTableRow);
+        const lineInRow = idx % probeMaxPerTableRow;
+        const pageIndex =
+          tableRowIndex < rowsPerPagePage1
+            ? 0
+            : 1 + Math.floor((tableRowIndex - rowsPerPagePage1) / rowsPerPagePageN);
+        if (pageIndex >= pages.length) return;
+        const localIdx =
+          tableRowIndex < rowsPerPagePage1
+            ? tableRowIndex
+            : (tableRowIndex - rowsPerPagePage1) % rowsPerPagePageN;
+        const yOffset =
+          localIdx * rowHeight +
+          (pageIndex >= 1 ? Number(rowOffsetsPage2[localIdx]) || 0 : 0);
+        const pageStartOffset = pageIndex === 0 ? startOffsetPage1 : startOffsetPage2;
+        const pageXOffset = pageIndex === 0 ? xOffsetPage1 : xOffsetPage2;
+        const fixedSize = Math.max(7, (probenTiefeField.size ?? 6) + 1);
+        const baseY =
+          probenTiefeField.y +
+          pageStartOffset -
+          yOffset +
+          (pageIndex === 0
+            ? getPage1FieldOffset("proben_tiefe", "y") +
+              getRowFieldOffsetPage1(localIdx, "proben_tiefe", "y")
+            : 0);
+        const lineHeight = Math.max(8, Math.round(fixedSize * 1.2));
+        const lineY = baseY - lineInRow * lineHeight;
+        const tiefeText = String(probe.tiefe ?? "").trim();
+        const tiefeX =
+          probenTiefeField.x +
+          pageXOffset +
+          getXOffset("proben_tiefe", pageIndex) +
+          (pageIndex === 0
+            ? getPage1FieldOffset("proben_tiefe", "x") +
+              getRowFieldOffsetPage1(localIdx, "proben_tiefe", "x")
+            : 0);
+        if (tiefeText.length >= 9) {
+          drawTextCondensed(pageIndex, tiefeText, tiefeX, lineY, fixedSize, 90);
+        } else {
+          drawText(pageIndex, tiefeText, tiefeX, lineY, fixedSize);
+        }
+
+        const artText = normalizeProbeArt(probe.art || "GP");
+        drawText(
+          pageIndex,
+          artText,
+          probenArtField.x +
+            pageXOffset +
+            getXOffset("proben_art", pageIndex) +
+            (pageIndex === 0
+              ? getPage1FieldOffset("proben_art", "x") +
+                getRowFieldOffsetPage1(localIdx, "proben_art", "x")
+              : 0),
+          lineY,
+          fixedSize
+        );
+        if (probenNrField) {
+          const counterBucket = getProbeCounterBucket(artText);
+          const nextNr = (probeCounters[counterBucket] ?? 0) + 1;
+          probeCounters[counterBucket] = nextNr;
+          drawText(
+            pageIndex,
+            String(nextNr),
+            probenNrField.x +
+              pageXOffset +
+              getXOffset("proben_nr", pageIndex) +
+              (pageIndex === 0
+                ? getPage1FieldOffset("proben_nr", "x") +
+                  getRowFieldOffsetPage1(localIdx, "proben_nr", "x")
+                : 0),
+            lineY,
+            fixedSize
+          );
+        }
+      });
+    }
+
+    if (normalizedSptRows.length > 0 && festField) {
+      normalizedSptRows.forEach(
+        (
+          entry: { von_m: string; bis_m: string; schlag_1?: string; schlag_2?: string; schlag_3?: string },
+          idx: number
+        ) => {
+        const tableRowIndex = Math.floor(idx / sptMaxPerTableRow);
+        const lineInRow = idx % sptMaxPerTableRow;
+        const pageIndex =
+          tableRowIndex < rowsPerPagePage1
+            ? 0
+            : 1 + Math.floor((tableRowIndex - rowsPerPagePage1) / rowsPerPagePageN);
+        if (pageIndex >= pages.length) return;
+        const localIdx =
+          tableRowIndex < rowsPerPagePage1
+            ? tableRowIndex
+            : (tableRowIndex - rowsPerPagePage1) % rowsPerPagePageN;
+        const yOffset =
+          localIdx * rowHeight +
+          (pageIndex >= 1 ? Number(rowOffsetsPage2[localIdx]) || 0 : 0);
+        const pageStartOffset = pageIndex === 0 ? startOffsetPage1 : startOffsetPage2;
+        const pageXOffset = pageIndex === 0 ? xOffsetPage1 : xOffsetPage2;
+        const festX =
+          festField.x +
+          pageXOffset +
+          getXOffset("feststellungen", pageIndex) +
+          (pageIndex === 0
+            ? getPage1FieldOffset("feststellungen", "x") +
+              getRowFieldOffsetPage1(localIdx, "feststellungen", "x")
+            : 0);
+        const lineYBase =
+          festField.y +
+          pageStartOffset -
+          yOffset - 4 +
+          (pageIndex === 0
+            ? getPage1FieldOffset("feststellungen", "y") +
+              getRowFieldOffsetPage1(localIdx, "feststellungen", "y")
+            : 0);
+        // Render SPT entries beneath regular feststellungen text block.
+        const lineY = lineYBase - 24 - lineInRow * 10;
+        const range = [entry.von_m, entry.bis_m].filter(Boolean).join(" bis ");
+        const values = [entry.schlag_1, entry.schlag_2, entry.schlag_3].filter(Boolean).join(" / ");
+        const entryTopY = lineYBase - 24 - lineInRow * 20;
+        const headerText = range ? `SPT von ${range} m` : "SPT";
+        drawText(pageIndex, headerText, festX, entryTopY, 7);
+        if (values) {
+          drawText(pageIndex, values, festX, entryTopY - 8, 7);
+        }
+      }
+      );
+    }
   }
 
   if (groundwaterRows.length) {
