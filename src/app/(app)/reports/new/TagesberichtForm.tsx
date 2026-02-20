@@ -329,7 +329,6 @@ const TimePickerInput = ({
   className,
   buttonLabel = "Zeit auswählen",
   stepSeconds = 60,
-  quarterHourOnly = false,
 }: {
   value: string;
   onValueChange: (next: string) => void;
@@ -337,35 +336,8 @@ const TimePickerInput = ({
   className?: string;
   buttonLabel?: string;
   stepSeconds?: number;
-  quarterHourOnly?: boolean;
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const quarterHourOptions = useMemo(() => {
-    const list: string[] = [];
-    for (let h = 0; h < 24; h += 1) {
-      for (let m = 0; m < 60; m += 15) {
-        list.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
-      }
-    }
-    return list;
-  }, []);
-
-  if (quarterHourOnly) {
-    return (
-      <select
-        className={className}
-        value={value || ""}
-        onChange={(e) => onValueChange(e.target.value)}
-      >
-        <option value="">--:--</option>
-        {quarterHourOptions.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
-        ))}
-      </select>
-    );
-  }
 
   return (
     <div className="relative">
@@ -1976,39 +1948,10 @@ if (mode === "edit") {
     ? report.breakRows
     : [emptyTimeRow()];
 
-  const snapToQuarterHour = (timeValue: string): string => {
-    const raw = String(timeValue ?? "").trim();
-    const match = raw.match(/^(\d{2}):(\d{2})$/);
-    if (!match) return raw;
-    const hours = Number.parseInt(match[1], 10);
-    const minutes = Number.parseInt(match[2], 10);
-    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return raw;
-    const total = hours * 60 + minutes;
-    const snapped = Math.round(total / 15) * 15;
-    const normalized = ((snapped % (24 * 60)) + (24 * 60)) % (24 * 60);
-    const hh = String(Math.floor(normalized / 60)).padStart(2, "0");
-    const mm = String(normalized % 60).padStart(2, "0");
-    return `${hh}:${mm}`;
-  };
-
   function setWorkTimeRow(i: number, patch: Partial<TimeRange>) {
-    const normalizedPatch: Partial<TimeRange> =
-      reportType === "tagesbericht_rhein_main_link"
-        ? {
-            ...patch,
-            from:
-              patch.from == null || patch.from === ""
-                ? patch.from
-                : snapToQuarterHour(String(patch.from)),
-            to:
-              patch.to == null || patch.to === ""
-                ? patch.to
-                : snapToQuarterHour(String(patch.to)),
-          }
-        : patch;
     setReport((p) => {
       const rows = Array.isArray(p.workTimeRows) ? [...p.workTimeRows] : [emptyTimeRow()];
-      rows[i] = { ...rows[i], ...normalizedPatch };
+      rows[i] = { ...rows[i], ...patch };
       return { ...p, workTimeRows: rows };
     });
   }
@@ -2042,23 +1985,9 @@ if (mode === "edit") {
   }
 
   function setBreakRow(i: number, patch: Partial<TimeRange>) {
-    const normalizedPatch: Partial<TimeRange> =
-      reportType === "tagesbericht_rhein_main_link"
-        ? {
-            ...patch,
-            from:
-              patch.from == null || patch.from === ""
-                ? patch.from
-                : snapToQuarterHour(String(patch.from)),
-            to:
-              patch.to == null || patch.to === ""
-                ? patch.to
-                : snapToQuarterHour(String(patch.to)),
-          }
-        : patch;
     setReport((p) => {
       const rows = Array.isArray(p.breakRows) ? [...p.breakRows] : [emptyTimeRow()];
-      rows[i] = { ...rows[i], ...normalizedPatch };
+      rows[i] = { ...rows[i], ...patch };
       return { ...p, breakRows: rows };
     });
   }
@@ -4130,8 +4059,7 @@ if (mode === "edit") {
                           value={safeWorkTimes[0]?.from ?? ""}
                           onValueChange={(next) => setWorkTimeRow(0, { from: next })}
                           onOpenPicker={openNativePicker}
-                          stepSeconds={900}
-                          quarterHourOnly
+                          stepSeconds={60}
                         />
                       </label>
                       <label className="space-y-1">
@@ -4141,8 +4069,7 @@ if (mode === "edit") {
                           value={safeWorkTimes[0]?.to ?? ""}
                           onValueChange={(next) => setWorkTimeRow(0, { to: next })}
                           onOpenPicker={openNativePicker}
-                          stepSeconds={900}
-                          quarterHourOnly
+                          stepSeconds={60}
                         />
                       </label>
                       <label className="space-y-1">
@@ -4152,8 +4079,7 @@ if (mode === "edit") {
                           value={safeBreaks[0]?.from ?? ""}
                           onValueChange={(next) => setBreakRow(0, { from: next })}
                           onOpenPicker={openNativePicker}
-                          stepSeconds={900}
-                          quarterHourOnly
+                          stepSeconds={60}
                         />
                       </label>
                       <label className="space-y-1">
@@ -4163,8 +4089,7 @@ if (mode === "edit") {
                           value={safeBreaks[0]?.to ?? ""}
                           onValueChange={(next) => setBreakRow(0, { to: next })}
                           onOpenPicker={openNativePicker}
-                          stepSeconds={900}
-                          quarterHourOnly
+                          stepSeconds={60}
                         />
                       </label>
                       <label className="space-y-1">
