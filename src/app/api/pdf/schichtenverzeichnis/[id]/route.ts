@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+function sanitizeFilenamePart(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9-_]+/gi, "_");
+}
+
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
@@ -54,11 +61,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       );
     }
     const pdfBytes = new Uint8Array(await res.arrayBuffer());
+    const reportData = (report?.data ?? {}) as Record<string, unknown>;
+    const filename = `${sanitizeFilenamePart(reportData?.auftrag_nr) || "ohne_auftragsnummer"}_${sanitizeFilenamePart(reportData?.bohrmeister) || "ohne_name"}_${sanitizeFilenamePart(reportData?.bohrung_nr) || "ohne_bohrung"}.pdf`;
     const body = Buffer.from(pdfBytes);
     return new NextResponse(body, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="schichtenverzeichnis-${id}.pdf"`,
+        "Content-Disposition": `inline; filename="${filename}"`,
         "Cache-Control": "no-store",
       },
     });

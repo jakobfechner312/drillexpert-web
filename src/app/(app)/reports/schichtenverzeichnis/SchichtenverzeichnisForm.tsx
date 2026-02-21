@@ -2812,10 +2812,14 @@ export default function SchichtenverzeichnisForm({
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const nameBase =
-        data?.projekt_name?.trim()
-          ? `schichtenverzeichnis-${data.projekt_name}-${data.datum ?? ""}`
-          : `schichtenverzeichnis-${data?.datum ?? "draft"}`;
+      const normalizePart = (value: unknown) =>
+        String(value ?? "")
+          .trim()
+          .replace(/\s+/g, " ");
+      const auftragsnummer = normalizePart(data?.auftrag_nr);
+      const name = normalizePart(data?.bohrmeister);
+      const bohrung = normalizePart(data?.bohrung_nr);
+      const nameBase = `${auftragsnummer || "ohne_auftragsnummer"}_${name || "ohne_name"}_${bohrung || "ohne_bohrung"}`;
       const safeName = nameBase.replace(/[^a-z0-9-_]+/gi, "_");
       const a = document.createElement("a");
       a.href = url;

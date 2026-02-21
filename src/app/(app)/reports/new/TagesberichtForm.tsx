@@ -2146,10 +2146,14 @@ if (mode === "edit") {
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const nameBase =
-        payload?.project?.trim()
-          ? `tagesbericht-${payload.project}-${payload.date ?? ""}`
-          : `tagesbericht-${payload?.date ?? "draft"}`;
+      const normalizePart = (value: unknown) =>
+        String(value ?? "")
+          .trim()
+          .replace(/\s+/g, " ");
+      const auftragsnummer = normalizePart(payload?.aNr);
+      const bohrmeister = normalizePart(payload?.name);
+      const datum = normalizePart(payload?.date);
+      const nameBase = `${auftragsnummer || "ohne_auftragsnummer"}_${bohrmeister || "ohne_bohrmeister"}_${datum || "ohne_datum"}`;
       const safeName = nameBase.replace(/[^a-z0-9-_]+/gi, "_");
       const a = document.createElement("a");
       a.href = url;

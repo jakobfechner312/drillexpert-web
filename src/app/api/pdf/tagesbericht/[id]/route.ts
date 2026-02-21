@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createDefaultTagesbericht } from "@/lib/defaultTagesbericht";
 
+function sanitizeFilenamePart(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9-_]+/gi, "_");
+}
+
 function normalizeTagesberichtPayload(raw: unknown) {
   const base = createDefaultTagesbericht();
   if (!raw || typeof raw !== "object") return base;
@@ -134,12 +141,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       );
     }
     const pdfBytes = new Uint8Array(await res.arrayBuffer());
+    const filename = `${sanitizeFilenamePart(payload?.aNr) || "ohne_auftragsnummer"}_${sanitizeFilenamePart(payload?.name) || "ohne_bohrmeister"}_${sanitizeFilenamePart(payload?.date) || "ohne_datum"}.pdf`;
 
     const body = Buffer.from(pdfBytes);
     return new NextResponse(body, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="tagesbericht-${id}.pdf"`,
+        "Content-Disposition": `inline; filename="${filename}"`,
         "Cache-Control": "no-store",
       },
     });
