@@ -2790,47 +2790,6 @@ export default function SchichtenverzeichnisForm({
     }
   };
 
-  const downloadPdfToLocal = async () => {
-    if (!ensureRequiredDurchfuehrungszeit()) return;
-    if (!ensureRequiredSchichtfelder()) return;
-    setLoading(true);
-    try {
-      saveOffsetsSnapshot();
-      const params = new URLSearchParams();
-      if (showGrid) params.set("debug", "1");
-      if (Number(gridStep)) params.set("grid", String(Number(gridStep)));
-      const payload = buildReportDataPayload();
-
-      const res = await fetch(`/api/pdf/schichtenverzeichnis?${params.toString()}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        alert("PDF-Download fehlgeschlagen.");
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const normalizePart = (value: unknown) =>
-        String(value ?? "")
-          .trim()
-          .replace(/\s+/g, " ");
-      const auftragsnummer = normalizePart(data?.auftrag_nr);
-      const name = normalizePart(data?.bohrmeister);
-      const bohrung = normalizePart(data?.bohrung_nr);
-      const nameBase = `${auftragsnummer || "ohne_auftragsnummer"}_${name || "ohne_name"}_${bohrung || "ohne_bohrung"}`;
-      const safeName = nameBase.replace(/[^a-z0-9-_]+/gi, "_");
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${safeName}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const fillTestData = () => {
     setData({
       ...data,
@@ -5244,14 +5203,6 @@ export default function SchichtenverzeichnisForm({
             onClick={openPdf}
           >
             {loading ? "Erzeuge PDF…" : "PDF Vorschau"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary disabled:opacity-60"
-            onClick={downloadPdfToLocal}
-            disabled={loading}
-          >
-            PDF lokal speichern
           </button>
           <button type="button" className="btn btn-secondary" onClick={fillTestData}>
             Test füllen

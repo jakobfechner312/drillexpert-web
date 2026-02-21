@@ -10,6 +10,11 @@ const CANDIDATE_TEMPLATE_NAMES = [
   "rhein-main-link-tagesbericht.pdf",
   "tagesbericht_rheinmain.pdf",
 ];
+const CANDIDATE_WATER_TEMPLATE_NAMES = [
+  "RML_Wasserstaende.pdf",
+  "TB_RML_Wasserstaende.pdf",
+  "GW_SV.pdf",
+];
 
 function getWeekdayFromDate(dateStr: string): number {
   const d = new Date(`${dateStr}T00:00:00`);
@@ -23,6 +28,16 @@ function pickTemplatePath(): string {
   }
   throw new Error(
     `Rhein-Main-Link Template PDF not found. Tried: ${CANDIDATE_TEMPLATE_NAMES.join(", ")}`
+  );
+}
+
+function pickWaterTemplatePath(): string {
+  for (const filename of CANDIDATE_WATER_TEMPLATE_NAMES) {
+    const p = path.join(process.cwd(), "public", "templates", filename);
+    if (fs.existsSync(p)) return p;
+  }
+  throw new Error(
+    `Rhein-Main-Link water template PDF not found. Tried: ${CANDIDATE_WATER_TEMPLATE_NAMES.join(", ")}`
   );
 }
 
@@ -306,8 +321,10 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     maxRows: 4,
     fontSize: verrohrungLayout.fontSize,
   } as const;
-  for (let i = 0; i < Math.min(waterLevelLayout.maxRows, waterLevelRows.length); i++) {
-    const row = waterLevelRows[i] ?? {};
+  const waterRowsOnMain = waterLevelRows.slice(0, waterLevelLayout.maxRows);
+  const waterOverflowRows = waterLevelRows.slice(waterLevelLayout.maxRows);
+  for (let i = 0; i < waterRowsOnMain.length; i++) {
+    const row = waterRowsOnMain[i] ?? {};
     const y = waterLevelLayout.startY - i * waterLevelLayout.rowStep;
     draw(row?.time, waterLevelLayout.timeX, y, waterLevelLayout.fontSize, 8);
     draw(row?.meters, waterLevelLayout.meterX, y, waterLevelLayout.fontSize, 8);
@@ -318,6 +335,69 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   if (!verrohrungRows.length) {
     draw(data?.verrohrungAbGok, header.verrohrungAbGok.x, header.verrohrungAbGok.y, 10, 10);
   }
+
+  if (waterOverflowRows.length > 0) {
+    const waterTemplatePath = pickWaterTemplatePath();
+    const waterTemplateBytes = fs.readFileSync(waterTemplatePath);
+    const waterSrcDoc = await PDFDocument.load(waterTemplateBytes);
+    const waterRowsPerPage = Math.max(1, Number(data?.water_rows_per_sheet) || 32);
+    const waterPagesNeeded = Math.ceil(waterOverflowRows.length / waterRowsPerPage);
+    const extraPages: Array<ReturnType<typeof pdf.addPage>> = [];
+
+    for (let i = 0; i < waterPagesNeeded; i += 1) {
+      const [copied] = await pdf.copyPages(waterSrcDoc, [0]);
+      pdf.addPage(copied);
+      extraPages.push(copied);
+    }
+
+    const drawOnPage = (
+      targetPage: ReturnType<typeof pdf.addPage>,
+      value: unknown,
+      x: number,
+      y: number,
+      size = 10,
+      max = 48
+    ) => {
+      const text = t(value, max);
+      if (!text) return;
+      targetPage.drawText(text, { x, y, size, font, color: blue });
+    };
+
+    const extraHeader = {
+      bohrungNr: { x: 210, y: 725, size: 10 },
+      date: { x: 135, y: 695, size: 10 },
+      bohrmeister: { x: 372, y: 790, size: 8 },
+    } as const;
+    const waterFieldPos = {
+      date: { x: 150, y: 640, size: 9 },
+      time: { x: 235, y: 640, size: 9 },
+      meters: { x: 315, y: 640, size: 9 },
+    } as const;
+    const waterRowStep = (Number(data?.water_row_height) || 16) + 4;
+
+    extraPages.forEach((extraPage) => {
+      drawOnPage(extraPage, firstBohrung, extraHeader.bohrungNr.x, extraHeader.bohrungNr.y, extraHeader.bohrungNr.size, 20);
+      drawOnPage(extraPage, data?.date, extraHeader.date.x, extraHeader.date.y, extraHeader.date.size, 24);
+      drawOnPage(extraPage, data?.workers?.[0]?.name, extraHeader.bohrmeister.x, extraHeader.bohrmeister.y, extraHeader.bohrmeister.size, 24);
+    });
+
+    waterOverflowRows.forEach((row: any, idx: number) => {
+      const pageOffset = Math.floor(idx / waterRowsPerPage);
+      const localIdx = idx % waterRowsPerPage;
+      const extraPage = extraPages[pageOffset];
+      if (!extraPage) return;
+      const rawTime = String(row?.time ?? "").trim();
+      const lastSpaceIdx = rawTime.lastIndexOf(" ");
+      const hasDateAndTime = lastSpaceIdx > 0 && /\d:\d/.test(rawTime.slice(lastSpaceIdx + 1));
+      const datePart = hasDateAndTime ? rawTime.slice(0, lastSpaceIdx).trim() : "";
+      const timePart = hasDateAndTime ? rawTime.slice(lastSpaceIdx + 1).trim() : rawTime;
+      const y = waterFieldPos.date.y - localIdx * waterRowStep + 25;
+      drawOnPage(extraPage, datePart, waterFieldPos.date.x, y, waterFieldPos.date.size, 14);
+      drawOnPage(extraPage, timePart, waterFieldPos.time.x, y, waterFieldPos.time.size, 14);
+      drawOnPage(extraPage, row?.meters, waterFieldPos.meters.x, y, waterFieldPos.meters.size, 14);
+    });
+  }
+
   const tempMax = data?.weather?.tempMaxC;
   const tempMin = data?.weather?.tempMinC;
   drawTemperatureMinMax(tempMin, tempMax, header.temperatur.x, header.temperatur.y, 7);
@@ -540,6 +620,35 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     y: 42,
     width: 225,
     height: 30,
+  });
+
+  // Keep page numbering correct when overflow pages are appended.
+  // Some templates contain a static "1" at the bottom center; mask that area first.
+  pdf.getPages().forEach((p, idx) => {
+    const pageNo = String(idx + 1);
+    const size = 10;
+    const pageWidth = p.getWidth();
+    const textWidth = font.widthOfTextAtSize(pageNo, size);
+    const textX = (pageWidth - textWidth) / 2;
+    const maskWidth = Math.max(26, textWidth + 12);
+    const maskHeight = 22;
+    const maskX = textX - (maskWidth - textWidth) / 2;
+    const maskY = 28;
+    p.drawRectangle({
+      x: maskX,
+      y: maskY,
+      width: maskWidth,
+      height: maskHeight,
+      color: rgb(1, 1, 1),
+      borderWidth: 0,
+    });
+    p.drawText(pageNo, {
+      x: textX,
+      y: maskY + 3,
+      size,
+      font,
+      color: black,
+    });
   });
 
   return pdf.save();

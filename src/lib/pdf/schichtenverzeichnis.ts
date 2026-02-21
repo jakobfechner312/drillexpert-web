@@ -945,6 +945,17 @@ export async function generateSchichtenverzeichnisPdf(
     const ansatzField = fieldMap.get("schicht_ansatzpunkt_bis");
     const probenTiefeField = fieldMap.get("proben_tiefe");
     const probenNrField = fieldMap.get("proben_nr");
+    const lastSchichtRowIndex = (() => {
+      let lastFilled = -1;
+      expandedSchichtRows.forEach((row: any, rowIdx: number) => {
+        const hasContent = Object.values(row ?? {}).some((value) => {
+          if (Array.isArray(value)) return value.some((entry) => String(entry ?? "").trim() !== "");
+          return String(value ?? "").trim() !== "";
+        });
+        if (hasContent) lastFilled = rowIdx;
+      });
+      return lastFilled >= 0 ? lastFilled : Math.max(0, expandedSchichtRows.length - 1);
+    })();
 
     expandedSchichtRows.forEach((row: any, idx: number) => {
       const pageIndex =
@@ -989,27 +1000,36 @@ export async function generateSchichtenverzeichnisPdf(
       })();
       if (ansatzField) {
         const value = row?.ansatzpunkt_bis;
+        const isLastSchichtRow = idx === lastSchichtRowIndex;
         const text = value == null ? "" : String(value);
+        const drawX =
+          ansatzField.x +
+          pageXOffset +
+          getXOffset("ansatzpunkt_bis", pageIndex) +
+          (pageIndex === 0
+            ? getPage1FieldOffset("schicht_ansatzpunkt_bis", "x") +
+              getRowFieldOffsetPage1(localIdx, "schicht_ansatzpunkt_bis", "x")
+            : 0);
+        const drawY =
+          ansatzField.y +
+          pageStartOffset -
+          yOffset +
+          (pageIndex === 0
+            ? getPage1FieldOffset("schicht_ansatzpunkt_bis", "y") +
+              getRowFieldOffsetPage1(localIdx, "schicht_ansatzpunkt_bis", "y")
+            : 0);
         if (text) {
           drawText(
             pageIndex,
             text,
-            ansatzField.x +
-              pageXOffset +
-              getXOffset("ansatzpunkt_bis", pageIndex) +
-              (pageIndex === 0
-                ? getPage1FieldOffset("schicht_ansatzpunkt_bis", "x") +
-                  getRowFieldOffsetPage1(localIdx, "schicht_ansatzpunkt_bis", "x")
-                : 0),
-            ansatzField.y +
-              pageStartOffset -
-              yOffset +
-              (pageIndex === 0
-                ? getPage1FieldOffset("schicht_ansatzpunkt_bis", "y") +
-                  getRowFieldOffsetPage1(localIdx, "schicht_ansatzpunkt_bis", "y")
-                : 0),
+            drawX,
+            drawY,
             ansatzField.size ?? 10
           );
+        }
+        if (isLastSchichtRow) {
+          // Keep depth text and add ET in the lower half of the same field.
+          drawText(pageIndex, "ET", drawX, drawY - 40, (ansatzField.size ?? 10) + 3);
         }
       }
       Object.entries(rowFields).forEach(([rowKey, fieldKey]) => {
@@ -1279,7 +1299,6 @@ export async function generateSchichtenverzeichnisPdf(
       const headerFields = {
         auftrag_nr: "auftrag_nr",
         bohrmeister: "bohrmeister",
-        blatt_nr: "blatt_nr",
         projekt_name: "projekt_name",
         bohrung_nr: "bohrung_nr",
         durchfuehrungszeit: "durchfuehrungszeit",
@@ -1301,7 +1320,6 @@ export async function generateSchichtenverzeichnisPdf(
       const gwHeaderMaxChars: Record<keyof typeof headerFields, number> = {
         auftrag_nr: 11,
         bohrmeister: 11,
-        blatt_nr: 3,
         projekt_name: 30,
         bohrung_nr: 12,
         durchfuehrungszeit: 28,
@@ -1339,6 +1357,29 @@ export async function generateSchichtenverzeichnisPdf(
       });
     }
   }
+
+  // Force consistent running page numbers on every generated page.
+  pages.forEach((page, idx) => {
+    const pageNo = String(idx + 1);
+    drawStaticText(idx, String(idx + 1), 488, 790, 10);
+    const size = 10;
+    const pageWidth = page.getWidth();
+    const textWidth = font.widthOfTextAtSize(pageNo, size);
+    const textX = (pageWidth - textWidth) / 2;
+    const maskWidth = Math.max(26, textWidth + 12);
+    const maskHeight = 22;
+    const maskX = textX - (maskWidth - textWidth) / 2;
+    const maskY = 28;
+    page.drawRectangle({
+      x: maskX,
+      y: maskY,
+      width: maskWidth,
+      height: maskHeight,
+      color: rgb(1, 1, 1),
+      borderWidth: 0,
+    });
+    drawStaticText(idx, pageNo, textX, maskY + 3, size);
+  });
 
   return outDoc.save();
 }

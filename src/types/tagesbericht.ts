@@ -93,6 +93,10 @@ export type WorkerRow = {
   name: string;
   reineArbeitsStd: string;
   wochenendfahrt: string;
+  wochenendfahrtJa?: boolean;
+  wochenendfahrtVon?: string;
+  wochenendfahrtBis?: string;
+  wochenendfahrtDauer?: string;
   ausfallStd: string;
   ausloeseT: boolean;
   ausloeseN: boolean;

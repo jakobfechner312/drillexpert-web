@@ -10,6 +10,29 @@ function getWeekdayFromDate(dateStr: string): number {
       return d.getDay(); // 0=So, 1=Mo, 2=Di, 3=Mi, 4=Do, 5=Fr, 6=Sa
     }
 
+function parseTimeToMinutes(value: unknown): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 3) return null;
+  const hh = Number(digits.length === 3 ? digits.slice(0, 1) : digits.slice(0, 2));
+  const mm = Number(digits.length === 3 ? digits.slice(1, 3) : digits.slice(2, 4));
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
+function calcDurationHours(from: unknown, to: unknown): string {
+  const start = parseTimeToMinutes(from);
+  const endBase = parseTimeToMinutes(to);
+  if (start == null || endBase == null) return "";
+  let end = endBase;
+  if (end < start) end += 24 * 60;
+  const minutes = end - start;
+  if (minutes < 0) return "";
+  return (minutes / 60).toFixed(2).replace(".", ",");
+}
+
 export async function POST(req: Request) {
   try {
     const data = await req.json();
@@ -811,6 +834,63 @@ export async function POST(req: Request) {
         y: 90,   // <- anpassen
         width: 120,
         height: 40,
+      });
+    }
+
+    const weekendWorkers = Array.isArray(data?.workers) ? data.workers : [];
+    const weekendRows = weekendWorkers
+      .map((w: any) => {
+        const active = Boolean(w?.wochenendfahrtJa) || String(w?.wochenendfahrt ?? "").trim().length > 0;
+        const from = String(w?.wochenendfahrtVon ?? "").trim();
+        const to = String(w?.wochenendfahrtBis ?? "").trim();
+        const duration = calcDurationHours(from, to) || String(w?.wochenendfahrt ?? "").trim();
+        return {
+          active,
+          name: String(w?.name ?? "").trim(),
+          from,
+          to,
+          duration,
+        };
+      })
+      .filter((row: { active: boolean; from: string; to: string; duration: string }) => row.active && (row.from || row.to || row.duration));
+
+    if (weekendRows.length > 0) {
+      const extra = outDoc.addPage([srcH, srcW]);
+      extra.drawPage(embedded, {
+        x: outW,
+        y: 0,
+        rotate: degrees(90),
+        xScale: 1,
+        yScale: 1,
+      });
+
+      const drawExtra = (text: string, x: number, y: number, size = 10) => {
+        extra.drawText(text ?? "", { x, y, size, font, color: rgb(0, 0, 1) });
+      };
+
+      drawExtra(String(data?.date ?? ""), 38, outH - 68, 10);
+
+      const weekendWorkRows = weekendRows.slice(0, 2);
+      const TIME_START_Y = outH - 70;
+      const TIME_ROW_H = 15;
+      const WORK = { fromX: 595, toX: 645 };
+      weekendWorkRows.forEach((row: { from: string; to: string }, i: number) => {
+        const y = TIME_START_Y - i * TIME_ROW_H;
+        drawExtra(row.from, WORK.fromX, y, 10);
+        drawExtra(row.to, WORK.toX, y, 10);
+      });
+
+      const workersStartY = outH - 120;
+      const workerRowH = 18;
+      const WCOL = {
+        name: 30,
+        wochenendfahrt: 180,
+      };
+
+      weekendRows.slice(0, 3).forEach((row: { name: string; duration: string }, i: number) => {
+        const y = workersStartY - i * workerRowH;
+        drawExtra(row.name, WCOL.name, y, 9);
+        drawExtra(row.duration, WCOL.wochenendfahrt, y, 9);
       });
     }
 

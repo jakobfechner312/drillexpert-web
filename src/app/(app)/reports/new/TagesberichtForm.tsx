@@ -67,6 +67,10 @@ function emptyWorker(): WorkerRow {
     name: "",
     reineArbeitsStd: "",
     wochenendfahrt: "",
+    wochenendfahrtJa: false,
+    wochenendfahrtVon: "",
+    wochenendfahrtBis: "",
+    wochenendfahrtDauer: "",
     ausfallStd: "",
     ausloeseT: false,
     ausloeseN: false,
@@ -135,10 +139,6 @@ const BG_CHECK_OPTIONS = [
   "ev. Leckagen",
 ] as const;
 const BG_CHECK_DELIMITER = " | ";
-const DEV_RML_TEST_SAVE_USER_ID = (process.env.NEXT_PUBLIC_RML_TEST_SAVE_USER_ID ?? "").trim();
-const DEV_RML_TEST_SAVE_USER_EMAIL = (process.env.NEXT_PUBLIC_RML_TEST_SAVE_USER_EMAIL ?? "jfechner1994@gmail.com")
-  .trim()
-  .toLowerCase();
 const SPT_MAX_SCHLAEGE = 50;
 const SPT_DEFAULT_SEGMENT_CM = 15;
 const DRILLER_DEVICE_HISTORY_KEY = "tagesbericht_driller_device_history_v1";
@@ -389,6 +389,34 @@ const TimePickerInput = ({
   stepSeconds?: number;
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastEmittedRef = useRef<string>(value);
+  const handleTimeValue = (next: string) => {
+    if (next === lastEmittedRef.current) return;
+    lastEmittedRef.current = next;
+    onValueChange(next);
+  };
+
+  useEffect(() => {
+    lastEmittedRef.current = value;
+  }, [value]);
+
+  const stopDomPolling = () => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
+
+  const startDomPolling = () => {
+    stopDomPolling();
+    pollTimerRef.current = setInterval(() => {
+      const current = inputRef.current?.value ?? "";
+      handleTimeValue(current);
+    }, 200);
+  };
+
+  useEffect(() => stopDomPolling, []);
 
   return (
     <div className="relative">
@@ -398,16 +426,30 @@ const TimePickerInput = ({
         step={stepSeconds}
         className={[className ?? "", "pr-11 hide-native-time-icon"].filter(Boolean).join(" ")}
         value={value}
-        onChange={(e) => onValueChange(e.target.value)}
-        onFocus={(e) => onOpenPicker(e.currentTarget)}
-        onClick={(e) => onOpenPicker(e.currentTarget)}
+        onChange={(e) => handleTimeValue(e.currentTarget.value)}
+        onInput={(e) => handleTimeValue((e.currentTarget as HTMLInputElement).value)}
+        onBlur={(e) => handleTimeValue(e.currentTarget.value)}
+        onFocus={(e) => {
+          startDomPolling();
+          onOpenPicker(e.currentTarget);
+        }}
+        onClick={(e) => {
+          startDomPolling();
+          onOpenPicker(e.currentTarget);
+        }}
+        onMouseUp={(e) => handleTimeValue(e.currentTarget.value)}
+        onKeyUp={(e) => handleTimeValue((e.currentTarget as HTMLInputElement).value)}
+        onTouchEnd={(e) => handleTimeValue((e.currentTarget as HTMLInputElement).value)}
       />
       <button
         type="button"
         aria-label={buttonLabel}
         className="absolute inset-y-1.5 right-1.5 inline-flex w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => onOpenPicker(inputRef.current)}
+        onClick={() => {
+          startDomPolling();
+          onOpenPicker(inputRef.current);
+        }}
       >
         <Clock3 size={16} />
       </button>
@@ -461,7 +503,20 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
     const cycles = Array.isArray((w as any).workCycles) && (w as any).workCycles.length ? (w as any).workCycles : r.workCycles ?? [""];
     const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
     while (st.length < cycles.length) st.push("");
-    return { ...emptyWorker(), ...w, workCycles: cycles, stunden: st.slice(0, cycles.length) };
+    const legacyWeekend = String((w as { wochenendfahrt?: unknown }).wochenendfahrt ?? "").trim();
+    const hasExplicitWeekend = typeof (w as { wochenendfahrtJa?: unknown }).wochenendfahrtJa === "boolean";
+    const weekendActive = hasExplicitWeekend
+      ? Boolean((w as { wochenendfahrtJa?: unknown }).wochenendfahrtJa)
+      : legacyWeekend.length > 0 && !["0", "0,0", "0.0"].includes(legacyWeekend);
+    const weekendDuration = String((w as { wochenendfahrtDauer?: unknown }).wochenendfahrtDauer ?? "").trim();
+    return {
+      ...emptyWorker(),
+      ...w,
+      wochenendfahrtJa: weekendActive,
+      wochenendfahrtDauer: weekendDuration || legacyWeekend,
+      workCycles: cycles,
+      stunden: st.slice(0, cycles.length),
+    };
   });
   r.umsetzenRows = Array.isArray(r.umsetzenRows) && r.umsetzenRows.length ? r.umsetzenRows : [emptyUmsetzenRow()];
   r.pegelAusbauRows = (
@@ -613,7 +668,6 @@ export default function TagesberichtForm({
   const dictationShouldRunRef = useRef(false);
   const [activeDictationTarget, setActiveDictationTarget] = useState<string | null>(null);
   const reportSaveKeyRef = useRef<string | null>(null);
-  const forceMyReportsSaveOnceRef = useRef(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveReadyRef = useRef(false);
   const localDraftLoadedRef = useRef(false);
@@ -654,11 +708,6 @@ export default function TagesberichtForm({
   const [projects, setProjects] = useState<{ id: string; name: string; project_number?: string | null }[]>([]);
   const [projectUiLoading, setProjectUiLoading] = useState(false);
   const [prefillProjectId, setPrefillProjectId] = useState<string | null>(projectId ?? enforcedProjectId ?? null);
-  const isRmlDevTestUser =
-    isRmlReport &&
-    ((DEV_RML_TEST_SAVE_USER_ID.length > 0 && currentUserId === DEV_RML_TEST_SAVE_USER_ID) ||
-      (DEV_RML_TEST_SAVE_USER_EMAIL.length > 0 && currentUserEmail === DEV_RML_TEST_SAVE_USER_EMAIL));
-
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -764,11 +813,6 @@ export default function TagesberichtForm({
    }, [effectiveProjectId, enforcedProjectId, loadMyProjects]);
 
   const ensureSaveTarget = useCallback(async (): Promise<{ scope: SaveScope; projectId: string | null } | null> => {
-    if (isRmlReport && forceMyReportsSaveOnceRef.current) {
-      forceMyReportsSaveOnceRef.current = false;
-      return { scope: "my_reports", projectId: null };
-    }
-
     if (enforcedProjectId) {
       return { scope: "project", projectId: enforcedProjectId };
     }
@@ -2132,40 +2176,6 @@ if (mode === "edit") {
     };
   };
 
-  async function downloadPdfToLocal() {
-    try {
-      const payload = buildPdfPayload(reportRef.current);
-      const res = await fetch(pdfEndpointBase, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        alert("PDF-Download fehlgeschlagen.");
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const normalizePart = (value: unknown) =>
-        String(value ?? "")
-          .trim()
-          .replace(/\s+/g, " ");
-      const auftragsnummer = normalizePart(payload?.aNr);
-      const bohrmeister = normalizePart(payload?.name);
-      const datum = normalizePart(payload?.date);
-      const nameBase = `${auftragsnummer || "ohne_auftragsnummer"}_${bohrmeister || "ohne_bohrmeister"}_${datum || "ohne_datum"}`;
-      const safeName = nameBase.replace(/[^a-z0-9-_]+/gi, "_");
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${safeName}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error("PDF download failed", e);
-      alert("PDF-Download fehlgeschlagen.");
-    }
-  }
-
   useEffect(() => {
     if (mode === "edit" || hasDraftId) return;
     try {
@@ -2593,7 +2603,7 @@ if (mode === "edit") {
   const MAX_TABLE_ROWS = isRml ? 10 : 5;
   const MAX_UMSETZEN_ROWS = 3;
   const MAX_PEGEL_ROWS = isRml ? 10 : 3;
-  const MAX_WATER_LEVEL_ROWS = 4;
+  const MAX_WATER_LEVEL_ROWS = isRml ? 32 : 4;
   const MAX_VERROHRUNG_ROWS = 4;
 
   const safeTableRows = useMemo<TableRow[]>(
@@ -3134,6 +3144,70 @@ if (mode === "edit") {
     setReport((p) => {
       const rows = Array.isArray(p.workers) && p.workers.length ? [...p.workers] : [emptyWorker()];
       rows[i] = { ...rows[i], ...patch };
+      return { ...p, workers: rows };
+    });
+  }
+
+  const weekendfahrtSummary = (worker: Partial<WorkerRow>) => {
+    const computed = calcWeekendfahrtDuration(
+      String(worker.wochenendfahrtVon ?? ""),
+      String(worker.wochenendfahrtBis ?? "")
+    );
+    const duration = String(worker.wochenendfahrtDauer ?? "").trim() || computed;
+    if (duration) return duration;
+    const from = String(worker.wochenendfahrtVon ?? "").trim();
+    const to = String(worker.wochenendfahrtBis ?? "").trim();
+    if (from && to) return `${from}-${to}`;
+    return "";
+  };
+
+  const parseWeekendfahrtTimeToMinutes = (value: string): number | null => {
+    const normalized = String(value ?? "").trim();
+    if (!normalized) return null;
+    const digits = normalized.replace(/\D/g, "");
+    if (digits.length < 3) return null;
+    const hh = Number(digits.length === 3 ? digits.slice(0, 1) : digits.slice(0, 2));
+    const mm = Number(digits.length === 3 ? digits.slice(1, 3) : digits.slice(2, 4));
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+    return hh * 60 + mm;
+  };
+
+  const calcWeekendfahrtDuration = (from: string, to: string): string => {
+    const startParsed = parseWeekendfahrtTimeToMinutes(from);
+    const endParsed = parseWeekendfahrtTimeToMinutes(to);
+    if (startParsed == null || endParsed == null) return "";
+    const start = startParsed;
+    let end = endParsed;
+    if (end < start) end += 24 * 60;
+    const minutes = end - start;
+    if (minutes < 0) return "";
+    const hours = minutes / 60;
+    if (!Number.isFinite(hours)) return "";
+    return hours.toFixed(2).replace(".", ",");
+  };
+
+  function setWorkerWeekendfahrt(
+    i: number,
+    patch: Partial<Pick<WorkerRow, "wochenendfahrtJa" | "wochenendfahrtVon" | "wochenendfahrtBis" | "wochenendfahrtDauer">>
+  ) {
+    setReport((p) => {
+      const rows = Array.isArray(p.workers) && p.workers.length ? [...p.workers] : [emptyWorker()];
+      const current = rows[i] ?? emptyWorker();
+      const next = { ...current, ...patch };
+      if (!next.wochenendfahrtJa) {
+        next.wochenendfahrtVon = "";
+        next.wochenendfahrtBis = "";
+        next.wochenendfahrtDauer = "";
+      } else {
+        const autoDuration = calcWeekendfahrtDuration(
+          String(next.wochenendfahrtVon ?? ""),
+          String(next.wochenendfahrtBis ?? "")
+        );
+        next.wochenendfahrtDauer = autoDuration;
+      }
+      next.wochenendfahrt = next.wochenendfahrtJa ? weekendfahrtSummary(next) : "";
+      rows[i] = next;
       return { ...p, workers: rows };
     });
   }
@@ -4410,7 +4484,7 @@ if (mode === "edit") {
                     </div>
                     <div className="mt-3 space-y-3">
                       {safeWorkers.map((worker, idx) => (
-                        <div key={idx} className="grid gap-3 rounded-xl border border-slate-200/70 bg-white p-3 md:grid-cols-2">
+                        <div key={idx} className="grid gap-3 rounded-xl border border-slate-200/70 bg-white p-3 md:grid-cols-3">
                           <label className="min-w-0 space-y-1">
                             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                               {idx === 0 ? "Bohrmeister" : `Arbeiter ${idx + 1}`}
@@ -4443,6 +4517,65 @@ if (mode === "edit") {
                               </label>
                             </div>
                           </div>
+                          <div className="space-y-1">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Wochenendfahrt</span>
+                            <div className="flex h-[42px] items-center gap-5 rounded-lg border px-3 text-sm">
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={!!worker.wochenendfahrtJa}
+                                  onChange={(e) => setWorkerWeekendfahrt(idx, { wochenendfahrtJa: e.target.checked })}
+                                />
+                                Ja
+                              </label>
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={!worker.wochenendfahrtJa}
+                                  onChange={(e) => {
+                                    if (e.target.checked) setWorkerWeekendfahrt(idx, { wochenendfahrtJa: false });
+                                  }}
+                                />
+                                Nein
+                              </label>
+                            </div>
+                          </div>
+                          {worker.wochenendfahrtJa ? (
+                            <div className="grid gap-3 md:col-span-3 md:grid-cols-3">
+                              <label className="space-y-1">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Von</span>
+                                <TimePickerInput
+                                  value={worker.wochenendfahrtVon ?? ""}
+                                  onValueChange={(next) => setWorkerWeekendfahrt(idx, { wochenendfahrtVon: next })}
+                                  onOpenPicker={openNativePicker}
+                                  className="w-full rounded-lg border px-2.5 py-2 text-sm"
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Bis</span>
+                                <TimePickerInput
+                                  value={worker.wochenendfahrtBis ?? ""}
+                                  onValueChange={(next) => setWorkerWeekendfahrt(idx, { wochenendfahrtBis: next })}
+                                  onOpenPicker={openNativePicker}
+                                  className="w-full rounded-lg border px-2.5 py-2 text-sm"
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Dauer (Std.)</span>
+                                <input
+                                  className="w-full rounded-lg border bg-slate-50 px-2.5 py-2 text-sm text-slate-700"
+                                  value={
+                                    calcWeekendfahrtDuration(
+                                      String(worker.wochenendfahrtVon ?? ""),
+                                      String(worker.wochenendfahrtBis ?? "")
+                                    ) || ""
+                                  }
+                                  readOnly
+                                  placeholder="auto"
+                                />
+                              </label>
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -5788,24 +5921,6 @@ if (mode === "edit") {
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="space-y-1">
-                      <span className="text-xs text-slate-500">Ausfall</span>
-                      <input
-                        className="w-full rounded border px-2 py-2 text-sm"
-                        value={w.ausfallStd ?? ""}
-                        onChange={(e) => setWorker(idx, { ausfallStd: e.target.value })}
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-xs text-slate-500">Wochenendfahrt</span>
-                      <input
-                        className="w-full rounded border px-2 py-2 text-sm"
-                        value={w.wochenendfahrt ?? ""}
-                        onChange={(e) => setWorker(idx, { wochenendfahrt: e.target.value })}
-                      />
-                    </label>
-                  </div>
                 </div>
               );
             })}
@@ -7057,19 +7172,6 @@ if (mode === "edit") {
           >
             Vorschau
           </button>
-          {isRmlDevTestUser ? (
-            <button
-              type="button"
-              className="btn border-amber-700 bg-amber-600 text-white hover:bg-amber-700"
-              onClick={() => {
-                forceMyReportsSaveOnceRef.current = true;
-                void triggerSaveReport();
-              }}
-              title="Nur für Dev-Test: Speichert diesen RML-Bericht in Meine Berichte statt ins Projekt."
-            >
-              Dev: In Meine Berichte speichern
-            </button>
-          ) : null}
         </div>
         {useStepper ? (
           <div className="flex items-center gap-2">
