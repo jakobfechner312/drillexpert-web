@@ -855,43 +855,75 @@ export async function POST(req: Request) {
       .filter((row: { active: boolean; from: string; to: string; duration: string }) => row.active && (row.from || row.to || row.duration));
 
     if (weekendRows.length > 0) {
-      const extra = outDoc.addPage([srcH, srcW]);
-      extra.drawPage(embedded, {
-        x: outW,
-        y: 0,
-        rotate: degrees(90),
-        xScale: 1,
-        yScale: 1,
-      });
+      const ROWS_PER_PAGE = 3;
+      const pageCount = Math.ceil(weekendRows.length / ROWS_PER_PAGE);
+      for (let pageIdx = 0; pageIdx < pageCount; pageIdx += 1) {
+        const chunk = weekendRows.slice(pageIdx * ROWS_PER_PAGE, (pageIdx + 1) * ROWS_PER_PAGE);
+        const extra = outDoc.addPage([srcH, srcW]);
+        extra.drawPage(embedded, {
+          x: outW,
+          y: 0,
+          rotate: degrees(90),
+          xScale: 1,
+          yScale: 1,
+        });
 
-      const drawExtra = (text: string, x: number, y: number, size = 10) => {
-        extra.drawText(text ?? "", { x, y, size, font, color: rgb(0, 0, 1) });
-      };
+        const drawExtra = (text: string, x: number, y: number, size = 10, color = rgb(0, 0, 1)) => {
+          extra.drawText(text ?? "", { x, y, size, font, color });
+        };
+        const drawRefBadge = (num: number, x: number, y: number) => {
+          const label = String(num);
+          const size = 7;
+          const labelWidth = font.widthOfTextAtSize(label, size);
+          extra.drawCircle({
+            x,
+            y,
+            size: 7,
+            borderColor: rgb(0.82, 0.33, 0.11),
+            borderWidth: 1.2,
+            color: rgb(1, 0.95, 0.9),
+          });
+          drawExtra(label, x - labelWidth / 2, y - 2.4, size, rgb(0.82, 0.33, 0.11));
+        };
 
-      drawExtra(String(data?.date ?? ""), 38, outH - 68, 10);
+        drawExtra(String(data?.date ?? ""), 38, outH - 68, 10);
 
-      const weekendWorkRows = weekendRows.slice(0, 2);
-      const TIME_START_Y = outH - 70;
-      const TIME_ROW_H = 15;
-      const WORK = { fromX: 595, toX: 645 };
-      weekendWorkRows.forEach((row: { from: string; to: string }, i: number) => {
-        const y = TIME_START_Y - i * TIME_ROW_H;
-        drawExtra(row.from, WORK.fromX, y, 10);
-        drawExtra(row.to, WORK.toX, y, 10);
-      });
+        const TIME_START_Y = outH - 70;
+        const TIME_ROW_H = 15;
+        const WORK = { fromX: 595, toX: 645 };
+        chunk.slice(0, 2).forEach((row: { from: string; to: string }, i: number) => {
+          const y = TIME_START_Y - i * TIME_ROW_H;
+          const ref = pageIdx * ROWS_PER_PAGE + i + 1;
+          drawRefBadge(ref, WORK.fromX - 12, y + 3);
+          drawExtra(row.from, WORK.fromX, y, 10);
+          drawExtra(row.to, WORK.toX, y, 10);
+        });
+        const thirdTime = chunk[2];
+        if (thirdTime) {
+          const y = TIME_START_Y + 30;
+          const ref = pageIdx * ROWS_PER_PAGE + 3;
+          drawRefBadge(ref, WORK.fromX - 29, y + 3);
+          drawExtra("von", WORK.fromX - 20, y + 2, 8, rgb(0, 0, 0));
+          drawExtra("bis", WORK.toX - 17, y + 2, 8, rgb(0, 0, 0));
+          drawExtra(thirdTime.from, WORK.fromX, y, 10);
+          drawExtra(thirdTime.to, WORK.toX, y, 10);
+        }
 
-      const workersStartY = outH - 120;
-      const workerRowH = 18;
-      const WCOL = {
-        name: 30,
-        wochenendfahrt: 180,
-      };
+        const workersStartY = outH - 120;
+        const workerRowH = 18;
+        const WCOL = {
+          name: 30,
+          wochenendfahrt: 180,
+        };
 
-      weekendRows.slice(0, 3).forEach((row: { name: string; duration: string }, i: number) => {
-        const y = workersStartY - i * workerRowH;
-        drawExtra(row.name, WCOL.name, y, 9);
-        drawExtra(row.duration, WCOL.wochenendfahrt, y, 9);
-      });
+        chunk.forEach((row: { name: string; duration: string }, i: number) => {
+          const y = workersStartY - i * workerRowH;
+          const ref = pageIdx * ROWS_PER_PAGE + i + 1;
+          drawRefBadge(ref, WCOL.name - 11, y + 3);
+          drawExtra(row.name, WCOL.name, y, 9);
+          drawExtra(row.duration, WCOL.wochenendfahrt, y, 9);
+        });
+      }
     }
 
     const outBytes = await outDoc.save();
