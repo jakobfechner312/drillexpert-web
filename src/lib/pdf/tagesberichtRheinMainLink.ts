@@ -434,7 +434,7 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   const lowerCols = {
     ausbauVon: 75,
     ausbauBis: tableCols.krone,
-    ausbauRohr: 175,
+    ausbauRohr: 165,
     verfVon: 264,
     verfBis: 330,
     verfMaterial: 368,

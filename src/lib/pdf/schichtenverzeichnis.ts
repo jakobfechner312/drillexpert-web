@@ -538,6 +538,21 @@ export async function generateSchichtenverzeichnisPdf(
       });
     });
   };
+  const fitTextToTwoLines = (text: string, maxWidth: number, preferredSize: number, minSize = 7) => {
+    for (let size = preferredSize; size >= minSize; size -= 0.5) {
+      const lines = wrapText(text, maxWidth, size);
+      if (lines.length <= 2) return { size, lines };
+    }
+    const size = minSize;
+    const rawLines = wrapText(text, maxWidth, size);
+    if (rawLines.length <= 2) return { size, lines: rawLines };
+    const firstLine = rawLines[0];
+    let secondLine = rawLines.slice(1).join(" ");
+    while (secondLine.length > 0 && font.widthOfTextAtSize(`${secondLine}...`, size) > maxWidth) {
+      secondLine = secondLine.slice(0, -1);
+    }
+    return { size, lines: [firstLine, `${secondLine}...`] };
+  };
   const normalizeProbeArt = (value: string) => {
     const normalized = value.trim().toUpperCase();
     if (normalized === "EP") return "EP";
@@ -602,6 +617,35 @@ export async function generateSchichtenverzeichnisPdf(
   const getRowFieldOffsetPage1X = (rowIndex: number, fieldKey: string) => {
     if (LOCKED_ROW_X_FIELDS_PAGE_1.has(fieldKey)) return 0;
     return getRowFieldOffsetPage1(rowIndex, fieldKey, "x");
+  };
+  const getRowFieldOffsetPage1Y = (rowIndex: number, fieldKey: string) => {
+    const base = getRowFieldOffsetPage1(rowIndex, fieldKey, "y");
+    if (rowIndex === 0 && fieldKey === "schicht_a2") {
+      return base + 3;
+    }
+    if (rowIndex === 3) {
+      const gAlignedY = getRowFieldOffsetPage1(rowIndex, "schicht_g", "y") - 5;
+      if (
+        fieldKey === "schicht_e" ||
+        fieldKey === "schicht_f" ||
+        fieldKey === "schicht_g" ||
+        fieldKey === "schicht_h"
+      ) {
+        return gAlignedY;
+      }
+      const dAlignedY = getRowFieldOffsetPage1(rowIndex, "schicht_d", "y") - 3;
+      if (fieldKey === "schicht_d" || fieldKey === "schicht_b" || fieldKey === "schicht_c") {
+        return dAlignedY;
+      }
+      return base;
+    }
+    if (rowIndex === 2 && (fieldKey === "schicht_b" || fieldKey === "schicht_c")) {
+      return getRowFieldOffsetPage1(rowIndex, "schicht_d", "y");
+    }
+    if (rowIndex === 1 && (fieldKey === "schicht_b" || fieldKey === "schicht_c")) {
+      return getRowFieldOffsetPage1(rowIndex, "schicht_d", "y");
+    }
+    return base;
   };
   const skipKeys = new Set([
     "schicht_a1",
@@ -705,6 +749,7 @@ export async function generateSchichtenverzeichnisPdf(
   }
 
   // Datenfelder anhand Mapping platzieren
+  const FIXED_PAGE1_PROBE_BG_X = 525;
   SV_FIELDS.forEach((field) => {
     if (HIDDEN_FIELD_KEYS.has(field.key)) return;
     if (hasRowData && skipKeys.has(field.key)) return;
@@ -723,14 +768,50 @@ export async function generateSchichtenverzeichnisPdf(
     if (MARKER_HIGHLIGHT_KEYS.has(field.key)) return;
     const text = value == null ? "" : String(value);
     if (!text) return;
-    const x = field.x + (pageIndex === 0 ? getPage1FieldOffset(field.key, "x") : 0);
+    const x =
+      field.key === "probe_bg" && pageIndex === 0
+        ? FIXED_PAGE1_PROBE_BG_X
+        : field.x + (pageIndex === 0 ? getPage1FieldOffset(field.key, "x") : 0);
     const y = field.y + (pageIndex === 0 ? getPage1FieldOffset(field.key, "y") : 0);
+    if (field.key === "kies_koernung") {
+      const maxWidth = 50;
+      const baseSize = field.size ?? 10;
+      if (font.widthOfTextAtSize(text, baseSize) <= maxWidth) {
+        drawText(pageIndex, text, x, y, baseSize);
+        return;
+      }
+      const fitted = fitTextToTwoLines(text, maxWidth, baseSize, 7);
+      const lineHeight = Math.max(7, Math.round(fitted.size * 1.15));
+      const startY = y + (fitted.lines.length > 1 ? 5 : 2);
+      fitted.lines.forEach((line, idx) => {
+        drawText(pageIndex, line, x, startY - idx * lineHeight, fitted.size);
+      });
+      return;
+    }
+    if (field.key === "rok") {
+      const maxWidth = 40;
+      const baseSize = field.size ?? 9;
+      if (font.widthOfTextAtSize(text, baseSize) <= maxWidth) {
+        drawText(pageIndex, text, x, y, baseSize);
+        return;
+      }
+      const fitted = fitTextToTwoLines(text, maxWidth, baseSize, 6.5);
+      const lineHeight = Math.max(7, Math.round(fitted.size * 1.15));
+      const startY = y + (fitted.lines.length > 1 ? 5 : 2);
+      fitted.lines.forEach((line, idx) => {
+        drawText(pageIndex, line, x, startY - idx * lineHeight, fitted.size);
+      });
+      return;
+    }
     drawText(pageIndex, text, x, y, field.size ?? 10);
   });
   const probeBgField = fieldMap.get("probe_bg");
   if (probeBgField) {
     const pageIndex = Math.max(0, Math.min(pages.length - 1, probeBgField.page - 1));
-    const x = probeBgField.x + 15 + (pageIndex === 0 ? getPage1FieldOffset("probe_bg", "x") : 0);
+    const x =
+      pageIndex === 0
+        ? FIXED_PAGE1_PROBE_BG_X + 15
+        : probeBgField.x + 15 + getPage1FieldOffset("probe_bg", "x");
     const y = probeBgField.y + (pageIndex === 0 ? getPage1FieldOffset("probe_bg", "y") : 0);
     drawStaticText(pageIndex, "BG", x, y, 10);
   }
@@ -855,9 +936,9 @@ export async function generateSchichtenverzeichnisPdf(
       if (fieldKey === "schicht_h") return "schicht_d";
       return fieldKey;
     };
-    const getAlignedSchichtExtraX = (fieldKey: string) => {
-      if (fieldKey === "schicht_c" || fieldKey === "schicht_g") return 4;
-      if (fieldKey === "schicht_d" || fieldKey === "schicht_h") return 10;
+    const getAlignedSchichtExtraX = (fieldKey: string, pageIndex: number) => {
+      if (fieldKey === "schicht_c" || fieldKey === "schicht_g") return 4 + (pageIndex === 0 ? 5 : 0);
+      if (fieldKey === "schicht_d" || fieldKey === "schicht_h") return 10 + (pageIndex >= 1 ? -8 : 0);
       if (fieldKey === "schicht_e") return 12;
       return 0;
     };
@@ -880,6 +961,32 @@ export async function generateSchichtenverzeichnisPdf(
         (pageIndex >= 1 ? Number(rowOffsetsPage2[localIdx]) || 0 : 0);
       const pageStartOffset = pageIndex === 0 ? startOffsetPage1 : startOffsetPage2;
       const pageXOffset = pageIndex === 0 ? xOffsetPage1 : xOffsetPage2;
+      const smallFieldKeys = ["schicht_b", "schicht_c", "schicht_d"] as const;
+      const rowSmallFieldSharedSize = (() => {
+        const preferredSize = 10;
+        const minSize = 6.5;
+        const entries = smallFieldKeys
+          .map((key) => {
+            const sourceKey = key === "schicht_b" ? "b" : key === "schicht_c" ? "c" : "d";
+            const value = row?.[sourceKey];
+            const text = value == null ? "" : String(value).trim();
+            const field = fieldMap.get(key);
+            if (!text || !field) return null;
+            const maxWidth = Math.max(28, (field.width ?? 60) - 6);
+            return { text, maxWidth };
+          })
+          .filter((entry): entry is { text: string; maxWidth: number } => entry != null);
+        if (entries.length === 0) return null;
+        const needsWrap = entries.some(
+          (entry) => font.widthOfTextAtSize(entry.text, preferredSize) > entry.maxWidth
+        );
+        if (!needsWrap) return null;
+        for (let size = preferredSize; size >= minSize; size -= 0.5) {
+          const fitsAll = entries.every((entry) => wrapText(entry.text, entry.maxWidth, size).length <= 2);
+          if (fitsAll) return size;
+        }
+        return minSize;
+      })();
       if (ansatzField) {
         const value = row?.ansatzpunkt_bis;
         const text = value == null ? "" : String(value);
@@ -954,26 +1061,56 @@ export async function generateSchichtenverzeichnisPdf(
           );
           return;
         }
-        drawText(
-          pageIndex,
-          text,
+        const drawX =
           alignedField.x +
-            pageXOffset +
-            getGroupedSchichtXOffset(rowKey as keyof typeof rowFields, pageIndex) +
-            getAlignedSchichtExtraX(fieldKey) +
-            (pageIndex === 0
-              ? getPage1FieldOffset(alignedFieldKey, "x") +
-                getRowFieldOffsetPage1X(localIdx, fieldKey)
-              : 0),
+          pageXOffset +
+          getGroupedSchichtXOffset(rowKey as keyof typeof rowFields, pageIndex) +
+          getAlignedSchichtExtraX(fieldKey, pageIndex) +
+          (pageIndex === 0
+            ? getPage1FieldOffset(alignedFieldKey, "x") +
+              getRowFieldOffsetPage1X(localIdx, fieldKey)
+            : 0);
+        const drawY =
           field.y +
+          pageStartOffset -
+          yOffset +
+          (pageIndex === 0
+            ? getPage1FieldOffset(fieldKey, "y") +
+              getRowFieldOffsetPage1Y(localIdx, fieldKey)
+            : 0);
+        const baseSize = field.size ?? 10;
+        const shouldWrapInSmallField =
+          fieldKey === "schicht_b" || fieldKey === "schicht_c" || fieldKey === "schicht_d";
+        if (!shouldWrapInSmallField) {
+          drawText(pageIndex, text, drawX, drawY, baseSize);
+          return;
+        }
+        const maxWidth = Math.max(28, (field.width ?? 60) - 6);
+        const effectiveSize = rowSmallFieldSharedSize ?? baseSize;
+        if (font.widthOfTextAtSize(text, effectiveSize) <= maxWidth) {
+          drawText(pageIndex, text, drawX, drawY, effectiveSize);
+          return;
+        }
+        const fitted = fitTextToTwoLines(text, maxWidth, effectiveSize, effectiveSize);
+        const lineHeight = Math.max(6, Math.round(fitted.size * 1.1));
+        const multilineAnchorY = (() => {
+          if (fitted.lines.length <= 1) return drawY;
+          const dField = fieldMap.get("schicht_d");
+          if (!dField) return drawY;
+          return (
+            dField.y +
             pageStartOffset -
             yOffset +
             (pageIndex === 0
-              ? getPage1FieldOffset(fieldKey, "y") +
-                getRowFieldOffsetPage1(localIdx, fieldKey, "y")
-              : 0),
-          field.size ?? 10
-        );
+              ? getPage1FieldOffset("schicht_d", "y") + getRowFieldOffsetPage1Y(localIdx, "schicht_d")
+              : 0)
+          );
+        })();
+        const multilineLift = fitted.lines.length > 1 ? 5 : 0;
+        const startY = multilineAnchorY + Math.max(2, Math.round(fitted.size * 0.45)) + multilineLift;
+        fitted.lines.forEach((line, lineIdx) => {
+          drawText(pageIndex, line, drawX, startY - lineIdx * lineHeight, fitted.size);
+        });
       });
     });
 

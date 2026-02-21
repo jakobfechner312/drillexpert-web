@@ -178,6 +178,7 @@ const ROTATION_DURCHMESSER_OPTIONS = ["146"] as const;
 const GREIF_DURCHMESSER_OPTIONS = ["700", "880", "1.180", "1.500"] as const;
 const SCHLITZWEITE_OPTIONS = ["0,5", "0,75", "1", "1,5", "1,75", "2", "2,25", "2,5"] as const;
 const KIES_KOERNUNG_OPTIONS = ["0,71-1,25", "1,0-2,0", "2,0-3,15", "3,15-5,6", "5,6-8", "8,0-16"] as const;
+const UEBERGEBEN_AN_OPTIONS = ["Gutachter", "Lagertaining", "Kernlager BV"] as const;
 const SCHICHT_E_OPTIONS = ["0", "+", "++"] as const;
 const SCHICHT_C_OPTIONS = ["leicht", "mittel", "schwer"] as const;
 const SCHICHT_B_OPTIONS = [
@@ -478,6 +479,7 @@ const initialData: FormData = {
   proben_art: "",
   proben_nr: "",
   proben_tiefe: "",
+  proben_genommen: "",
 };
 
 const emptySchichtRow = (): SchichtRow => ({
@@ -3064,6 +3066,19 @@ export default function SchichtenverzeichnisForm({
   const showStep = (index: number) => !useStepper || stepIndex === index;
   const isSchichtStep = showStep(5);
   const isProbenSptStep = showStep(6);
+  const probenGenommenValue = String(data.proben_genommen ?? "").trim();
+  const hasProbenGenommenDecision = probenGenommenValue === "ja" || probenGenommenValue === "nein";
+  const shouldShowProbenSptInputs = probenGenommenValue !== "nein";
+  const uebergebenAnCurrent = String(data.uebergeben_an ?? "").trim();
+  const uebergebenAnIsPreset = UEBERGEBEN_AN_OPTIONS.includes(
+    uebergebenAnCurrent as (typeof UEBERGEBEN_AN_OPTIONS)[number]
+  );
+  const uebergebenAnSelectValue = uebergebenAnCurrent
+    ? uebergebenAnIsPreset
+      ? uebergebenAnCurrent
+      : "__custom__"
+    : "";
+  const showUebergebenAnCustomInput = uebergebenAnSelectValue === "__custom__";
   const containerClass = useStepper
     ? "mt-6 space-y-6 max-w-[2000px] mx-auto w-full overflow-x-hidden px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]"
     : "space-y-6";
@@ -4785,6 +4800,37 @@ export default function SchichtenverzeichnisForm({
           {isProbenSptStep ? (
             <>
               <div className="rounded-2xl border border-slate-200/80 bg-slate-50/30 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Wurden Proben genommen?
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                      probenGenommenValue === "ja"
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                    onClick={() => update("proben_genommen", "ja")}
+                  >
+                    Ja
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                      probenGenommenValue === "nein"
+                        ? "border-rose-300 bg-rose-50 text-rose-800"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                    onClick={() => update("proben_genommen", "nein")}
+                  >
+                    Nein
+                  </button>
+                </div>
+              </div>
+              {shouldShowProbenSptInputs ? (
+                <>
+              <div className="rounded-2xl border border-slate-200/80 bg-slate-50/30 p-3">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Entnommene Proben (unabhängig von Schichtzeilen)
@@ -5058,8 +5104,14 @@ export default function SchichtenverzeichnisForm({
                     </div>
                   );
                 })}
+                </div>
               </div>
-              </div>
+                </>
+              ) : (
+                <div className="rounded-2xl border border-slate-200/80 bg-white p-3 text-sm text-slate-600">
+                  Keine Proben erfasst. Mit <span className="font-semibold">Weiter</span> geht es direkt zu Schritt 8.
+                </div>
+              )}
             </>
           ) : null}
         </div>
@@ -5123,7 +5175,40 @@ export default function SchichtenverzeichnisForm({
                     </button>
                   </div>
                 </label>
-                <Field label="Übergeben an" value={data.uebergeben_an} onChange={(v) => update("uebergeben_an", v)} />
+                <label className="min-w-0 space-y-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Übergeben an
+                  </span>
+                  <select
+                    className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                    value={uebergebenAnSelectValue}
+                    onChange={(e) => {
+                      if (e.target.value === "__custom__") {
+                        if (uebergebenAnIsPreset) {
+                          update("uebergeben_an", "");
+                        }
+                        return;
+                      }
+                      update("uebergeben_an", e.target.value);
+                    }}
+                  >
+                    <option value="">Bitte wählen…</option>
+                    {UEBERGEBEN_AN_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                    <option value="__custom__">Benutzerdefiniert</option>
+                  </select>
+                  {showUebergebenAnCustomInput ? (
+                    <input
+                      className="mt-2 h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                      placeholder="Benutzerdefiniert"
+                      value={data.uebergeben_an ?? ""}
+                      onChange={(e) => update("uebergeben_an", e.target.value)}
+                    />
+                  ) : null}
+                </label>
               </div>
             </Card>
           )
@@ -5192,6 +5277,10 @@ export default function SchichtenverzeichnisForm({
               className="btn btn-primary"
               onClick={() => {
                 if (stepIndex === 5 && !ensureRequiredSchichtfelder()) return;
+                if (stepIndex === 6 && !hasProbenGenommenDecision) {
+                  alert('Bitte in Schritt 7 auswählen: "Wurden Proben genommen?"');
+                  return;
+                }
                 void saveDraftToServer({ showSuccess: false, showError: false, enforceRequired: false });
                 setStepIndexKeepingScroll((i) => Math.min(steps.length - 1, i + 1));
               }}

@@ -44,7 +44,7 @@ export const SV_FIELDS: SchichtenverzeichnisField[] = [
   { key: "rok", label: "ROK", page: 1, x: 150, y: 581, size: 9, width: 40 },
   { key: "passavant", label: "Passavant", page: 1, x: 407, y: 580, size: 10, width: 50 },
   { key: "seba", label: "Seba", page: 1, x: 475, y: 580, size: 10, width: 40 },
-  { key: "kies_koernung", label: "Kies-Körnung", page: 1, x: 410, y: 590, size: 10, width: 80 },
+  { key: "kies_koernung", label: "Kies-Körnung", page: 1, x: 395, y: 590, size: 10, width: 80 },
   { key: "sumpf", label: "Sumpf", page: 1, x: 77, y: 565, size: 10, width: 40 },
   { key: "filter_rohr", label: "Filterrohr", page: 1, x: 153, y: 565, size: 10, width: 50, aliases: ["filter_R"] },
   { key: "sw", label: "SW", page: 1, x: 203, y: 565, size: 10, width: 40 },
