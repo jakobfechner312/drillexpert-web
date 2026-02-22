@@ -97,6 +97,7 @@ type GroundwaterRow = {
 type FieldOffsetXY = { x: string; y: string };
 type RowFieldOffsetMap = Record<string, Record<string, FieldOffsetXY>>;
 const SV_FORM_STATE_KEY = "sv_form_state_v1";
+const DEV_ONLY_EMAILS = new Set(["jfechner1994@gmail.com"]);
 
 const SCHICHT_FINE_TUNE_FIELD_KEYS = [
   "schicht_ansatzpunkt_bis",
@@ -938,6 +939,7 @@ export default function SchichtenverzeichnisForm({
   const [projectUiLoading, setProjectUiLoading] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
 
   const [data, setData] = useState<FormData>(initialData);
   const [loading, setLoading] = useState(false);
@@ -1658,6 +1660,7 @@ export default function SchichtenverzeichnisForm({
   }, [normalizedFilterRowsForPayload]);
 
   const supabase = useMemo(() => createClient(), []);
+  const isDevOnlyUser = DEV_ONLY_EMAILS.has(currentUserEmail);
   const {
     setSaveDraftHandler,
     setSaveReportHandler,
@@ -1684,6 +1687,18 @@ export default function SchichtenverzeichnisForm({
       setGlobalUndoCount(0);
     };
   }, [setGlobalUndoCount]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!mounted) return;
+      setCurrentUserEmail(String(userRes?.user?.email ?? "").trim().toLowerCase());
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
 
   useEffect(() => {
     if (mode !== "create") return;
@@ -3043,14 +3058,24 @@ export default function SchichtenverzeichnisForm({
     : "";
   const showUebergebenAnCustomInput = uebergebenAnSelectValue === "__custom__";
   const containerClass = useStepper
-    ? "mt-6 space-y-6 max-w-[2000px] mx-auto w-full overflow-x-hidden px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]"
+    ? "mt-6 space-y-6 max-w-[2000px] mx-auto w-full overflow-x-hidden px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-amber-50/35 via-slate-50 to-slate-100 rounded-3xl border border-amber-100/60 shadow-[0_10px_30px_-20px_rgba(146,64,14,0.35)]"
     : "space-y-6";
   const renderStep = (content: React.ReactNode) => content;
 
   return (
     <div className={containerClass}>
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <section className="w-full rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50 via-white to-orange-50 px-5 py-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600">
+            Bericht
+          </div>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-900">
+            Schichtenverzeichnis
+          </h1>
+        </section>
+      </header>
       {useStepper ? (
-        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-amber-200/70 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -3067,7 +3092,7 @@ export default function SchichtenverzeichnisForm({
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-sky-500 to-teal-500 transition-all"
+                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all"
                   style={{ width: `${stepProgress.percent}%` }}
                 />
               </div>
@@ -3075,7 +3100,7 @@ export default function SchichtenverzeichnisForm({
             {stepProgress.firstIncompleteStep != null ? (
               <button
                 type="button"
-                className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+                className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
                 onClick={() => setStepIndex(stepProgress.firstIncompleteStep ?? 0)}
               >
                 Nächster offener Schritt
@@ -3090,7 +3115,7 @@ export default function SchichtenverzeichnisForm({
                 onClick={() => setStepIndex(i)}
                 className={`rounded-full border px-3 py-1 text-xs font-semibold ${
                   i === stepIndex
-                    ? "bg-sky-50 text-sky-800 border-sky-200"
+                    ? "bg-amber-50 text-amber-800 border-amber-200"
                     : stepProgress.steps[i]?.filled === stepProgress.steps[i]?.total
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
                       : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
@@ -3203,13 +3228,6 @@ export default function SchichtenverzeichnisForm({
           </div>
         </div>
       )}
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">
-            Schichtenverzeichnis
-          </h1>
-        </div>
-      </header>
       {showStep(0)
         ? renderStep(
             <Card title="Kopf & Projekt">
@@ -5204,9 +5222,15 @@ export default function SchichtenverzeichnisForm({
           >
             {loading ? "Erzeuge PDF…" : "PDF Vorschau"}
           </button>
-          <button type="button" className="btn btn-secondary" onClick={fillTestData}>
-            Test füllen
-          </button>
+          {isDevOnlyUser ? (
+            <button
+              type="button"
+              className="btn border-orange-300 bg-orange-100 text-orange-900 hover:bg-orange-200"
+              onClick={fillTestData}
+            >
+              DEV: Test füllen
+            </button>
+          ) : null}
         </div>
         {useStepper ? (
           <div className="flex items-center gap-2">

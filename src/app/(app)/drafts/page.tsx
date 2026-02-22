@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/browser";
+import { FileClock, FileText, Layers3, Search } from "lucide-react";
 
 type DraftRow = {
   id: string;
@@ -10,12 +11,15 @@ type DraftRow = {
   created_at: string;
 };
 
+type DraftKind = "all" | "tb" | "rml" | "sv";
+
 export default function DraftsPage() {
   const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
   const [query, setQuery] = useState("");
+  const [kindFilter, setKindFilter] = useState<DraftKind>("all");
 
   const deleteDraft = async (draftId: string) => {
     if (!confirm("Entwurf wirklich löschen?")) return;
@@ -59,41 +63,73 @@ export default function DraftsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const draftKind = (title: string): Exclude<DraftKind, "all"> => {
+    const lower = (title ?? "").toLowerCase();
+    if (lower.includes("rhein-main-link") || lower.includes("rml")) return "rml";
+    if (lower.includes("schichtenverzeichnis")) return "sv";
+    return "tb";
+  };
+
   const filteredDrafts = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return drafts;
-    return drafts.filter((d) => (d.title ?? "").toLowerCase().includes(q));
-  }, [drafts, query]);
+    return drafts.filter((d) => {
+      const matchesQuery = !q || (d.title ?? "").toLowerCase().includes(q);
+      const matchesKind = kindFilter === "all" || draftKind(d.title) === kindFilter;
+      return matchesQuery && matchesKind;
+    });
+  }, [drafts, query, kindFilter]);
 
   const draftTone = (title: string) => {
-    const lower = (title ?? "").toLowerCase();
-    if (lower.includes("schichtenverzeichnis")) {
+    const kind = draftKind(title);
+    if (kind === "sv") {
       return {
-        card: "from-amber-50/70 via-white to-orange-50/50",
+        card: "from-amber-50/80 via-white to-orange-50/60",
         badge: "border-amber-200 bg-amber-50 text-amber-800",
+        label: "Schichtenverzeichnis",
+        icon: Layers3,
+      };
+    }
+    if (kind === "rml") {
+      return {
+        card: "from-indigo-50/80 via-white to-cyan-50/70",
+        badge: "border-indigo-200 bg-indigo-50 text-indigo-800",
+        label: "TB Rhein-Main-Link",
+        icon: FileClock,
       };
     }
     return {
-      card: "from-sky-50/70 via-white to-cyan-50/50",
+      card: "from-sky-50/80 via-white to-cyan-50/60",
       badge: "border-sky-200 bg-sky-50 text-sky-800",
+      label: "Tagesbericht",
+      icon: FileText,
     };
   };
 
   return (
-    <div className="mx-auto w-full max-w-7xl overflow-x-clip px-3 py-6 sm:px-6 lg:px-8">
-      <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-start">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Meine Entwürfe</h1>
-          <p className="mt-1 text-sm text-slate-600">Alle Entwürfe (lokal & cloud)</p>
+    <div className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 py-6 sm:px-6 lg:px-8 space-y-6">
+      <section className="rounded-3xl border border-teal-200/60 bg-gradient-to-br from-teal-50 via-white to-cyan-50 px-5 py-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-teal-700 ring-1 ring-teal-200/80">
+              <FileClock className="h-3.5 w-3.5" aria-hidden="true" />
+              Entwürfe
+            </div>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">Meine Entwürfe</h1>
+            <p className="mt-1 text-sm text-slate-600">Schnell weiterarbeiten und später finalisieren.</p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+            <FileText className="h-3.5 w-3.5 text-teal-700" aria-hidden="true" />
+            {drafts.length} Gesamt
+          </div>
         </div>
-      </div>
+      </section>
 
-      {loading && <p className="mt-4 text-sm text-slate-600">Lade…</p>}
-      {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
+      {loading && <p className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">Lade…</p>}
+      {err && <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</p>}
 
       {!loading && !err && (
-        <div className="mt-6 overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-b from-white via-white to-slate-50 shadow-sm">
-          <div className="border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white p-4">
+        <div className="overflow-hidden rounded-3xl border border-teal-200/70 bg-gradient-to-b from-white via-white to-teal-50/40 shadow-sm">
+          <div className="border-b border-teal-200/60 bg-gradient-to-r from-teal-50/60 to-white p-4">
             <div className="flex flex-col items-stretch justify-between gap-3 lg:flex-row lg:items-center">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">Entwürfe</h2>
@@ -101,12 +137,39 @@ export default function DraftsPage() {
                   {filteredDrafts.length} Einträge
                 </p>
               </div>
-              <input
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition placeholder:text-slate-400 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-200/60 lg:w-64"
-                placeholder="Suchen…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
+              <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+                <div className="flex items-center gap-1 rounded-full border border-slate-200/80 bg-white p-1 text-xs">
+                  {[
+                    { id: "all", label: "Alle" },
+                    { id: "tb", label: "TB" },
+                    { id: "rml", label: "RML" },
+                    { id: "sv", label: "SV" },
+                  ].map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setKindFilter(option.id as DraftKind)}
+                      className={[
+                        "rounded-full px-2.5 py-1 font-semibold transition",
+                        kindFilter === option.id
+                          ? "bg-teal-600 text-white"
+                          : "text-slate-600 hover:bg-slate-100",
+                      ].join(" ")}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm lg:w-64">
+                  <Search className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                  <input
+                    className="w-full border-0 bg-transparent p-0 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                    placeholder="Suchen…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -118,6 +181,7 @@ export default function DraftsPage() {
             <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
               {filteredDrafts.map((d) => {
                 const tone = draftTone(d.title);
+                const ToneIcon = tone.icon;
                 return (
                 <div
                   key={d.id}
@@ -129,13 +193,16 @@ export default function DraftsPage() {
                 >
                   <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                     <div className="min-w-0">
+                      <div className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-slate-700 ring-1 ring-slate-200">
+                        <ToneIcon className="h-4 w-4" aria-hidden="true" />
+                      </div>
                       <div className="text-base font-semibold leading-snug text-slate-900 break-words">{d.title}</div>
                       <div className="mt-1 text-xs text-slate-500">
                         {new Date(d.created_at).toLocaleString()}
                       </div>
                     </div>
                     <span className={`max-w-full rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${tone.badge}`}>
-                      Entwurf
+                      {tone.label}
                     </span>
                   </div>
 

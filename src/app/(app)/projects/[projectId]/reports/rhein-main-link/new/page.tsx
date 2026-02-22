@@ -21,13 +21,7 @@ export default function NewProjectRheinMainLinkReportPage() {
   }
 
   return (
-    <main className="space-y-5 p-6">
-      <section className="rounded-2xl border border-indigo-200/70 bg-gradient-to-br from-indigo-50 via-white to-sky-50 px-5 py-4 shadow-sm">
-        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-500">Projektgebunden</div>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">Tagesbericht Rhein-Main-Link – Neu</h1>
-        <p className="mt-1 text-sm text-slate-600">Projekt: {projectId}</p>
-      </section>
-
+    <main className="p-6">
       <TagesberichtForm
         projectId={projectId}
         stepper

@@ -118,6 +118,7 @@ const RML_BOHRHELFER_OPTIONS = [
 const RML_BOHRHELFER_CUSTOM_VALUE = "__custom__";
 const RML_DEVICE_CODE_OPTIONS = ["DE1", "DE2", "DE3", "DE4", "DE5"] as const;
 const RML_KRONE_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509", "700", "800", "1.180", "1.500"] as const;
+const DEV_ONLY_EMAILS = new Set(["jfechner1994@gmail.com"]);
 const RML_VERROHRUNG_DM_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
 const RML_VERFUELLUNG_OPTIONS = ["Tonformling", "Sand", "Kies", "Zement-Bentonit", "ortsuebliches Material", "Beton", "Individuell"] as const;
 const RML_BOHRVERFAHREN_OPTIONS = [
@@ -675,6 +676,7 @@ export default function TagesberichtForm({
   const [currentUserId, setCurrentUserId] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [rmlNextReportNr, setRmlNextReportNr] = useState<number>(1);
+  const isDevOnlyUser = DEV_ONLY_EMAILS.has(currentUserEmail);
   const isAutoSaveBlocked = () => {
     try {
       return localStorage.getItem(draftBlockStorageKey) === "1";
@@ -3909,6 +3911,23 @@ if (mode === "edit") {
   const headerGridClass = useStepper
     ? "grid gap-5 md:grid-cols-1"
     : "grid gap-5 md:grid-cols-2 xl:grid-cols-[1.35fr_1.35fr_1.2fr]";
+  const reportUiTheme = isRml
+    ? {
+        shell: "mt-6 space-y-6 max-w-[2000px] mx-auto w-full overflow-x-hidden px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-indigo-50/35 via-slate-50 to-slate-100 rounded-3xl border border-indigo-100/60 shadow-[0_10px_30px_-20px_rgba(67,56,202,0.35)]",
+        hero: "rounded-2xl border border-indigo-200/70 bg-gradient-to-br from-indigo-50 via-white to-cyan-50 px-5 py-4 shadow-sm",
+        eyebrow: "text-indigo-500",
+        stepper: "rounded-2xl border border-indigo-200/70 bg-white p-4 shadow-sm",
+        stepActive: "bg-indigo-50 text-indigo-800 border-indigo-200",
+        stepIdle: "bg-white text-slate-500 border-slate-200 hover:bg-slate-50",
+      }
+    : {
+        shell: "mt-6 space-y-6 max-w-[2000px] mx-auto w-full overflow-x-hidden px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-sky-50/35 via-slate-50 to-slate-100 rounded-3xl border border-sky-100/60 shadow-[0_10px_30px_-20px_rgba(2,132,199,0.35)]",
+        hero: "rounded-2xl border border-sky-200/70 bg-gradient-to-br from-sky-50 via-white to-cyan-50 px-5 py-4 shadow-sm",
+        eyebrow: "text-sky-500",
+        stepper: "rounded-2xl border border-sky-200/70 bg-white p-4 shadow-sm",
+        stepActive: "bg-sky-50 text-sky-800 border-sky-200",
+        stepIdle: "bg-white text-slate-500 border-slate-200 hover:bg-slate-50",
+      };
   const rmlSelectedGeraete = useMemo(
     () =>
       new Set(
@@ -3921,9 +3940,15 @@ if (mode === "edit") {
   );
 
   return (
-    <div className="mt-6 space-y-6 max-w-[2000px] mx-auto w-full overflow-x-hidden px-4 pt-4 sm:px-6 sm:pt-5 lg:px-8 pb-16 text-slate-900 min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 rounded-3xl border border-slate-200/60 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]">
+    <div className={reportUiTheme.shell}>
+      <section className={reportUiTheme.hero}>
+        <div className={`text-xs font-semibold uppercase tracking-[0.18em] ${reportUiTheme.eyebrow}`}>
+          Bericht
+        </div>
+        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{reportTitleLabel}</h1>
+      </section>
       {useStepper ? (
-        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+        <div className={reportUiTheme.stepper}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold uppercase tracking-wider text-slate-500">
@@ -3940,8 +3965,8 @@ if (mode === "edit") {
                 onClick={() => setStepIndex(i)}
                 className={`rounded-full border px-4 py-2 text-sm font-semibold ${
                   i === stepIndex
-                    ? "bg-sky-50 text-sky-800 border-sky-200"
-                    : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                    ? reportUiTheme.stepActive
+                    : reportUiTheme.stepIdle
                 }`}
               >
                 {i + 1}. {s.title}
@@ -7151,13 +7176,15 @@ if (mode === "edit") {
               Zu Projekt
             </button>
           ) : null}
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={fillTestData}
-          >
-            Testdaten füllen
-          </button>
+          {isDevOnlyUser ? (
+            <button
+              type="button"
+              className="btn border-orange-300 bg-orange-100 text-orange-900 hover:bg-orange-200"
+              onClick={fillTestData}
+            >
+              DEV: Testdaten füllen
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn btn-danger"

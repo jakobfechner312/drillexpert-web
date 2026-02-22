@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Briefcase, Calendar, ClipboardList, CloudSun, Crown, ExternalLink, FileText, Hash, Link2, List, MapPin, RefreshCcw, Settings, Trash2, Upload, User, Users } from "lucide-react";
+import { Briefcase, Calendar, ClipboardList, CloudSun, Crown, ExternalLink, FileText, Hash, Link2, List, MapPin, MoreHorizontal, RefreshCcw, Search, Settings, Trash2, Upload, User, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 import { isRheinMainLinkProject } from "@/lib/reportAccess";
@@ -64,7 +64,7 @@ type UserOption = {
   id: string;
   email: string;
 };
-type SettingsFocus = "all" | "client" | "stakeholder" | "program" | "zeitraum" | "notes";
+type SettingsFocus = "all" | "client" | "stakeholder" | "program" | "zeitraum" | "notes" | "team";
 type ProjectNoteEntry = {
   id: string;
   text: string;
@@ -90,6 +90,37 @@ type ProjectWeather = {
     precipitationMm: number | null;
   };
 };
+
+type SectionCardProps = {
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+  className?: string;
+  bodyClassName?: string;
+  children: React.ReactNode;
+};
+
+function SectionCard({
+  title,
+  subtitle,
+  action,
+  className,
+  bodyClassName,
+  children,
+}: SectionCardProps) {
+  return (
+    <section className={["card", className ?? ""].join(" ").trim()}>
+      <div className="card-header">
+        <div>
+          <h2 className="text-base font-semibold text-sky-900">{title}</h2>
+          {subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
+        </div>
+        {action ? <div className="flex items-center gap-2">{action}</div> : null}
+      </div>
+      <div className={["card-body", bodyClassName ?? ""].join(" ").trim()}>{children}</div>
+    </section>
+  );
+}
 
 const STATUS_OPTIONS = ["laufend", "abgeschlossen"] as const;
 type ProjectStatus = (typeof STATUS_OPTIONS)[number];
@@ -290,6 +321,8 @@ export default function ProjectDetailPage() {
   const [pendingUploadFiles, setPendingUploadFiles] = useState<PendingUploadFile[]>([]);
   const maxFileSizeMb = 25;
   const [filter, setFilter] = useState<"all" | "reports" | "files" | "images">("all");
+  const [streamQuery, setStreamQuery] = useState("");
+  const [openStreamMenuId, setOpenStreamMenuId] = useState<string | null>(null);
   const [addingMember, setAddingMember] = useState(false);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersErr, setUsersErr] = useState<string | null>(null);
@@ -323,29 +356,6 @@ export default function ProjectDetailPage() {
     if (nr && name) return `${nr} - ${name}`;
     return name || nr || "Projekt";
   };
-
-  const SectionCard = ({
-    title,
-    subtitle,
-    action,
-    children,
-  }: {
-    title: string;
-    subtitle?: string;
-    action?: React.ReactNode;
-    children: React.ReactNode;
-  }) => (
-    <section className="card">
-      <div className="card-header">
-        <div>
-          <h2 className="text-base font-semibold text-sky-900">{title}</h2>
-          {subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
-        </div>
-        {action ? <div className="flex items-center gap-2">{action}</div> : null}
-      </div>
-      <div className="card-body">{children}</div>
-    </section>
-  );
 
   const load = async () => {
     setLoading(true);
@@ -1690,6 +1700,7 @@ export default function ProjectDetailPage() {
   };
 
   const items = useMemo(() => {
+    const query = streamQuery.trim().toLowerCase();
     const reportItems = reports.map((r) => ({
       type: "report" as const,
       id: r.id,
@@ -1714,13 +1725,20 @@ export default function ProjectDetailPage() {
     });
 
     return merged.filter((item) => {
-      if (filter === "all") return true;
-      if (filter === "reports") return item.type === "report";
-      if (filter === "files") return item.type === "file" && !item.isImage;
-      if (filter === "images") return item.type === "file" && item.isImage;
-      return true;
+      const typePass =
+        filter === "all" ||
+        (filter === "reports" && item.type === "report") ||
+        (filter === "files" && item.type === "file" && !item.isImage) ||
+        (filter === "images" && item.type === "file" && item.isImage);
+      if (!typePass) return false;
+      if (!query) return true;
+      if (item.type === "report") {
+        const typeLabel = typeBadge(item.report_type).label.toLowerCase();
+        return `${item.title} ${item.status ?? ""} ${typeLabel}`.toLowerCase().includes(query);
+      }
+      return item.name.toLowerCase().includes(query);
     });
-  }, [reports, files, filter]);
+  }, [reports, files, filter, streamQuery]);
 
   useEffect(() => {
     const imageNames = files.map((f) => f.name).filter((name) => isImageFile(name));
@@ -1755,6 +1773,20 @@ export default function ProjectDetailPage() {
       active = false;
     };
   }, [files, projectId, supabase]);
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-stream-menu]")) return;
+      setOpenStreamMenuId(null);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
+  }, []);
 
   return (
     <div className="page-shell space-y-6">
@@ -1940,137 +1972,6 @@ export default function ProjectDetailPage() {
 
       <div className="grid gap-6 xl:grid-cols-2">
         <SectionCard
-          title="Team"
-          subtitle="Mitgliederverwaltung für dieses Projekt"
-        >
-          {isOwner ? (
-            <>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-800 ring-1 ring-sky-200">
-                  <Users className="h-5 w-5" aria-hidden="true" />
-                </div>
-                <div className="flex-1 min-w-[240px]">
-                  <div className="text-sm font-semibold text-slate-800">Mitglieder auswählen</div>
-                  <div className="text-xs text-slate-500">Nutzer per E-Mail aus der Liste wählen und gesammelt hinzufügen.</div>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <select
-                  className="min-h-[44px] min-w-[280px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
-                  value={selectedMemberId}
-                  onChange={(e) => setSelectedMemberId(e.target.value)}
-                >
-                  <option value="">Mitglied auswählen…</option>
-                  {availableUserOptions.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.email}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={addSelectedMember}
-                  disabled={addingMember}
-                >
-                  {addingMember ? "Füge hinzu…" : "Hinzufügen"}
-                </button>
-              </div>
-              <div className="mt-1 text-xs text-slate-500">
-                {usersLoading ? "Lade Nutzer…" : availableUserOptions.length > 0 ? `${availableUserOptions.length} Nutzer verfügbar` : "Keine addierbaren Nutzer verfügbar."}
-              </div>
-              {usersErr && <div className="mt-2 text-xs text-rose-600">{usersErr}</div>}
-              {memberErr && <div className="mt-2 text-xs text-red-600">{memberErr}</div>}
-              {memberOk && <div className="mt-2 text-xs text-green-700">{memberOk}</div>}
-            </>
-          ) : (
-            <div className="flex items-center gap-3">
-              <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-700 ring-1 ring-slate-200">
-                <Users className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <div className="text-xs text-slate-500">Nur der Projekt‑Owner kann Mitglieder hinzufügen.</div>
-            </div>
-          )}
-
-          <div className="mt-5 rounded-xl border border-slate-200/70 bg-white">
-            <div className="border-b border-slate-200/70 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Mitglieder
-            </div>
-            <div className="divide-y divide-slate-100">
-              {teamLoading ? (
-                <div className="px-4 py-3 text-sm text-slate-600">Lade Team…</div>
-              ) : teamError ? (
-                <div className="px-4 py-3 text-sm text-red-600">{teamError}</div>
-              ) : sortedTeam.length === 0 ? (
-                <div className="px-4 py-3 text-sm text-slate-500">Noch keine Mitglieder.</div>
-              ) : (
-                sortedTeam.map((m) => {
-                  const isMemberOwner = m.role_in_project === "owner";
-                  const email = m.profiles?.email?.trim() || "";
-                  return (
-                    <div key={m.user_id} className="flex items-center justify-between px-4 py-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-slate-800">
-                          {email || "E-Mail unbekannt"}
-                        </div>
-                        {!email ? <div className="truncate text-xs text-slate-500">{m.user_id}</div> : null}
-                      </div>
-                        <div className="ml-3 flex items-center gap-2">
-                          {canManageOwnership && !isMemberOwner ? (
-                            <button
-                              type="button"
-                            className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() => void promoteMemberToOwner(m.user_id)}
-                            disabled={promotingOwnerId === m.user_id}
-                          >
-                            {promotingOwnerId === m.user_id ? "Setze…" : "Zum Owner machen"}
-                          </button>
-                        ) : null}
-                          {canManageOwnership && isMemberOwner && m.user_id !== project?.created_by ? (
-                            <button
-                              type="button"
-                            className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() => void demoteOwnerToMember(m.user_id)}
-                            disabled={promotingOwnerId === m.user_id}
-                          >
-                            {promotingOwnerId === m.user_id ? "Entferne…" : "Owner entfernen"}
-                            </button>
-                          ) : null}
-                          {canManageOwnership ? (
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 p-1.5 text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              title="Mitglied entfernen"
-                              onClick={() => void removeMemberFromProject(m)}
-                              disabled={removingMemberId === m.user_id || promotingOwnerId === m.user_id}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                            </button>
-                          ) : null}
-                          <div className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold">
-                          {isMemberOwner ? (
-                            <>
-                              <Crown className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
-                              Owner
-                            </>
-                          ) : (
-                            <>
-                              <User className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-                              Mitglied
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </SectionCard>
-
-        <SectionCard
           title="Google My Maps"
           subtitle="Projektkarte als Link speichern und öffnen"
         >
@@ -2213,6 +2114,297 @@ export default function ProjectDetailPage() {
             ) : null}
           </div>
         </SectionCard>
+
+        {!loading && !err && (
+          <SectionCard
+            title="Projekt‑Stream"
+            subtitle="Alles an einem Ort: Berichte & Dateien"
+            className="overflow-visible"
+            bodyClassName="overflow-visible"
+            action={
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: "all", label: "Alle" },
+                    { id: "reports", label: "Berichte" },
+                    { id: "files", label: "Dateien" },
+                    { id: "images", label: "Bilder" },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setFilter(f.id as typeof filter)}
+                      className={[
+                        "rounded-full border px-3 py-1 text-xs font-semibold",
+                        filter === f.id
+                          ? "bg-slate-900 text-white border-slate-900"
+                          : "border-slate-200/70 text-slate-600 hover:bg-slate-50",
+                      ].join(" ")}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm sm:w-64">
+                  <Search className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                  <input
+                    className="w-full border-0 bg-transparent p-0 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                    placeholder="Bericht oder Datei suchen…"
+                    value={streamQuery}
+                    onChange={(e) => setStreamQuery(e.target.value)}
+                  />
+                </label>
+              </div>
+            }
+          >
+            <div
+              className="rounded-2xl border border-dashed border-slate-300/70 bg-slate-50/40 p-6 text-center text-sm text-slate-600"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                queueUploadFiles(e.dataTransfer.files);
+              }}
+            >
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-600 ring-1 ring-slate-200">
+                <Upload className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="mt-3 font-medium text-slate-800">Dateien hier ablegen</div>
+              <div className="mt-1 text-xs text-slate-500">
+                PDF, Bilder, Excel, CSV, DOCX … bis {maxFileSizeMb} MB
+              </div>
+
+              <label className="mt-4 inline-flex items-center justify-center rounded-xl border border-slate-200/70 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                Dateien auswählen
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    if (!e.target.files) return;
+                    queueUploadFiles(e.target.files);
+                    e.currentTarget.value = "";
+                  }}
+                  accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.csv,.xlsx,.xls,.doc,.docx,.txt,.rtf"
+                />
+              </label>
+
+              {uploading && (
+                <div className="mt-2 text-xs text-slate-500">Upload läuft…</div>
+              )}
+              {filesErr && (
+                <div className="mt-2 text-xs text-red-600">{filesErr}</div>
+              )}
+            </div>
+
+            <div className="mt-5">
+              {filesLoading ? (
+                <p className="text-sm text-slate-600">Lade Dateien…</p>
+              ) : items.length === 0 ? (
+                <p className="text-sm text-slate-600">Noch keine Inhalte vorhanden.</p>
+              ) : (
+                <ul className="divide-y divide-slate-200/70 rounded-2xl border border-slate-200/70">
+                  {items.map((item) =>
+                    item.type === "report" ? (
+                      <li key={`r-${item.id}`} className="p-3 sm:p-4">
+                        <div className="grid gap-3 rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm sm:p-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                          <div className="min-w-0 flex items-start gap-3">
+                            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700 ring-1 ring-sky-200">
+                              <FileText className="h-5 w-5" aria-hidden="true" />
+                            </span>
+                            <div className="min-w-0">
+                              <div className="truncate font-medium text-slate-800">{item.title}</div>
+                              <div className="mt-1 text-xs text-slate-500">
+                                {new Date(item.created_at).toLocaleString()}
+                              </div>
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                <span>Status</span>
+                                <span className="rounded-full border border-slate-200/70 px-2 py-0.5">{item.status ?? "—"}</span>
+                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${typeBadge(item.report_type).cls}`}>
+                                  {typeBadge(item.report_type).label}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="relative ml-auto" data-stream-menu>
+                            {(() => {
+                              const menuId = `report-${item.id}`;
+                              const isMenuOpen = openStreamMenuId === menuId;
+                              const canManage = canEditOrDelete({
+                                id: item.id,
+                                title: item.title,
+                                created_at: item.created_at,
+                                user_id: "",
+                                status: item.status ?? null,
+                              });
+                              const reportOpenHref =
+                                item.report_type === "schichtenverzeichnis"
+                                  ? `/api/pdf/schichtenverzeichnis/${item.id}`
+                                  : item.report_type === "tagesbericht_rhein_main_link"
+                                    ? `/api/pdf/tagesbericht-rhein-main-link/${item.id}`
+                                    : `/api/pdf/tagesbericht/${item.id}`;
+                              const reportEditHref =
+                                item.report_type === "schichtenverzeichnis"
+                                  ? `/projects/${projectId}/reports/schichtenverzeichnis/step/${item.id}/edit`
+                                  : item.report_type === "tagesbericht_rhein_main_link"
+                                    ? `/projects/${projectId}/reports/rhein-main-link/${item.id}/edit`
+                                    : `/projects/${projectId}/reports/${item.id}/edit`;
+
+                              return (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-50"
+                                    onClick={() => setOpenStreamMenuId(isMenuOpen ? null : menuId)}
+                                    aria-label="Aktionen"
+                                    aria-expanded={isMenuOpen}
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+
+                                  {isMenuOpen ? (
+                                    <div className="absolute right-0 top-full z-[80] mt-2 w-44 rounded-xl border border-slate-200/80 bg-white p-1 shadow-lg">
+                                      <Link
+                                        href={reportOpenHref}
+                                        target="_blank"
+                                        className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                        onClick={() => setOpenStreamMenuId(null)}
+                                      >
+                                        Öffnen
+                                      </Link>
+                                      {canManage ? (
+                                        <>
+                                          <Link
+                                            href={reportEditHref}
+                                            className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                            onClick={() => setOpenStreamMenuId(null)}
+                                          >
+                                            Bearbeiten
+                                          </Link>
+                                          <button
+                                            type="button"
+                                            className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                            onClick={() => {
+                                              setOpenStreamMenuId(null);
+                                              archiveReport(item.id);
+                                            }}
+                                          >
+                                            Archivieren
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                                            onClick={() => {
+                                              setOpenStreamMenuId(null);
+                                              deleteReport(item.id);
+                                            }}
+                                          >
+                                            Löschen
+                                          </button>
+                                        </>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </li>
+                    ) : (
+                      <li key={`f-${item.name}`} className="p-3">
+                        <div className="grid items-start gap-3 rounded-xl border border-slate-200/70 bg-white p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                          <div className="min-w-0 flex items-center gap-3">
+                          {item.isImage ? (
+                            <div className="h-36 w-36 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                              {imagePreviewUrls[item.name] ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={imagePreviewUrls[item.name]}
+                                  alt={item.name}
+                                  className="h-full w-full object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold text-slate-500">
+                                  IMG
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl text-[10px] font-semibold ring-1 ${fileBadgeClass(item.name)}`}>
+                              {fileBadge(item.name)}
+                            </span>
+                          )}
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-slate-800">{item.name}</div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              {new Date(item.created_at).toLocaleString()} • {(item.size ? Math.round(item.size / 1024) : 0)} KB
+                            </div>
+                          </div>
+                          </div>
+                          <div className="relative ml-auto" data-stream-menu>
+                            {(() => {
+                              const menuId = `file-${item.name}`;
+                              const isMenuOpen = openStreamMenuId === menuId;
+                              return (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-50"
+                                    onClick={() => setOpenStreamMenuId(isMenuOpen ? null : menuId)}
+                                    aria-label="Dateiaktionen"
+                                    aria-expanded={isMenuOpen}
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                  {isMenuOpen ? (
+                                    <div className="absolute right-0 top-full z-[80] mt-2 w-44 rounded-xl border border-slate-200/80 bg-white p-1 shadow-lg">
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                        onClick={() => {
+                                          setOpenStreamMenuId(null);
+                                          openFile(item.name);
+                                        }}
+                                      >
+                                        Öffnen
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                        onClick={() => {
+                                          setOpenStreamMenuId(null);
+                                          openRenameFileDialog(item.name);
+                                        }}
+                                      >
+                                        Umbenennen
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                                        onClick={() => {
+                                          setOpenStreamMenuId(null);
+                                          deleteFile(item.name);
+                                        }}
+                                      >
+                                        Löschen
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </li>
+                    )
+                  )}
+                </ul>
+              )}
+            </div>
+          </SectionCard>
+        )}
       </div>
 
       {!loading && !err && project && (
@@ -2305,217 +2497,6 @@ export default function ProjectDetailPage() {
 
       {loading && <p className="mt-4 text-sm text-gray-600">Lade…</p>}
       {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
-
-      {!loading && !err && (
-        <SectionCard
-          title="Projekt‑Stream"
-          subtitle="Alles an einem Ort: Berichte & Dateien"
-          action={
-            <div className="flex flex-wrap gap-2">
-              {[
-                { id: "all", label: "Alle" },
-                { id: "reports", label: "Berichte" },
-                { id: "files", label: "Dateien" },
-                { id: "images", label: "Bilder" },
-              ].map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setFilter(f.id as typeof filter)}
-                  className={[
-                    "rounded-full border px-3 py-1 text-xs font-semibold",
-                    filter === f.id
-                      ? "bg-slate-900 text-white border-slate-900"
-                      : "border-slate-200/70 text-slate-600 hover:bg-slate-50",
-                  ].join(" ")}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          }
-        >
-          <div
-            className="rounded-2xl border border-dashed border-slate-300/70 bg-slate-50/40 p-6 text-center text-sm text-slate-600"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              queueUploadFiles(e.dataTransfer.files);
-            }}
-          >
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-600 ring-1 ring-slate-200">
-              <Upload className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <div className="mt-3 font-medium text-slate-800">Dateien hier ablegen</div>
-            <div className="mt-1 text-xs text-slate-500">
-              PDF, Bilder, Excel, CSV, DOCX … bis {maxFileSizeMb} MB
-            </div>
-
-            <label className="mt-4 inline-flex items-center justify-center rounded-xl border border-slate-200/70 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              Dateien auswählen
-              <input
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  if (!e.target.files) return;
-                  queueUploadFiles(e.target.files);
-                  e.currentTarget.value = "";
-                }}
-                accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.csv,.xlsx,.xls,.doc,.docx,.txt,.rtf"
-              />
-            </label>
-
-            {uploading && (
-              <div className="mt-2 text-xs text-slate-500">Upload läuft…</div>
-            )}
-            {filesErr && (
-              <div className="mt-2 text-xs text-red-600">{filesErr}</div>
-            )}
-          </div>
-
-          <div className="mt-5">
-            {filesLoading ? (
-              <p className="text-sm text-slate-600">Lade Dateien…</p>
-            ) : items.length === 0 ? (
-              <p className="text-sm text-slate-600">Noch keine Inhalte vorhanden.</p>
-            ) : (
-              <ul className="divide-y divide-slate-200/70 rounded-2xl border border-slate-200/70">
-                {items.map((item) =>
-                  item.type === "report" ? (
-                    <li key={`r-${item.id}`} className="p-4">
-                      <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
-                        <div className="min-w-0 flex items-start gap-3">
-                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700 ring-1 ring-sky-200">
-                            <FileText className="h-5 w-5" aria-hidden="true" />
-                          </span>
-                          <div className="min-w-0">
-                            <div className="truncate font-medium text-slate-800">{item.title}</div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              {new Date(item.created_at).toLocaleString()}
-                            </div>
-                            <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                              <span>Status</span>
-                              <span className="rounded-full border border-slate-200/70 px-2 py-0.5">{item.status ?? "—"}</span>
-                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${typeBadge(item.report_type).cls}`}>
-                                {typeBadge(item.report_type).label}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Link
-                            href={
-                              item.report_type === "schichtenverzeichnis"
-                                ? `/api/pdf/schichtenverzeichnis/${item.id}`
-                                : item.report_type === "tagesbericht_rhein_main_link"
-                                  ? `/api/pdf/tagesbericht-rhein-main-link/${item.id}`
-                                  : `/api/pdf/tagesbericht/${item.id}`
-                            }
-                            target="_blank"
-                            className="btn btn-secondary btn-xs"
-                          >
-                            Öffnen
-                          </Link>
-                          {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
-                            <Link
-                              href={
-                              item.report_type === "schichtenverzeichnis"
-                                ? `/projects/${projectId}/reports/schichtenverzeichnis/step/${item.id}/edit`
-                                : item.report_type === "tagesbericht_rhein_main_link"
-                                  ? `/projects/${projectId}/reports/rhein-main-link/${item.id}/edit`
-                                  : `/projects/${projectId}/reports/${item.id}/edit`
-                              }
-                              className="btn btn-secondary btn-xs"
-                              title="Bearbeiten"
-                            >
-                              Bearbeiten
-                            </Link>
-                          )}
-                          {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-xs"
-                              onClick={() => archiveReport(item.id)}
-                            >
-                              Archivieren
-                            </button>
-                          )}
-                          {canEditOrDelete({ id: item.id, title: item.title, created_at: item.created_at, user_id: "", status: item.status ?? null }) && (
-                            <button
-                              type="button"
-                              className="btn btn-danger btn-xs"
-                              onClick={() => deleteReport(item.id)}
-                            >
-                              Löschen
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </li>
-                  ) : (
-                    <li key={`f-${item.name}`} className="flex items-center justify-between gap-3 p-3">
-                      <div className="min-w-0 flex items-center gap-3">
-                        {item.isImage ? (
-                          <div className="h-36 w-36 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-                            {imagePreviewUrls[item.name] ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={imagePreviewUrls[item.name]}
-                                alt={item.name}
-                                className="h-full w-full object-cover"
-                                loading="lazy"
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold text-slate-500">
-                                IMG
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl text-[10px] font-semibold ring-1 ${fileBadgeClass(item.name)}`}>
-                            {fileBadge(item.name)}
-                          </span>
-                        )}
-                        <div className="min-w-0">
-                          <div className="truncate font-medium text-slate-800">{item.name}</div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            {new Date(item.created_at).toLocaleString()} • {(item.size ? Math.round(item.size / 1024) : 0)} KB
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-xs"
-                          onClick={() => openFile(item.name)}
-                        >
-                          Öffnen
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-xs"
-                          onClick={() => openRenameFileDialog(item.name)}
-                        >
-                          Umbenennen
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-xs"
-                          onClick={() => deleteFile(item.name)}
-                        >
-                          Löschen
-                        </button>
-                      </div>
-                    </li>
-                  )
-                )}
-              </ul>
-            )}
-          </div>
-        </SectionCard>
-      )}
 
       {renameUploadOpen && (
         <div
@@ -2711,6 +2692,7 @@ export default function ProjectDetailPage() {
                   { id: "program", label: "Programm" },
                   { id: "zeitraum", label: "Zeitraum" },
                   { id: "notes", label: "Notizen" },
+                  { id: "team", label: "Team" },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -2944,6 +2926,137 @@ export default function ProjectDetailPage() {
                 onChange={(e) => setSettingsForm((prev) => ({ ...prev, notes: e.target.value }))}
               />
             </label>
+            ) : null}
+
+            {isSettingsSectionVisible("team") ? (
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+              <div className="text-sm font-semibold text-slate-800">Team & Zugriffsrechte</div>
+              <div className="mt-1 text-xs text-slate-500">Mitgliederverwaltung für dieses Projekt.</div>
+              {isOwner ? (
+                <>
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-800 ring-1 ring-sky-200">
+                      <Users className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div className="flex-1 min-w-[240px]">
+                      <div className="text-sm font-semibold text-slate-800">Mitglieder auswählen</div>
+                      <div className="text-xs text-slate-500">Nutzer per E-Mail aus der Liste wählen und gesammelt hinzufügen.</div>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <select
+                      className="min-h-[44px] min-w-[280px] flex-1 rounded-xl border border-slate-200/70 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+                      value={selectedMemberId}
+                      onChange={(e) => setSelectedMemberId(e.target.value)}
+                    >
+                      <option value="">Mitglied auswählen…</option>
+                      {availableUserOptions.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.email}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={addSelectedMember}
+                      disabled={addingMember}
+                    >
+                      {addingMember ? "Füge hinzu…" : "Hinzufügen"}
+                    </button>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {usersLoading ? "Lade Nutzer…" : availableUserOptions.length > 0 ? `${availableUserOptions.length} Nutzer verfügbar` : "Keine addierbaren Nutzer verfügbar."}
+                  </div>
+                  {usersErr && <div className="mt-2 text-xs text-rose-600">{usersErr}</div>}
+                  {memberErr && <div className="mt-2 text-xs text-red-600">{memberErr}</div>}
+                  {memberOk && <div className="mt-2 text-xs text-green-700">{memberOk}</div>}
+                </>
+              ) : (
+                <div className="mt-4 flex items-center gap-3">
+                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-700 ring-1 ring-slate-200">
+                    <Users className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <div className="text-xs text-slate-500">Nur der Projekt‑Owner kann Mitglieder hinzufügen.</div>
+                </div>
+              )}
+
+              <div className="mt-5 rounded-xl border border-slate-200/70 bg-white">
+                <div className="border-b border-slate-200/70 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Mitglieder
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {teamLoading ? (
+                    <div className="px-4 py-3 text-sm text-slate-600">Lade Team…</div>
+                  ) : teamError ? (
+                    <div className="px-4 py-3 text-sm text-red-600">{teamError}</div>
+                  ) : sortedTeam.length === 0 ? (
+                    <div className="px-4 py-3 text-sm text-slate-500">Noch keine Mitglieder.</div>
+                  ) : (
+                    sortedTeam.map((m) => {
+                      const isMemberOwner = m.role_in_project === "owner";
+                      const email = m.profiles?.email?.trim() || "";
+                      return (
+                        <div key={m.user_id} className="flex items-center justify-between px-4 py-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-slate-800">
+                              {email || "E-Mail unbekannt"}
+                            </div>
+                            {!email ? <div className="truncate text-xs text-slate-500">{m.user_id}</div> : null}
+                          </div>
+                          <div className="ml-3 flex items-center gap-2">
+                            {canManageOwnership && !isMemberOwner ? (
+                              <button
+                                type="button"
+                                className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => void promoteMemberToOwner(m.user_id)}
+                                disabled={promotingOwnerId === m.user_id}
+                              >
+                                {promotingOwnerId === m.user_id ? "Setze…" : "Zum Owner machen"}
+                              </button>
+                            ) : null}
+                            {canManageOwnership && isMemberOwner && m.user_id !== project?.created_by ? (
+                              <button
+                                type="button"
+                                className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => void demoteOwnerToMember(m.user_id)}
+                                disabled={promotingOwnerId === m.user_id}
+                              >
+                                {promotingOwnerId === m.user_id ? "Entferne…" : "Owner entfernen"}
+                              </button>
+                            ) : null}
+                            {canManageOwnership ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 p-1.5 text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                title="Mitglied entfernen"
+                                onClick={() => void removeMemberFromProject(m)}
+                                disabled={removingMemberId === m.user_id || promotingOwnerId === m.user_id}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                            ) : null}
+                            <div className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold">
+                              {isMemberOwner ? (
+                                <>
+                                  <Crown className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
+                                  Owner
+                                </>
+                              ) : (
+                                <>
+                                  <User className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                                  Mitglied
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
             ) : null}
 
             {settingsError && <div className="mt-3 text-xs text-red-600">{settingsError}</div>}

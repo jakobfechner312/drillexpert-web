@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/browser";
+import { Archive, FileArchive, FolderArchive, Sparkles } from "lucide-react";
 
 type ArchivedProject = {
   id: string;
@@ -161,32 +162,60 @@ export default function ArchivePage() {
     if (type === "tagesbericht_rhein_main_link") return "TB Rhein-Main-Link";
     return "Tagesbericht";
   };
+  const reportTypeBadgeClass = (type: string | null | undefined) => {
+    if (type === "schichtenverzeichnis") return "bg-amber-50 text-amber-800 ring-amber-200";
+    if (type === "tagesbericht_rhein_main_link") return "bg-indigo-50 text-indigo-800 ring-indigo-200";
+    return "bg-sky-50 text-sky-800 ring-sky-200";
+  };
 
   return (
     <div className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 py-5 sm:px-6 lg:px-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Archiv</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Hier findest du archivierte Projekte und Berichte.
-        </p>
-      </div>
+      <section className="rounded-3xl border border-cyan-200/60 bg-gradient-to-br from-cyan-50 via-white to-blue-50 px-5 py-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700 ring-1 ring-cyan-200/80">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+              Archiv
+            </div>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">Archivbereich</h1>
+            <p className="mt-1 text-sm text-slate-600">
+              Hier findest du archivierte Projekte und Berichte.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+              <FolderArchive className="h-3.5 w-3.5 text-cyan-700" aria-hidden="true" />
+              {projects.length} Projekte
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+              <FileArchive className="h-3.5 w-3.5 text-blue-700" aria-hidden="true" />
+              {reports.length} Berichte
+            </div>
+          </div>
+        </div>
+      </section>
 
-      {loading ? <p className="text-sm text-slate-600">Lade…</p> : null}
-      {err ? <p className="text-sm text-red-600">{err}</p> : null}
+      {loading ? (
+        <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">Lade…</div>
+      ) : null}
+      {err ? <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</p> : null}
 
       {!loading ? (
         <>
-          <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <section className="rounded-2xl border border-cyan-200/70 bg-gradient-to-b from-cyan-50/50 to-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-slate-900">Archivierte Projekte</h2>
-              <span className="text-xs text-slate-500">{projects.length} Einträge</span>
+              <h2 className="inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
+                <FolderArchive className="h-5 w-5 text-cyan-700" aria-hidden="true" />
+                Archivierte Projekte
+              </h2>
+              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">{projects.length} Einträge</span>
             </div>
             {projects.length === 0 ? (
               <p className="mt-3 text-sm text-slate-500">Keine archivierten Projekte.</p>
             ) : (
               <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {projects.map((project) => (
-                  <div key={project.id} className="rounded-xl border border-slate-200 p-3">
+                  <div key={project.id} className="rounded-2xl border border-cyan-200/60 bg-white p-3.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                     <div className="font-medium text-slate-900">
                       {project.project_number ? `${project.project_number} - ${project.name}` : project.name}
                     </div>
@@ -200,7 +229,7 @@ export default function ArchivePage() {
                       {currentUserId && project.owner_id === currentUserId ? (
                         <button
                           type="button"
-                          className="btn btn-primary btn-xs"
+                          className="btn btn-xs border-cyan-700 bg-cyan-600 text-white hover:bg-cyan-700"
                           onClick={() => unarchiveProject(project.id)}
                         >
                           Wiederherstellen
@@ -215,23 +244,26 @@ export default function ArchivePage() {
             )}
           </section>
 
-          <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+          <section className="rounded-2xl border border-blue-200/70 bg-gradient-to-b from-blue-50/50 to-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-slate-900">Archivierte Berichte</h2>
-              <span className="text-xs text-slate-500">{reports.length} Einträge</span>
+              <h2 className="inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
+                <Archive className="h-5 w-5 text-blue-700" aria-hidden="true" />
+                Archivierte Berichte
+              </h2>
+              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">{reports.length} Einträge</span>
             </div>
             {reports.length === 0 ? (
               <p className="mt-3 text-sm text-slate-500">Keine archivierten Berichte.</p>
             ) : (
               <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {reports.map((report) => (
-                  <div key={report.id} className="rounded-xl border border-slate-200 p-3">
+                  <div key={report.id} className="rounded-2xl border border-blue-200/60 bg-white p-3.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                     <div className="font-medium text-slate-900 break-words">{report.title}</div>
                     <div className="mt-1 text-xs text-slate-500">
                       {new Date(report.created_at).toLocaleString()}
                     </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Typ: {reportTypeLabel(report.report_type)}
+                    <div className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${reportTypeBadgeClass(report.report_type)}`}>
+                      {reportTypeLabel(report.report_type)}
                     </div>
                     {report.project_id ? (
                       <div className="mt-1 text-xs text-slate-500">
@@ -241,7 +273,7 @@ export default function ArchivePage() {
                     <div className="mt-3 flex items-center gap-2">
                       <button
                         type="button"
-                        className="btn btn-primary btn-xs"
+                        className="btn btn-xs border-blue-700 bg-blue-600 text-white hover:bg-blue-700"
                         onClick={() => unarchiveReport(report.id)}
                       >
                         Wiederherstellen
