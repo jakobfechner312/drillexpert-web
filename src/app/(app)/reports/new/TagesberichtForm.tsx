@@ -2655,16 +2655,6 @@ if (mode === "edit") {
         : [{ diameter: "", meters: "" }],
     [report.verrohrungRows]
   );
-  const rmlWaterTimeOptions = useMemo(
-    () =>
-      Array.from({ length: 96 }, (_, idx) => {
-        const h = String(Math.floor(idx / 4)).padStart(2, "0");
-        const m = String((idx % 4) * 15).padStart(2, "0");
-        return `${h}:${m}`;
-      }),
-    []
-  );
-
   function setRow(i: number, patch: Partial<TableRow>) {
     setReport((p) => {
       const rows = Array.isArray(p.tableRows) && p.tableRows.length ? [...p.tableRows] : [emptyTableRow()];
@@ -5138,18 +5128,16 @@ if (mode === "edit") {
               <div className="space-y-2">
                 {safeWaterLevelRows.map((row, i) => (
                   <div key={i} className="grid grid-cols-12 gap-2 rounded-xl border border-slate-200 bg-white p-2">
-                    <select
-                      className="col-span-7 rounded-lg border px-3 py-2 text-sm"
-                      value={row.time ?? ""}
-                      onChange={(e) => setWaterLevelRow(i, { time: e.target.value })}
-                    >
-                      <option value="">Bitte wählen...</option>
-                      {rmlWaterTimeOptions.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="col-span-7">
+                      <TimePickerInput
+                        value={row.time ?? ""}
+                        onValueChange={(next) => setWaterLevelRow(i, { time: next })}
+                        onOpenPicker={openNativePicker}
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                        buttonLabel="Uhrzeit auswählen"
+                        stepSeconds={900}
+                      />
+                    </div>
                     <input
                       className="col-span-5 rounded-lg border px-3 py-2 text-sm"
                       value={row.meters ?? ""}

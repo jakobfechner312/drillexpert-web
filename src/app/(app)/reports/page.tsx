@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/browser";
 import { RHEIN_MAIN_LINK_PROJECT_ID } from "@/lib/reportAccess";
+import { MoreHorizontal } from "lucide-react";
 
 type ReportRow = {
   id: string;
@@ -22,6 +23,7 @@ export default function MyReportsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [typeFilter, setTypeFilter] = useState<"all" | "tagesbericht" | "tagesbericht_rhein_main_link" | "schichtenverzeichnis">("all");
   const [query, setQuery] = useState("");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const deleteReport = async (reportId: string) => {
     if (!confirm("Bericht wirklich löschen?")) return;
@@ -79,6 +81,20 @@ export default function MyReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-kebab-menu]")) return;
+      setOpenMenuId(null);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
+  }, []);
+
   const filteredReports = useMemo(() => {
     const q = query.trim().toLowerCase();
     return reports.filter((r) => {
@@ -134,7 +150,7 @@ export default function MyReportsPage() {
       {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
 
       {!loading && !err && (
-        <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-b from-white via-white to-slate-50 shadow-sm">
+        <div className="mt-5 rounded-3xl border border-slate-200/80 bg-gradient-to-b from-white via-white to-slate-50 shadow-sm">
           <div className="border-b border-slate-200/70 bg-gradient-to-r from-slate-50 to-white p-4 sm:p-5">
             <div className="flex flex-col items-stretch justify-between gap-3 lg:flex-row lg:items-center">
               <div>
@@ -232,47 +248,54 @@ export default function MyReportsPage() {
                       </span>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-4">
-                      <Link
-                        href={
-                          r.report_type === "schichtenverzeichnis"
-                            ? `/api/pdf/schichtenverzeichnis/${r.id}`
-                            : r.report_type === "tagesbericht_rhein_main_link"
-                              ? `/api/pdf/tagesbericht-rhein-main-link/${r.id}`
-                              : `/api/pdf/tagesbericht/${r.id}`
-                        }
-                        target="_blank"
-                        className="btn btn-secondary btn-xs w-full"
-                      >
-                        Öffnen
-                      </Link>
-                      <Link
-                        href={
-                          r.report_type === "schichtenverzeichnis"
-                            ? `/reports/schichtenverzeichnis/step/${r.id}/edit`
-                            : r.report_type === "tagesbericht_rhein_main_link"
-                              ? `/reports/rhein-main-link/${r.id}/edit`
-                              : `/reports/${r.id}/edit`
-                        }
-                        className="btn btn-secondary btn-xs w-full"
-                        title="Bearbeiten"
-                      >
-                        Bearbeiten
-                      </Link>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-xs w-full"
-                        onClick={() => archiveReport(r.id)}
-                      >
-                        Archivieren
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-danger btn-xs w-full"
-                        onClick={() => deleteReport(r.id)}
-                      >
-                        Löschen
-                      </button>
+                    <div className="mt-4 flex justify-end">
+                      <div className="relative" data-kebab-menu>
+                        {(() => {
+                          const menuId = `report-${r.id}`;
+                          const isOpen = openMenuId === menuId;
+                          const openHref =
+                            r.report_type === "schichtenverzeichnis"
+                              ? `/api/pdf/schichtenverzeichnis/${r.id}`
+                              : r.report_type === "tagesbericht_rhein_main_link"
+                                ? `/api/pdf/tagesbericht-rhein-main-link/${r.id}`
+                                : `/api/pdf/tagesbericht/${r.id}`;
+                          const editHref =
+                            r.report_type === "schichtenverzeichnis"
+                              ? `/reports/schichtenverzeichnis/step/${r.id}/edit`
+                              : r.report_type === "tagesbericht_rhein_main_link"
+                                ? `/reports/rhein-main-link/${r.id}/edit`
+                                : `/reports/${r.id}/edit`;
+                          return (
+                            <>
+                              <button
+                                type="button"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-50"
+                                onClick={() => setOpenMenuId(isOpen ? null : menuId)}
+                                aria-label="Aktionen"
+                                aria-expanded={isOpen}
+                              >
+                                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                              {isOpen ? (
+                                <div className="absolute right-0 top-full z-[80] mt-2 w-44 rounded-xl border border-slate-200/80 bg-white p-1 shadow-lg">
+                                  <Link href={openHref} target="_blank" className="flex rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" onClick={() => setOpenMenuId(null)}>
+                                    Öffnen
+                                  </Link>
+                                  <Link href={editHref} className="flex rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" onClick={() => setOpenMenuId(null)}>
+                                    Bearbeiten
+                                  </Link>
+                                  <button type="button" className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={() => { setOpenMenuId(null); archiveReport(r.id); }}>
+                                    Archivieren
+                                  </button>
+                                  <button type="button" className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50" onClick={() => { setOpenMenuId(null); deleteReport(r.id); }}>
+                                    Löschen
+                                  </button>
+                                </div>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </div>
                 );

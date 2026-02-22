@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/browser";
-import { Archive, FileArchive, FolderArchive, Sparkles } from "lucide-react";
+import { Archive, FileArchive, FolderArchive, MoreHorizontal, Sparkles } from "lucide-react";
 
 type ArchivedProject = {
   id: string;
@@ -35,6 +35,7 @@ export default function ArchivePage() {
   const [projects, setProjects] = useState<ArchivedProject[]>([]);
   const [reports, setReports] = useState<ArchivedReport[]>([]);
   const [projectNames, setProjectNames] = useState<Record<string, string>>({});
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -125,6 +126,20 @@ export default function ArchivePage() {
     }, 0);
     return () => clearTimeout(timer);
   }, [load]);
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-kebab-menu]")) return;
+      setOpenMenuId(null);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
+  }, []);
 
   const unarchiveProject = async (projectId: string) => {
     const project = projects.find((row) => row.id === projectId);
@@ -222,21 +237,42 @@ export default function ArchivePage() {
                     {project.client_name ? (
                       <div className="mt-1 text-xs text-slate-500">Auftraggeber: {project.client_name}</div>
                     ) : null}
-                    <div className="mt-3 flex items-center gap-2">
-                      <Link href={`/projects/${project.id}`} className="btn btn-secondary btn-xs">
-                        Öffnen
-                      </Link>
-                      {currentUserId && project.owner_id === currentUserId ? (
-                        <button
-                          type="button"
-                          className="btn btn-xs border-cyan-700 bg-cyan-600 text-white hover:bg-cyan-700"
-                          onClick={() => unarchiveProject(project.id)}
-                        >
-                          Wiederherstellen
-                        </button>
-                      ) : (
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      {currentUserId && project.owner_id !== currentUserId ? (
                         <span className="text-xs text-slate-500">Nur Owner kann wiederherstellen</span>
-                      )}
+                      ) : <span />}
+                      <div className="relative" data-kebab-menu>
+                        {(() => {
+                          const menuId = `project-${project.id}`;
+                          const isOpen = openMenuId === menuId;
+                          const canRestore = currentUserId && project.owner_id === currentUserId;
+                          return (
+                            <>
+                              <button
+                                type="button"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-50"
+                                onClick={() => setOpenMenuId(isOpen ? null : menuId)}
+                                aria-label="Aktionen"
+                                aria-expanded={isOpen}
+                              >
+                                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                              {isOpen ? (
+                                <div className="absolute right-0 top-full z-[80] mt-2 w-44 rounded-xl border border-slate-200/80 bg-white p-1 shadow-lg">
+                                  <Link href={`/projects/${project.id}`} className="flex rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" onClick={() => setOpenMenuId(null)}>
+                                    Öffnen
+                                  </Link>
+                                  {canRestore ? (
+                                    <button type="button" className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-cyan-700 hover:bg-cyan-50" onClick={() => { setOpenMenuId(null); unarchiveProject(project.id); }}>
+                                      Wiederherstellen
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -270,14 +306,42 @@ export default function ArchivePage() {
                         Projekt: {projectNames[report.project_id] ?? report.project_id}
                       </div>
                     ) : null}
-                    <div className="mt-3 flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="btn btn-xs border-blue-700 bg-blue-600 text-white hover:bg-blue-700"
-                        onClick={() => unarchiveReport(report.id)}
-                      >
-                        Wiederherstellen
-                      </button>
+                    <div className="mt-3 flex justify-end">
+                      <div className="relative" data-kebab-menu>
+                        {(() => {
+                          const menuId = `archived-report-${report.id}`;
+                          const isOpen = openMenuId === menuId;
+                          const openHref =
+                            report.report_type === "schichtenverzeichnis"
+                              ? `/api/pdf/schichtenverzeichnis/${report.id}`
+                              : report.report_type === "tagesbericht_rhein_main_link"
+                                ? `/api/pdf/tagesbericht-rhein-main-link/${report.id}`
+                                : `/api/pdf/tagesbericht/${report.id}`;
+                          return (
+                            <>
+                              <button
+                                type="button"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-50"
+                                onClick={() => setOpenMenuId(isOpen ? null : menuId)}
+                                aria-label="Aktionen"
+                                aria-expanded={isOpen}
+                              >
+                                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                              {isOpen ? (
+                                <div className="absolute right-0 top-full z-[80] mt-2 w-44 rounded-xl border border-slate-200/80 bg-white p-1 shadow-lg">
+                                  <Link href={openHref} target="_blank" className="flex rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" onClick={() => setOpenMenuId(null)}>
+                                    Öffnen
+                                  </Link>
+                                  <button type="button" className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-blue-700 hover:bg-blue-50" onClick={() => { setOpenMenuId(null); unarchiveReport(report.id); }}>
+                                    Wiederherstellen
+                                  </button>
+                                </div>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </div>
                 ))}
