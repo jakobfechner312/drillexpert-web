@@ -967,6 +967,7 @@ export async function generateSchichtenverzeichnisPdf(
         idx < rowsPerPagePage1
           ? idx
           : (idx - rowsPerPagePage1) % rowsPerPagePageN;
+      const isLastRowOnFirstSheet = pageIndex === 0 && localIdx === rowsPerPagePage1 - 1;
       const yOffset =
         localIdx * rowHeight +
         (pageIndex >= 1 ? Number(rowOffsetsPage2[localIdx]) || 0 : 0);
@@ -1081,6 +1082,11 @@ export async function generateSchichtenverzeichnisPdf(
           );
           return;
         }
+        const row4Sheet1FieldLift =
+          isLastRowOnFirstSheet &&
+          (fieldKey === "schicht_e" || fieldKey === "schicht_f" || fieldKey === "schicht_g" || fieldKey === "schicht_h")
+            ? 4
+            : 0;
         const drawX =
           alignedField.x +
           pageXOffset +
@@ -1094,6 +1100,7 @@ export async function generateSchichtenverzeichnisPdf(
           field.y +
           pageStartOffset -
           yOffset +
+          row4Sheet1FieldLift +
           (pageIndex === 0
             ? getPage1FieldOffset(fieldKey, "y") +
               getRowFieldOffsetPage1Y(localIdx, fieldKey)
@@ -1361,7 +1368,10 @@ export async function generateSchichtenverzeichnisPdf(
   // Force consistent running page numbers on every generated page.
   pages.forEach((page, idx) => {
     const pageNo = String(idx + 1);
-    drawStaticText(idx, String(idx + 1), 488, 790, 10);
+    if (idx !== 0) {
+      drawStaticText(idx, String(idx + 1), 488, 790, 10);
+    }
+    if (idx === 0) return;
     const size = 10;
     const pageWidth = page.getWidth();
     const textWidth = font.widthOfTextAtSize(pageNo, size);

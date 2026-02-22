@@ -174,12 +174,12 @@ const MAX_GROUNDWATER_ROWS = 50;
 const SPT_MAX_SCHLAEGE = 50;
 const SPT_DEFAULT_SEGMENT_CM = 15;
 const BOHR_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509", "700", "880", "1.180", "1.500"] as const;
-const RAMM_ROTATION_DURCHMESSER_OPTIONS = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
+const RAMM_DURCHMESSER_OPTIONS = ["178", "220", "273", "324", "368", "419", "509"] as const;
 const ROTATION_DURCHMESSER_OPTIONS = ["146"] as const;
 const GREIF_DURCHMESSER_OPTIONS = ["700", "880", "1.180", "1.500"] as const;
 const SCHLITZWEITE_OPTIONS = ["0,5", "0,75", "1", "1,5", "1,75", "2", "2,25", "2,5"] as const;
 const KIES_KOERNUNG_OPTIONS = ["0,71-1,25", "1,0-2,0", "2,0-3,15", "3,15-5,6", "5,6-8", "8,0-16"] as const;
-const UEBERGEBEN_AN_OPTIONS = ["Gutachter", "Lagertaining", "Kernlager BV"] as const;
+const UEBERGEBEN_AN_OPTIONS = ["Gutachter", "Lager Teningen", "Kernlager BV"] as const;
 const SCHICHT_E_OPTIONS = ["0", "+", "++"] as const;
 const SCHICHT_C_OPTIONS = ["leicht", "mittel", "schwer"] as const;
 const SCHICHT_B_OPTIONS = [
@@ -200,8 +200,6 @@ const PEGEL_DURCHMESSER_OPTIONS = [
   '5"',
   '6"',
   '8"',
-  "DN100",
-  "DN200",
   "DN300",
   "DN400",
   "DN500",
@@ -209,7 +207,7 @@ const PEGEL_DURCHMESSER_OPTIONS = [
   "DN700",
   "DN800",
 ] as const;
-const PEGEL_DURCHMESSER_BASE_OPTIONS = ['2"', '3"', '4"', '5"', '6"', '8"', "DN100", "DN200"] as const;
+const PEGEL_DURCHMESSER_BASE_OPTIONS = ['2"', '3"', '4"', '5"', '6"', '8"'] as const;
 const PEGEL_DURCHMESSER_ROTATION_OPTIONS = ['2"', '3"'] as const;
 const PEGEL_DURCHMESSER_GREIF_EXTRA_OPTIONS = ["DN300", "DN400", "DN500", "DN600", "DN700", "DN800"] as const;
 const GRUNDWASSERSTAND_OPTIONS = [
@@ -481,6 +479,7 @@ const initialData: FormData = {
   proben_nr: "",
   proben_tiefe: "",
   proben_genommen: "",
+  spt_genommen: "",
 };
 
 const emptySchichtRow = (): SchichtRow => ({
@@ -773,8 +772,9 @@ const enforceBohrungDurchmesserRules = (entry: BohrungEntry): BohrungEntry => {
 };
 const getDurchmesserOptionsForVerfahren = (verfahren: BohrungEntry["verfahren"]) => {
   if (verfahren === "greif") return GREIF_DURCHMESSER_OPTIONS;
-  if (verfahren === "rotation") return ROTATION_DURCHMESSER_OPTIONS;
-  if (verfahren === "ramm" || verfahren === "voll") return RAMM_ROTATION_DURCHMESSER_OPTIONS;
+  if (verfahren === "rotation" || verfahren === "ek_dks") return ROTATION_DURCHMESSER_OPTIONS;
+  if (verfahren === "ramm") return RAMM_DURCHMESSER_OPTIONS;
+  if (verfahren === "voll") return BOHR_DURCHMESSER_OPTIONS;
   return BOHR_DURCHMESSER_OPTIONS;
 };
 const legacyBohrungenFromData = (values: FormData): BohrungEntry[] => {
@@ -1078,6 +1078,43 @@ export default function SchichtenverzeichnisForm({
     undoApplyingRef.current = true;
     applyUndoSnapshot(previous);
   }, [applyUndoSnapshot]);
+  const triggerProjectSaveCelebration = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+    const { default: confetti } = await import("canvas-confetti");
+    const base = {
+      ticks: 220,
+      gravity: 1.05,
+      decay: 0.92,
+      startVelocity: 34,
+      zIndex: 9999,
+      scalar: 0.95,
+    } as const;
+    confetti({
+      ...base,
+      particleCount: 70,
+      spread: 72,
+      origin: { x: 0.18, y: 0.18 },
+      angle: 58,
+    });
+    confetti({
+      ...base,
+      particleCount: 70,
+      spread: 72,
+      origin: { x: 0.82, y: 0.18 },
+      angle: 122,
+    });
+    window.setTimeout(() => {
+      confetti({
+        ...base,
+        particleCount: 36,
+        spread: 95,
+        startVelocity: 24,
+        gravity: 0.95,
+        origin: { x: 0.5, y: 0.2 },
+      });
+    }, 140);
+  }, []);
   const focusDictationTarget = useCallback((key: string) => {
     const target = dictationTargetsRef.current[key];
     if (!target) return;
@@ -2303,7 +2340,7 @@ export default function SchichtenverzeichnisForm({
 
         const target = await ensureSaveTarget();
         if (!target) return;
-        const { scope, projectId } = target;
+        const { scope, projectId: selectedProjectId } = target;
 
         if (!reportSaveKeyRef.current) {
           reportSaveKeyRef.current = crypto.randomUUID();
@@ -2339,16 +2376,58 @@ export default function SchichtenverzeichnisForm({
             return;
           }
 
+          const targetProjectId = scope === "project" ? selectedProjectId : null;
+
+          // Robust move path for edits opened from "Meine Berichte":
+          // create in target project + delete old row, instead of relying on
+          // project_id UPDATE behavior.
+          if (!projectId && targetProjectId) {
+            const movePayload = {
+              user_id: user.id,
+              project_id: targetProjectId,
+              report_type: "schichtenverzeichnis",
+              title,
+              data: reportData,
+              status: "final",
+              idempotency_key: crypto.randomUUID(),
+            } as const;
+
+            const { data: insertedMovedReport, error: insertMoveErr } = await supabase
+              .from("reports")
+              .insert(movePayload)
+              .select("id")
+              .maybeSingle();
+
+            if (insertMoveErr || !insertedMovedReport?.id) {
+              console.error("[SV EDIT MOVE INSERT FAILED]", { insertMoveErr, targetProjectId, reportId });
+              alert("Bericht ins Projekt speichern fehlgeschlagen: " + (insertMoveErr?.message ?? "unknown"));
+              return;
+            }
+
+            const { error: deleteOldErr } = await supabase.from("reports").delete().eq("id", reportId);
+            if (deleteOldErr) {
+              console.warn("[SV EDIT MOVE] Zielbericht erstellt, alter Bericht blieb bestehen", deleteOldErr);
+              alert("Bericht im Projekt gespeichert ✅ (alter Eintrag blieb zusätzlich in „Meine Berichte“)");
+              triggerProjectSaveCelebration();
+              return;
+            }
+
+            alert("Bericht ins Projekt verschoben ✅");
+            triggerProjectSaveCelebration();
+            return;
+          }
+
           const { data: updatedReport, error } = await supabase
             .from("reports")
             .update({
               title,
               data: reportData,
               status: "final",
-              project_id: scope === "project" ? projectId : null,
+              report_type: "schichtenverzeichnis",
+              project_id: scope === "project" ? selectedProjectId : null,
             })
             .eq("id", reportId)
-            .select("id")
+            .select("id, project_id")
             .maybeSingle();
 
           if (error) {
@@ -2361,13 +2440,58 @@ export default function SchichtenverzeichnisForm({
             return;
           }
 
+          const appliedProjectId =
+            (updatedReport as { project_id?: string | null } | null)?.project_id ?? null;
+
+          if (targetProjectId && appliedProjectId !== targetProjectId) {
+            const fallbackPayload = {
+              user_id: user.id,
+              project_id: targetProjectId,
+              report_type: "schichtenverzeichnis",
+              title,
+              data: reportData,
+              status: "final",
+              idempotency_key: crypto.randomUUID(),
+            } as const;
+
+            const { data: insertedCopy, error: insertErr } = await supabase
+              .from("reports")
+              .insert(fallbackPayload)
+              .select("id")
+              .maybeSingle();
+
+            if (insertErr || !insertedCopy?.id) {
+              console.error("[SV EDIT SAVE FALLBACK FAILED]", { insertErr, targetProjectId, appliedProjectId });
+              alert(
+                "Bericht wurde aktualisiert, aber nicht ins gewählte Projekt verschoben. Bitte Seite neu laden und erneut speichern."
+              );
+              return;
+            }
+
+            const { error: deleteOldErr } = await supabase.from("reports").delete().eq("id", reportId);
+            if (deleteOldErr) {
+              console.warn(
+                "[SV EDIT SAVE FALLBACK] Kopie im Projekt erstellt, alter Bericht konnte nicht gelöscht werden",
+                deleteOldErr
+              );
+              alert("Bericht im Projekt gespeichert ✅ (alter Eintrag blieb zusätzlich in „Meine Berichte“)");
+              triggerProjectSaveCelebration();
+              return;
+            }
+
+            alert("Bericht ins Projekt verschoben ✅");
+            triggerProjectSaveCelebration();
+            return;
+          }
+
           alert("Bericht aktualisiert ✅");
+          if (scope === "project") triggerProjectSaveCelebration();
           return;
         }
 
         const payload = {
           user_id: user.id,
-          project_id: scope === "project" ? projectId : null,
+          project_id: scope === "project" ? selectedProjectId : null,
           report_type: "schichtenverzeichnis",
           title,
           data: reportData,
@@ -2390,6 +2514,7 @@ export default function SchichtenverzeichnisForm({
 
         reportSaveKeyRef.current = null;
         alert("Bericht gespeichert ✅");
+        if (scope === "project") triggerProjectSaveCelebration();
       } finally {
         savingRef.current = false;
       }
@@ -2430,6 +2555,7 @@ export default function SchichtenverzeichnisForm({
     saveDraftToServer,
     setSaveDraftHandler,
     setSaveReportHandler,
+    triggerProjectSaveCelebration,
     supabase,
     mode,
     reportId,
@@ -3045,8 +3171,16 @@ export default function SchichtenverzeichnisForm({
   const isSchichtStep = showStep(5);
   const isProbenSptStep = showStep(6);
   const probenGenommenValue = String(data.proben_genommen ?? "").trim();
+  const sptGenommenValue = String(data.spt_genommen ?? "").trim();
   const hasProbenGenommenDecision = probenGenommenValue === "ja" || probenGenommenValue === "nein";
-  const shouldShowProbenSptInputs = probenGenommenValue !== "nein";
+  const hasSptGenommenDecision = sptGenommenValue === "ja" || sptGenommenValue === "nein";
+  const shouldShowProbeInputs = probenGenommenValue === "ja";
+  const shouldShowStandaloneSptInputs = sptGenommenValue === "ja";
+  const showNoProbenOrSptHint =
+    hasProbenGenommenDecision &&
+    hasSptGenommenDecision &&
+    probenGenommenValue === "nein" &&
+    sptGenommenValue === "nein";
   const uebergebenAnCurrent = String(data.uebergeben_an ?? "").trim();
   const uebergebenAnIsPreset = UEBERGEBEN_AN_OPTIONS.includes(
     uebergebenAnCurrent as (typeof UEBERGEBEN_AN_OPTIONS)[number]
@@ -3450,25 +3584,46 @@ export default function SchichtenverzeichnisForm({
                           <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-500">
                             Ø (mm)
                           </span>
-                          <select
-                            className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                            value={entry.verfahren === "rotation" ? "146" : entry.verrohr_durchmesser ?? ""}
-                            onChange={(e) =>
-                              setBohrungen((prev) => {
-                                const next = [...prev];
-                                next[idx] = { ...next[idx], verrohr_durchmesser: e.target.value };
-                                return next;
-                              })
-                            }
-                            disabled={entry.verfahren === "rotation"}
-                          >
-                            <option value="">Bitte wählen…</option>
-                            {getDurchmesserOptionsForVerfahren(entry.verfahren).map((opt) => (
-                              <option key={opt} value={opt}>
-                                {opt}
-                              </option>
-                            ))}
-                          </select>
+                          {entry.verfahren === "voll" ? (
+                            <input
+                              className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="z. B. 610"
+                              value={entry.verrohr_durchmesser ?? ""}
+                              onChange={(e) =>
+                                setBohrungen((prev) => {
+                                  const next = [...prev];
+                                  next[idx] = { ...next[idx], verrohr_durchmesser: e.target.value };
+                                  return next;
+                                })
+                              }
+                            />
+                          ) : (
+                            <select
+                              className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                              value={
+                                entry.verfahren === "rotation" || entry.verfahren === "ek_dks"
+                                  ? "146"
+                                  : entry.verrohr_durchmesser ?? ""
+                              }
+                              onChange={(e) =>
+                                setBohrungen((prev) => {
+                                  const next = [...prev];
+                                  next[idx] = { ...next[idx], verrohr_durchmesser: e.target.value };
+                                  return next;
+                                })
+                              }
+                              disabled={entry.verfahren === "rotation" || entry.verfahren === "ek_dks"}
+                            >
+                              <option value="">Bitte wählen…</option>
+                              {getDurchmesserOptionsForVerfahren(entry.verfahren).map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </label>
                       </div>
                     </div>
@@ -4808,8 +4963,35 @@ export default function SchichtenverzeichnisForm({
                     Nein
                   </button>
                 </div>
+                <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Wurden SPTs genommen?
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                      sptGenommenValue === "ja"
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                    onClick={() => update("spt_genommen", "ja")}
+                  >
+                    Ja
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                      sptGenommenValue === "nein"
+                        ? "border-rose-300 bg-rose-50 text-rose-800"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                    onClick={() => update("spt_genommen", "nein")}
+                  >
+                    Nein
+                  </button>
+                </div>
               </div>
-              {shouldShowProbenSptInputs ? (
+              {shouldShowProbeInputs ? (
                 <>
               <div className="rounded-2xl border border-slate-200/80 bg-slate-50/30 p-3">
                 <div className="mb-3 flex items-center justify-between gap-2">
@@ -4903,6 +5085,9 @@ export default function SchichtenverzeichnisForm({
                   })}
                 </div>
               </div>
+                </>
+              ) : null}
+              {shouldShowStandaloneSptInputs ? (
               <div className="mt-3 rounded-2xl border border-slate-200/80 bg-slate-50/30 p-3">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -5087,12 +5272,12 @@ export default function SchichtenverzeichnisForm({
                 })}
                 </div>
               </div>
-                </>
-              ) : (
+              ) : null}
+              {showNoProbenOrSptHint ? (
                 <div className="rounded-2xl border border-slate-200/80 bg-white p-3 text-sm text-slate-600">
-                  Keine Proben erfasst. Mit <span className="font-semibold">Weiter</span> geht es direkt zu Schritt 8.
+                  Keine Proben oder SPTs erfasst. Mit <span className="font-semibold">Weiter</span> geht es direkt zu Schritt 8.
                 </div>
-              )}
+              ) : null}
             </>
           ) : null}
         </div>
@@ -5165,9 +5350,7 @@ export default function SchichtenverzeichnisForm({
                     value={uebergebenAnSelectValue}
                     onChange={(e) => {
                       if (e.target.value === "__custom__") {
-                        if (uebergebenAnIsPreset) {
-                          update("uebergeben_an", "");
-                        }
+                        update("uebergeben_an", uebergebenAnIsPreset ? "" : "benutzerdefiniert");
                         return;
                       }
                       update("uebergeben_an", e.target.value);
@@ -5185,7 +5368,11 @@ export default function SchichtenverzeichnisForm({
                     <input
                       className="mt-2 h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
                       placeholder="Benutzerdefiniert"
-                      value={data.uebergeben_an ?? ""}
+                      value={
+                        String(data.uebergeben_an ?? "").trim().toLowerCase() === "benutzerdefiniert"
+                          ? ""
+                          : (data.uebergeben_an ?? "")
+                      }
                       onChange={(e) => update("uebergeben_an", e.target.value)}
                     />
                   ) : null}
@@ -5258,6 +5445,10 @@ export default function SchichtenverzeichnisForm({
                 if (stepIndex === 5 && !ensureRequiredSchichtfelder()) return;
                 if (stepIndex === 6 && !hasProbenGenommenDecision) {
                   alert('Bitte in Schritt 7 auswählen: "Wurden Proben genommen?"');
+                  return;
+                }
+                if (stepIndex === 6 && !hasSptGenommenDecision) {
+                  alert('Bitte in Schritt 7 auswählen: "Wurden SPTs genommen?"');
                   return;
                 }
                 void saveDraftToServer({ showSuccess: false, showError: false, enforceRequired: false });

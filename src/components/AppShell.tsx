@@ -381,18 +381,35 @@ function SidebarLink({ href, label }: { href: string; label: string }) {
 function SidebarReports() {
   const pathname = usePathname();
   const active = pathname.startsWith("/reports");
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const renderReportLinks = (className = "") => (
+    <div className={className}>
+      <SidebarLink href="/reports" label="Alle Berichte" />
+      <SidebarLink href="/reports/new" label="Tagesbericht" />
+      <SidebarLink href="/reports/schichtenverzeichnis/new" label="Schichtenverzeichnis" />
+    </div>
+  );
 
   return (
     <>
       <div className="lg:hidden">
-        <div className="rounded-xl px-3 py-2 text-sm font-medium text-slate-700">
-          Meine Berichte
-        </div>
-        <div className="ml-2 mt-1 space-y-1">
-          <SidebarLink href="/reports" label="Alle Berichte" />
-          <SidebarLink href="/reports/new" label="Tagesbericht" />
-          <SidebarLink href="/reports/schichtenverzeichnis/new" label="Schichtenverzeichnis" />
-        </div>
+        <button
+          type="button"
+          className={[
+            "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition",
+            active ? "bg-drill-50 font-medium" : "hover:bg-base-bg",
+          ].join(" ")}
+          onClick={() => setMobileOpen((prev) => !prev)}
+          aria-expanded={mobileOpen}
+        >
+          <span>Meine Berichte</span>
+          <ChevronDown
+            className={["h-4 w-4 transition-transform", mobileOpen ? "rotate-180" : ""].join(" ")}
+            aria-hidden="true"
+          />
+        </button>
+        {mobileOpen ? renderReportLinks("ml-2 mt-1 space-y-1") : null}
       </div>
 
       <div className="group hidden lg:block">
@@ -405,11 +422,12 @@ function SidebarReports() {
         >
           Meine Berichte
         </Link>
-
-        <div className="nav-subitems ml-2 mt-1 hidden space-y-1 lg:group-hover:block">
-          <SidebarLink href="/reports/new" label="Tagesbericht" />
-          <SidebarLink href="/reports/schichtenverzeichnis/new" label="Schichtenverzeichnis" />
-        </div>
+        {renderReportLinks(
+          [
+            "nav-subitems ml-2 mt-1 hidden space-y-1",
+            active ? "lg:block" : "lg:group-hover:block",
+          ].join(" ")
+        )}
       </div>
     </>
   );

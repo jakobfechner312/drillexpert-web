@@ -1056,6 +1056,43 @@ export default function TagesberichtForm({
     setReport(previous.report);
     setStepIndex(previous.stepIndex);
   }, []);
+  const triggerProjectSaveCelebration = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+    const { default: confetti } = await import("canvas-confetti");
+    const base = {
+      ticks: 220,
+      gravity: 1.05,
+      decay: 0.92,
+      startVelocity: 34,
+      zIndex: 9999,
+      scalar: 0.95,
+    } as const;
+    confetti({
+      ...base,
+      particleCount: 70,
+      spread: 72,
+      origin: { x: 0.18, y: 0.18 },
+      angle: 58,
+    });
+    confetti({
+      ...base,
+      particleCount: 70,
+      spread: 72,
+      origin: { x: 0.82, y: 0.18 },
+      angle: 122,
+    });
+    window.setTimeout(() => {
+      confetti({
+        ...base,
+        particleCount: 36,
+        spread: 95,
+        startVelocity: 24,
+        gravity: 0.95,
+        origin: { x: 0.5, y: 0.2 },
+      });
+    }, 140);
+  }, []);
   const openNativePicker = (input: HTMLInputElement | null) => {
     if (!input) return;
     const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
@@ -1849,16 +1886,56 @@ if (mode === "edit") {
     return;
   }
 
+  // Robust move path: Editing from "Meine Berichte" and saving into a project should
+  // behave like "move" (create in target project + delete old), because project_id
+  // updates can be blocked/neutralized by DB policies while still looking successful.
+  if (!projectId && !enforcedProjectId && finalProjectId) {
+    const movePayload = {
+      user_id: user.id,
+      project_id: finalProjectId,
+      report_type: reportType,
+      title,
+      data: reportForSave,
+      status: "final",
+      idempotency_key: crypto.randomUUID(),
+    } as const;
+
+    const { data: insertedMovedReport, error: insertMoveErr } = await supabase
+      .from("reports")
+      .insert(movePayload)
+      .select("id")
+      .maybeSingle();
+
+    if (insertMoveErr || !insertedMovedReport?.id) {
+      console.error("[EDIT MOVE INSERT FAILED]", { insertMoveErr, finalProjectId, reportId });
+      alert("Bericht ins Projekt speichern fehlgeschlagen: " + (insertMoveErr?.message ?? "unknown"));
+      return;
+    }
+
+    const { error: deleteOldErr } = await supabase.from("reports").delete().eq("id", reportId);
+    if (deleteOldErr) {
+      console.warn("[EDIT MOVE] Zielbericht erstellt, alter Bericht blieb bestehen", deleteOldErr);
+      alert("Bericht im Projekt gespeichert ✅ (alter Eintrag blieb zusätzlich in „Meine Berichte“)");
+      triggerProjectSaveCelebration();
+      return;
+    }
+
+    alert("Bericht ins Projekt verschoben ✅");
+    triggerProjectSaveCelebration();
+    return;
+  }
+
   const { data: updatedReport, error } = await supabase
-    .from("reports")
+  .from("reports")
       .update({
       title,
       data: reportForSave,
       status: "final",
+      report_type: reportType,
       project_id: finalProjectId,
     })
     .eq("id", reportId)
-    .select("id")
+    .select("id, project_id")
     .maybeSingle();
 
   if (error) {
@@ -1871,7 +1948,52 @@ if (mode === "edit") {
     return;
   }
 
+  const appliedProjectId =
+    (updatedReport as { project_id?: string | null } | null)?.project_id ?? null;
+
+  // Fallback: Wenn ein Bericht aus "Meine Berichte" in ein Projekt verschoben werden soll,
+  // der UPDATE aber trotz Erfolgsmeldung nicht wirklich im Zielprojekt landet, legen wir
+  // eine neue Ziel-Kopie an (gleiches Verhalten wie funktionierender Neuanlage-Save).
+  if (finalProjectId && appliedProjectId !== finalProjectId) {
+    const fallbackPayload = {
+      user_id: user.id,
+      project_id: finalProjectId,
+      report_type: reportType,
+      title,
+      data: reportForSave,
+      status: "final",
+      idempotency_key: crypto.randomUUID(),
+    } as const;
+
+    const { data: insertedCopy, error: insertErr } = await supabase
+      .from("reports")
+      .insert(fallbackPayload)
+      .select("id")
+      .maybeSingle();
+
+    if (insertErr || !insertedCopy?.id) {
+      console.error("[EDIT SAVE FALLBACK FAILED]", { insertErr, finalProjectId, appliedProjectId });
+      alert(
+        "Bericht wurde aktualisiert, aber nicht ins gewählte Projekt verschoben. Bitte Seite neu laden und erneut speichern."
+      );
+      return;
+    }
+
+    const { error: deleteOldErr } = await supabase.from("reports").delete().eq("id", reportId);
+    if (deleteOldErr) {
+      console.warn("[EDIT SAVE FALLBACK] Kopie im Projekt erstellt, alter Bericht konnte nicht gelöscht werden", deleteOldErr);
+      alert("Bericht im Projekt gespeichert ✅ (alter Eintrag blieb zusätzlich in „Meine Berichte“)");
+      triggerProjectSaveCelebration();
+      return;
+    }
+
+    alert("Bericht ins Projekt verschoben ✅");
+    triggerProjectSaveCelebration();
+    return;
+  }
+
   alert("Bericht aktualisiert ✅");
+  if (finalProjectId) triggerProjectSaveCelebration();
   return;
 }
 
@@ -1924,6 +2046,7 @@ if (mode === "edit") {
     await persistRmlCounter(nextCounter);
   }
   alert("Bericht gespeichert ✅");
+  if (finalProjectId) triggerProjectSaveCelebration();
       } finally {
         savingRef.current = false;
       }
@@ -1951,6 +2074,7 @@ if (mode === "edit") {
     persistRmlCounter,
     saveDraftToServer,
     saveScope,
+    triggerProjectSaveCelebration,
     useStepper,
   ]);
   // ========================================================
@@ -3389,8 +3513,10 @@ if (mode === "edit") {
     const st = Array.isArray(worker.stunden) ? worker.stunden : [];
     let sum = 0;
     let has = false;
+    let assignedCycleCount = 0;
     workerCycles.forEach((cycle, idx) => {
       if (!isAssignedCycle(cycle)) return;
+      assignedCycleCount += 1;
       const val = st[idx] ?? "";
       const num = Number(String(val ?? "").replace(",", "."));
       if (Number.isFinite(num)) {
@@ -3398,6 +3524,15 @@ if (mode === "edit") {
         has = true;
       }
     });
+    if (assignedCycleCount === 0) {
+      st.forEach((val) => {
+        const num = Number(String(val ?? "").replace(",", "."));
+        if (Number.isFinite(num)) {
+          sum += num;
+          has = true;
+        }
+      });
+    }
     return has ? sum : null;
   };
 
@@ -3631,7 +3766,7 @@ if (mode === "edit") {
           ? report.workCycles
           : [""];
       const taktHours = calcTaktHoursForWorker(w, workerCycles);
-      const reine = formatHoursFromHours(taktHours) || "0";
+      const reine = formatHoursFromHours(taktHours) || "";
       if (w.reineArbeitsStd !== reine) {
         workersChanged = true;
         return { ...w, reineArbeitsStd: reine };
