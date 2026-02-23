@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Briefcase, Calendar, ClipboardList, CloudSun, Crown, ExternalLink, FileText, Hash, Link2, List, MapPin, MoreHorizontal, RefreshCcw, Search, Settings, Trash2, Upload, User, Users } from "lucide-react";
+import { Briefcase, Calendar, CheckSquare, ClipboardList, CloudSun, Crown, Download, ExternalLink, FileText, Hash, Link2, List, MapPin, MoreHorizontal, RefreshCcw, Search, Settings, Square, Trash2, Upload, User, Users, X } from "lucide-react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 import { isRheinMainLinkProject } from "@/lib/reportAccess";
@@ -55,6 +55,22 @@ type PendingUploadFile = {
   extension: string;
   editedBaseName: string;
 };
+type StreamReportItem = {
+  type: "report";
+  id: string;
+  title: string;
+  created_at: string;
+  status: string | null;
+  report_type: string;
+};
+type StreamFileItem = {
+  type: "file";
+  name: string;
+  created_at: string;
+  size: number;
+  isImage: boolean;
+};
+type StreamItem = StreamReportItem | StreamFileItem;
 type TeamMember = {
   user_id: string;
   role_in_project: string | null;
@@ -304,6 +320,9 @@ export default function ProjectDetailPage() {
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [filesErr, setFilesErr] = useState<string | null>(null);
+  const [streamSelectMode, setStreamSelectMode] = useState(false);
+  const [selectedStreamKeys, setSelectedStreamKeys] = useState<string[]>([]);
+  const [downloadingSelectedStream, setDownloadingSelectedStream] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [renameFileOpen, setRenameFileOpen] = useState(false);
   const [renameFileSourceName, setRenameFileSourceName] = useState("");
@@ -1653,6 +1672,59 @@ export default function ProjectDetailPage() {
     window.open(data.signedUrl, "_blank");
   };
 
+  const getReportOpenHref = (reportId: string, reportType: string | null | undefined) => {
+    if (reportType === "schichtenverzeichnis") return `/api/pdf/schichtenverzeichnis/${reportId}`;
+    if (reportType === "tagesbericht_rhein_main_link") return `/api/pdf/tagesbericht-rhein-main-link/${reportId}`;
+    return `/api/pdf/tagesbericht/${reportId}`;
+  };
+
+  const streamItemKey = (item: StreamItem) => (item.type === "report" ? `report:${item.id}` : `file:${item.name}`);
+
+  const sanitizeDownloadFilename = (value: string, fallback: string) => {
+    const cleaned = String(value ?? "")
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .replace(/\s+/g, " ");
+    return cleaned || fallback;
+  };
+
+  const downloadBlobToDisk = (blob: Blob, filename: string) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+  };
+
+  const downloadStreamItem = async (item: StreamItem) => {
+    if (item.type === "report") {
+      const href = getReportOpenHref(item.id, item.report_type);
+      const res = await fetch(href, { credentials: "same-origin" });
+      if (!res.ok) throw new Error(`Report-Download fehlgeschlagen (${res.status})`);
+      const blob = await res.blob();
+      const fallbackName =
+        item.report_type === "schichtenverzeichnis"
+          ? "Schichtenverzeichnis"
+          : item.report_type === "tagesbericht_rhein_main_link"
+            ? "TB-RML"
+            : "Tagesbericht";
+      downloadBlobToDisk(blob, `${sanitizeDownloadFilename(item.title, fallbackName)}.pdf`);
+      return;
+    }
+
+    const { data, error } = await supabase.storage
+      .from("dropData")
+      .createSignedUrl(`${projectId}/${item.name}`, 60 * 10);
+    if (error || !data?.signedUrl) throw new Error("Signed URL fehlgeschlagen");
+    const res = await fetch(data.signedUrl);
+    if (!res.ok) throw new Error(`Datei-Download fehlgeschlagen (${res.status})`);
+    const blob = await res.blob();
+    downloadBlobToDisk(blob, item.name);
+  };
+
   const clickCameFromStreamMenu = (target: EventTarget | null) => {
     return target instanceof Element && Boolean(target.closest("[data-stream-menu]"));
   };
@@ -1698,7 +1770,7 @@ export default function ProjectDetailPage() {
     return { label: "Tagesbericht", cls: "bg-sky-50 text-sky-800 ring-sky-200" };
   };
 
-  const items = useMemo(() => {
+  const items = useMemo<StreamItem[]>(() => {
     const query = streamQuery.trim().toLowerCase();
     const reportItems = reports.map((r) => ({
       type: "report" as const,
@@ -1738,6 +1810,48 @@ export default function ProjectDetailPage() {
       return item.name.toLowerCase().includes(query);
     });
   }, [reports, files, filter, streamQuery]);
+
+  useEffect(() => {
+    setSelectedStreamKeys((prev) => prev.filter((key) => items.some((item) => streamItemKey(item) === key)));
+  }, [items]);
+
+  const selectedVisibleCount = useMemo(
+    () => items.filter((item) => selectedStreamKeys.includes(streamItemKey(item))).length,
+    [items, selectedStreamKeys]
+  );
+  const allVisibleSelected = items.length > 0 && selectedVisibleCount === items.length;
+
+  const toggleStreamItemSelection = (item: StreamItem, checked: boolean) => {
+    const key = streamItemKey(item);
+    setSelectedStreamKeys((prev) => {
+      if (checked) return prev.includes(key) ? prev : [...prev, key];
+      return prev.filter((entry) => entry !== key);
+    });
+  };
+
+  const downloadSelectedStreamItems = async () => {
+    const selectedItems = items.filter((item) => selectedStreamKeys.includes(streamItemKey(item)));
+    if (selectedItems.length === 0) {
+      alert("Bitte mindestens eine Datei oder einen Bericht auswählen.");
+      return;
+    }
+    setDownloadingSelectedStream(true);
+    const failed: string[] = [];
+    for (const item of selectedItems) {
+      try {
+        await downloadStreamItem(item);
+        await new Promise((resolve) => window.setTimeout(resolve, 120));
+      } catch (error) {
+        const label = item.type === "report" ? item.title : item.name;
+        failed.push(label);
+        console.error("[STREAM DOWNLOAD FAILED]", label, error);
+      }
+    }
+    setDownloadingSelectedStream(false);
+    if (failed.length > 0) {
+      alert(`Einige Downloads sind fehlgeschlagen (${failed.length}).`);
+    }
+  };
 
   useEffect(() => {
     const imageNames = files.map((f) => f.name).filter((name) => isImageFile(name));
@@ -2123,6 +2237,48 @@ export default function ProjectDetailPage() {
             action={
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={[
+                      "inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-sm font-medium transition",
+                      streamSelectMode
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200/70 bg-white text-slate-700 hover:bg-slate-50",
+                    ].join(" ")}
+                    onClick={() => {
+                      setStreamSelectMode((prev) => !prev);
+                      setSelectedStreamKeys([]);
+                    }}
+                  >
+                    {streamSelectMode ? <X className="h-4 w-4" aria-hidden="true" /> : <CheckSquare className="h-4 w-4" aria-hidden="true" />}
+                    {streamSelectMode ? "Auswahl beenden" : "Auswählen"}
+                  </button>
+                  {streamSelectMode ? (
+                    <>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                        onClick={() =>
+                          setSelectedStreamKeys(allVisibleSelected ? [] : items.map((item) => streamItemKey(item)))
+                        }
+                        disabled={items.length === 0}
+                      >
+                        {allVisibleSelected ? <Square className="h-4 w-4" aria-hidden="true" /> : <CheckSquare className="h-4 w-4" aria-hidden="true" />}
+                        {allVisibleSelected ? "Auswahl löschen" : "Alle sichtbaren"}
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                        onClick={() => void downloadSelectedStreamItems()}
+                        disabled={selectedVisibleCount === 0 || downloadingSelectedStream}
+                      >
+                        <Download className="h-4 w-4" aria-hidden="true" />
+                        {downloadingSelectedStream ? "Lädt herunter…" : `Download (${selectedVisibleCount})`}
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
                   {[
                     { id: "all", label: "Alle" },
                     { id: "reports", label: "Berichte" },
@@ -2219,16 +2375,40 @@ export default function ProjectDetailPage() {
                           tabIndex={0}
                           onClick={(e) => {
                             if (clickCameFromStreamMenu(e.target)) return;
+                            if (streamSelectMode) {
+                              toggleStreamItemSelection(item, !selectedStreamKeys.includes(streamItemKey(item)));
+                              return;
+                            }
                             window.open(reportOpenHref, "_blank");
                           }}
                           onKeyDown={(e) => {
                             if (clickCameFromStreamMenu(e.target)) return;
                             if (e.key !== "Enter" && e.key !== " ") return;
                             e.preventDefault();
+                            if (streamSelectMode) {
+                              toggleStreamItemSelection(item, !selectedStreamKeys.includes(streamItemKey(item)));
+                              return;
+                            }
                             window.open(reportOpenHref, "_blank");
                           }}
                         >
                           <div className="min-w-0 flex items-start gap-3">
+                            {streamSelectMode ? (
+                              <label
+                                className="mt-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center"
+                                onClick={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                  checked={selectedStreamKeys.includes(streamItemKey(item))}
+                                  onChange={(e) => toggleStreamItemSelection(item, e.target.checked)}
+                                  aria-label={`Bericht auswählen: ${item.title}`}
+                                />
+                              </label>
+                            ) : null}
                             <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700 ring-1 ring-sky-200">
                               <FileText className="h-5 w-5" aria-hidden="true" />
                             </span>
@@ -2343,16 +2523,40 @@ export default function ProjectDetailPage() {
                           tabIndex={0}
                           onClick={(e) => {
                             if (clickCameFromStreamMenu(e.target)) return;
+                            if (streamSelectMode) {
+                              toggleStreamItemSelection(item, !selectedStreamKeys.includes(streamItemKey(item)));
+                              return;
+                            }
                             void openFile(item.name);
                           }}
                           onKeyDown={(e) => {
                             if (clickCameFromStreamMenu(e.target)) return;
                             if (e.key !== "Enter" && e.key !== " ") return;
                             e.preventDefault();
+                            if (streamSelectMode) {
+                              toggleStreamItemSelection(item, !selectedStreamKeys.includes(streamItemKey(item)));
+                              return;
+                            }
                             void openFile(item.name);
                           }}
                         >
                           <div className="min-w-0 flex items-center gap-3">
+                          {streamSelectMode ? (
+                            <label
+                              className="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center"
+                              onClick={(e) => e.stopPropagation()}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                checked={selectedStreamKeys.includes(streamItemKey(item))}
+                                onChange={(e) => toggleStreamItemSelection(item, e.target.checked)}
+                                aria-label={`Datei auswählen: ${item.name}`}
+                              />
+                            </label>
+                          ) : null}
                           {item.isImage ? (
                             <div className="h-36 w-36 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
                               {imagePreviewUrls[item.name] ? (
