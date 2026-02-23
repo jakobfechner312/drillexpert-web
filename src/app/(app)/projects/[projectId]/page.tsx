@@ -1699,6 +1699,28 @@ export default function ProjectDetailPage() {
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
   };
 
+  const saveBlobWithUserTarget = async (blob: Blob, filename: string) => {
+    type SavePickerWindow = Window & {
+      showSaveFilePicker?: (options?: {
+        suggestedName?: string;
+      }) => Promise<{
+        createWritable: () => Promise<{
+          write: (data: Blob) => Promise<void>;
+          close: () => Promise<void>;
+        }>;
+      }>;
+    };
+    const w = window as SavePickerWindow;
+    if (typeof w.showSaveFilePicker === "function") {
+      const handle = await w.showSaveFilePicker({ suggestedName: filename });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    }
+    downloadBlobToDisk(blob, filename);
+  };
+
   const downloadStreamItem = async (item: StreamItem) => {
     if (item.type === "report") {
       const href = getReportOpenHref(item.id, item.report_type);
@@ -1711,7 +1733,7 @@ export default function ProjectDetailPage() {
           : item.report_type === "tagesbericht_rhein_main_link"
             ? "TB-RML"
             : "Tagesbericht";
-      downloadBlobToDisk(blob, `${sanitizeDownloadFilename(item.title, fallbackName)}.pdf`);
+      await saveBlobWithUserTarget(blob, `${sanitizeDownloadFilename(item.title, fallbackName)}.pdf`);
       return;
     }
 
@@ -1722,7 +1744,7 @@ export default function ProjectDetailPage() {
     const res = await fetch(data.signedUrl);
     if (!res.ok) throw new Error(`Datei-Download fehlgeschlagen (${res.status})`);
     const blob = await res.blob();
-    downloadBlobToDisk(blob, item.name);
+    await saveBlobWithUserTarget(blob, item.name);
   };
 
   const clickCameFromStreamMenu = (target: EventTarget | null) => {
@@ -1840,7 +1862,6 @@ export default function ProjectDetailPage() {
     for (const item of selectedItems) {
       try {
         await downloadStreamItem(item);
-        await new Promise((resolve) => window.setTimeout(resolve, 120));
       } catch (error) {
         const label = item.type === "report" ? item.title : item.name;
         failed.push(label);
@@ -1850,7 +1871,10 @@ export default function ProjectDetailPage() {
     setDownloadingSelectedStream(false);
     if (failed.length > 0) {
       alert(`Einige Downloads sind fehlgeschlagen (${failed.length}).`);
+      return;
     }
+    setSelectedStreamKeys([]);
+    setStreamSelectMode(false);
   };
 
   useEffect(() => {
