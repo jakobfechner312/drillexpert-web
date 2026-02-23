@@ -1743,15 +1743,14 @@ export default function ProjectDetailPage() {
     return cleaned || fallback;
   };
 
-  const downloadBlobToDisk = (blob: Blob, filename: string) => {
-    const objectUrl = URL.createObjectURL(blob);
+  const triggerBrowserDownload = (url: string, filename: string) => {
     const a = document.createElement("a");
-    a.href = objectUrl;
+    a.href = url;
     a.download = filename;
+    a.rel = "noopener noreferrer";
     document.body.appendChild(a);
     a.click();
     a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
   };
 
   type SavePickerWritable = {
@@ -1773,6 +1772,19 @@ export default function ProjectDetailPage() {
     }) => Promise<SavePickerHandle>;
     showDirectoryPicker?: () => Promise<DirectoryHandle>;
   };
+
+  const browserDownloadModeLabel = (() => {
+    if (typeof navigator === "undefined") return "Dieser Browser";
+    const ua = navigator.userAgent;
+    if (/Brave/i.test(ua)) return "Brave";
+    if (/Edg\//i.test(ua)) return "Edge";
+    if (/Chrome\//i.test(ua) && !/Edg\//i.test(ua)) return "Chrome";
+    if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua) && !/CriOS\//i.test(ua)) return "Safari";
+    return "Dieser Browser";
+  })();
+
+  const supportsBatchDirectoryPicker =
+    typeof window !== "undefined" && typeof (window as SavePickerWindow).showDirectoryPicker === "function";
 
   const openSaveTarget = async (filename: string): Promise<SavePickerWritable | null> => {
     const w = window as SavePickerWindow;
@@ -1808,18 +1820,6 @@ export default function ProjectDetailPage() {
     await writeResponseToWritable(response, writable);
   };
 
-  const writeResponseToTarget = async (response: Response, filename: string) => {
-    const writable = await openSaveTarget(filename);
-    if (writable) {
-      await writeResponseToWritable(response, writable);
-      return;
-    }
-
-    // Fallback without save picker support: browser handles destination automatically.
-    const blob = await response.blob();
-    downloadBlobToDisk(blob, filename);
-  };
-
   const downloadStreamItem = async (item: StreamItem, batchDirectory: DirectoryHandle | null = null) => {
     if (item.type === "report") {
       const fallbackName =
@@ -1831,6 +1831,11 @@ export default function ProjectDetailPage() {
       const filename = `${sanitizeDownloadFilename(item.title, fallbackName)}.pdf`;
       const href = getReportOpenHref(item.id, item.report_type);
       const writable = batchDirectory ? null : await openSaveTarget(filename);
+      if (!batchDirectory && !writable) {
+        // Let the browser handle the download directly (important for Brave/Safari fallback).
+        triggerBrowserDownload(href, filename);
+        return;
+      }
       const res = await fetch(href, { credentials: "same-origin" });
       if (!res.ok) throw new Error(`Report-Download fehlgeschlagen (${res.status})`);
       if (batchDirectory) {
@@ -1839,8 +1844,6 @@ export default function ProjectDetailPage() {
       }
       if (writable) {
         await writeResponseToWritable(res, writable);
-      } else {
-        await writeResponseToTarget(res, filename);
       }
       return;
     }
@@ -1850,6 +1853,10 @@ export default function ProjectDetailPage() {
       .createSignedUrl(`${projectId}/${item.name}`, 60 * 10);
     if (error || !data?.signedUrl) throw new Error("Signed URL fehlgeschlagen");
     const writable = batchDirectory ? null : await openSaveTarget(item.name);
+    if (!batchDirectory && !writable) {
+      triggerBrowserDownload(data.signedUrl, item.name);
+      return;
+    }
     const res = await fetch(data.signedUrl);
     if (!res.ok) throw new Error(`Datei-Download fehlgeschlagen (${res.status})`);
     if (batchDirectory) {
@@ -1860,7 +1867,6 @@ export default function ProjectDetailPage() {
       await writeResponseToWritable(res, writable);
       return;
     }
-    await writeResponseToTarget(res, item.name);
   };
 
   const clickCameFromStreamMenu = (target: EventTarget | null) => {
@@ -1972,6 +1978,12 @@ export default function ProjectDetailPage() {
     if (selectedItems.length === 0) {
       alert("Bitte mindestens eine Datei oder einen Bericht auswählen.");
       return;
+    }
+    if (!supportsBatchDirectoryPicker) {
+      const confirmed = window.confirm(
+        `${browserDownloadModeLabel} unterstützt hier keinen Ordner-Picker. Die ausgewählten Dateien laufen über normale Browser-Downloads (${selectedItems.length}x). Fortfahren?`
+      );
+      if (!confirmed) return;
     }
     setDownloadingSelectedStream(true);
     let batchDirectory: DirectoryHandle | null = null;
@@ -2431,6 +2443,12 @@ export default function ProjectDetailPage() {
                     </>
                   ) : null}
                 </div>
+                {streamSelectMode && !supportsBatchDirectoryPicker ? (
+                  <div className="max-w-md rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    {browserDownloadModeLabel} unterstützt hier keinen Ordner-Picker. Download läuft über Browser-Downloads
+                    (normaler Download-Ordner / Browser-Einstellung).
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap gap-2">
                   {[
                     { id: "all", label: "Alle" },
