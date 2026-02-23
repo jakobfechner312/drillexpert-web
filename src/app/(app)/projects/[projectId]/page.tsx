@@ -2247,7 +2247,14 @@ export default function ProjectDetailPage() {
                             </div>
                           </div>
 
-                          <div className="relative ml-auto" data-stream-menu>
+                          <div
+                            className="relative ml-auto"
+                            data-stream-menu
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
                             {(() => {
                               const menuId = `report-${item.id}`;
                               const isMenuOpen = openStreamMenuId === menuId;
@@ -2374,7 +2381,14 @@ export default function ProjectDetailPage() {
                             </div>
                           </div>
                           </div>
-                          <div className="relative ml-auto" data-stream-menu>
+                          <div
+                            className="relative ml-auto"
+                            data-stream-menu
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
                             {(() => {
                               const menuId = `file-${item.name}`;
                               const isMenuOpen = openStreamMenuId === menuId;
