@@ -1658,6 +1658,10 @@ export default function ProjectDetailPage() {
     window.open(data.signedUrl, "_blank");
   };
 
+  const clickCameFromStreamMenu = (target: EventTarget | null) => {
+    return target instanceof HTMLElement && Boolean(target.closest("[data-stream-menu]"));
+  };
+
   const isImageFile = (name: string) => {
     const ext = name.split(".").pop()?.toLowerCase();
     return ["jpg", "jpeg", "png", "webp", "gif", "heic"].includes(ext ?? "");
@@ -2206,7 +2210,29 @@ export default function ProjectDetailPage() {
                   {items.map((item) =>
                     item.type === "report" ? (
                       <li key={`r-${item.id}`} className="p-3 sm:p-4">
-                        <div className="grid gap-3 rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm sm:p-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                        {(() => {
+                          const reportOpenHref =
+                            item.report_type === "schichtenverzeichnis"
+                              ? `/api/pdf/schichtenverzeichnis/${item.id}`
+                              : item.report_type === "tagesbericht_rhein_main_link"
+                                ? `/api/pdf/tagesbericht-rhein-main-link/${item.id}`
+                                : `/api/pdf/tagesbericht/${item.id}`;
+                          return (
+                        <div
+                          className="grid cursor-pointer gap-3 rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm transition hover:border-slate-300 hover:bg-slate-50/40 sm:p-4 lg:grid-cols-[minmax(0,1fr)_auto]"
+                          role="link"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            if (clickCameFromStreamMenu(e.target)) return;
+                            window.open(reportOpenHref, "_blank");
+                          }}
+                          onKeyDown={(e) => {
+                            if (clickCameFromStreamMenu(e.target)) return;
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            window.open(reportOpenHref, "_blank");
+                          }}
+                        >
                           <div className="min-w-0 flex items-start gap-3">
                             <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700 ring-1 ring-sky-200">
                               <FileText className="h-5 w-5" aria-hidden="true" />
@@ -2237,12 +2263,6 @@ export default function ProjectDetailPage() {
                                 user_id: "",
                                 status: item.status ?? null,
                               });
-                              const reportOpenHref =
-                                item.report_type === "schichtenverzeichnis"
-                                  ? `/api/pdf/schichtenverzeichnis/${item.id}`
-                                  : item.report_type === "tagesbericht_rhein_main_link"
-                                    ? `/api/pdf/tagesbericht-rhein-main-link/${item.id}`
-                                    : `/api/pdf/tagesbericht/${item.id}`;
                               const reportEditHref =
                                 item.report_type === "schichtenverzeichnis"
                                   ? `/projects/${projectId}/reports/schichtenverzeichnis/step/${item.id}/edit`
@@ -2310,10 +2330,26 @@ export default function ProjectDetailPage() {
                             })()}
                           </div>
                         </div>
+                          );
+                        })()}
                       </li>
                     ) : (
                       <li key={`f-${item.name}`} className="p-3">
-                        <div className="grid items-start gap-3 rounded-xl border border-slate-200/70 bg-white p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                        <div
+                          className="grid cursor-pointer items-start gap-3 rounded-xl border border-slate-200/70 bg-white p-3 transition hover:border-slate-300 hover:bg-slate-50/40 sm:p-4 lg:grid-cols-[minmax(0,1fr)_auto]"
+                          role="link"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            if (clickCameFromStreamMenu(e.target)) return;
+                            void openFile(item.name);
+                          }}
+                          onKeyDown={(e) => {
+                            if (clickCameFromStreamMenu(e.target)) return;
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            void openFile(item.name);
+                          }}
+                        >
                           <div className="min-w-0 flex items-center gap-3">
                           {item.isImage ? (
                             <div className="h-36 w-36 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
