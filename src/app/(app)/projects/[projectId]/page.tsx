@@ -26,6 +26,9 @@ type Project = {
   program_borehole?: boolean | null;
   program_surface?: boolean | null;
   program_ramming?: boolean | null;
+  program_grab_drilling?: boolean | null;
+  program_pump_test?: boolean | null;
+  program_well_regeneration?: boolean | null;
   program_custom?: string | null;
   status?: string | null;
   start_date?: string | null;
@@ -305,6 +308,9 @@ export default function ProjectDetailPage() {
     program_borehole: false,
     program_surface: false,
     program_ramming: false,
+    program_grab_drilling: false,
+    program_pump_test: false,
+    program_well_regeneration: false,
     program_custom: "",
     status: "laufend",
     start_date: "",
@@ -355,6 +361,7 @@ export default function ProjectDetailPage() {
   const lastAutoWeatherUrlRef = useRef<string>("");
   const [imagePreviewUrls, setImagePreviewUrls] = useState<Record<string, string>>({});
   const customProgramStorageKey = `project_program_custom_${projectId}`;
+  const extraProgramFlagsStorageKey = `project_program_flags_extra_${projectId}`;
   const [notesInput, setNotesInput] = useState("");
   const notesInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [projectNotes, setProjectNotes] = useState<ProjectNoteEntry[]>([]);
@@ -363,6 +370,38 @@ export default function ProjectDetailPage() {
   const [notesOk, setNotesOk] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
   const [archivingProject, setArchivingProject] = useState(false);
+
+  const readExtraProgramFlags = () => {
+    if (typeof window === "undefined") {
+      return {
+        program_grab_drilling: false,
+        program_pump_test: false,
+        program_well_regeneration: false,
+      };
+    }
+    try {
+      const raw = localStorage.getItem(extraProgramFlagsStorageKey);
+      if (!raw) {
+        return {
+          program_grab_drilling: false,
+          program_pump_test: false,
+          program_well_regeneration: false,
+        };
+      }
+      const parsed = JSON.parse(raw) as Partial<Project>;
+      return {
+        program_grab_drilling: Boolean(parsed.program_grab_drilling),
+        program_pump_test: Boolean(parsed.program_pump_test),
+        program_well_regeneration: Boolean(parsed.program_well_regeneration),
+      };
+    } catch {
+      return {
+        program_grab_drilling: false,
+        program_pump_test: false,
+        program_well_regeneration: false,
+      };
+    }
+  };
 
   const formatProjectDisplayName = (value: { name?: string | null; project_number?: string | null } | null | undefined) => {
     const nr = (value?.project_number ?? "").trim();
@@ -425,9 +464,11 @@ export default function ProjectDetailPage() {
     const projectRow = proj as unknown as Project;
     const storedCustomProgram =
       typeof window !== "undefined" ? localStorage.getItem(customProgramStorageKey)?.trim() ?? "" : "";
+    const extraProgramFlags = readExtraProgramFlags();
     const projectWithCustomProgram: Project = {
       ...projectRow,
       program_custom: storedCustomProgram,
+      ...extraProgramFlags,
       status: normalizeProjectStatus(projectRow.status),
       start_date: toDateInputValue(projectRow.start_date) || null,
       end_date: toDateInputValue(projectRow.end_date) || null,
@@ -452,6 +493,9 @@ export default function ProjectDetailPage() {
       program_borehole: Boolean(projectWithCustomProgram.program_borehole),
       program_surface: Boolean(projectWithCustomProgram.program_surface),
       program_ramming: Boolean(projectWithCustomProgram.program_ramming),
+      program_grab_drilling: Boolean(projectWithCustomProgram.program_grab_drilling),
+      program_pump_test: Boolean(projectWithCustomProgram.program_pump_test),
+      program_well_regeneration: Boolean(projectWithCustomProgram.program_well_regeneration),
       program_custom: projectWithCustomProgram.program_custom ?? "",
       status: normalizeProjectStatus(projectWithCustomProgram.status),
       start_date: toDateInputValue(projectWithCustomProgram.start_date),
@@ -744,6 +788,14 @@ export default function ProjectDetailPage() {
     if (typeof window !== "undefined") {
       if (customProgram) localStorage.setItem(customProgramStorageKey, customProgram);
       else localStorage.removeItem(customProgramStorageKey);
+      localStorage.setItem(
+        extraProgramFlagsStorageKey,
+        JSON.stringify({
+          program_grab_drilling: Boolean(settingsForm.program_grab_drilling),
+          program_pump_test: Boolean(settingsForm.program_pump_test),
+          program_well_regeneration: Boolean(settingsForm.program_well_regeneration),
+        })
+      );
     }
 
     const savedProject = data as unknown as Project;
@@ -751,6 +803,9 @@ export default function ProjectDetailPage() {
       ...(prev ?? {}),
       ...savedProject,
       program_custom: customProgram,
+      program_grab_drilling: Boolean(settingsForm.program_grab_drilling),
+      program_pump_test: Boolean(settingsForm.program_pump_test),
+      program_well_regeneration: Boolean(settingsForm.program_well_regeneration),
       status: normalizeProjectStatus(savedProject.status),
       start_date: toDateInputValue(savedProject.start_date) || null,
       end_date: toDateInputValue(savedProject.end_date) || null,
@@ -1699,41 +1754,94 @@ export default function ProjectDetailPage() {
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
   };
 
-  const saveBlobWithUserTarget = async (blob: Blob, filename: string) => {
-    type SavePickerWindow = Window & {
-      showSaveFilePicker?: (options?: {
-        suggestedName?: string;
-      }) => Promise<{
-        createWritable: () => Promise<{
-          write: (data: Blob) => Promise<void>;
-          close: () => Promise<void>;
-        }>;
-      }>;
-    };
+  type SavePickerWritable = {
+    write: (data: Blob | Uint8Array) => Promise<void>;
+    close: () => Promise<void>;
+  };
+  type SavePickerHandle = {
+    createWritable: () => Promise<SavePickerWritable>;
+  };
+  type DirectoryFileHandle = {
+    createWritable: () => Promise<SavePickerWritable>;
+  };
+  type DirectoryHandle = {
+    getFileHandle: (name: string, options?: { create?: boolean }) => Promise<DirectoryFileHandle>;
+  };
+  type SavePickerWindow = Window & {
+    showSaveFilePicker?: (options?: {
+      suggestedName?: string;
+    }) => Promise<SavePickerHandle>;
+    showDirectoryPicker?: () => Promise<DirectoryHandle>;
+  };
+
+  const openSaveTarget = async (filename: string): Promise<SavePickerWritable | null> => {
     const w = window as SavePickerWindow;
-    if (typeof w.showSaveFilePicker === "function") {
-      const handle = await w.showSaveFilePicker({ suggestedName: filename });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
+    if (typeof w.showSaveFilePicker !== "function") return null;
+    const handle = await w.showSaveFilePicker({ suggestedName: filename });
+    return handle.createWritable();
+  };
+
+  const openBatchSaveDirectory = async (): Promise<DirectoryHandle | null> => {
+    const w = window as SavePickerWindow;
+    if (typeof w.showDirectoryPicker !== "function") return null;
+    return w.showDirectoryPicker();
+  };
+
+  const writeResponseToWritable = async (response: Response, writable: SavePickerWritable) => {
+    if (response.body) {
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) await writable.write(value);
+      }
       await writable.close();
       return;
     }
+    await writable.write(await response.blob());
+    await writable.close();
+  };
+
+  const writeResponseToDirectory = async (response: Response, directory: DirectoryHandle, filename: string) => {
+    const fileHandle = await directory.getFileHandle(filename, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writeResponseToWritable(response, writable);
+  };
+
+  const writeResponseToTarget = async (response: Response, filename: string) => {
+    const writable = await openSaveTarget(filename);
+    if (writable) {
+      await writeResponseToWritable(response, writable);
+      return;
+    }
+
+    // Fallback without save picker support: browser handles destination automatically.
+    const blob = await response.blob();
     downloadBlobToDisk(blob, filename);
   };
 
-  const downloadStreamItem = async (item: StreamItem) => {
+  const downloadStreamItem = async (item: StreamItem, batchDirectory: DirectoryHandle | null = null) => {
     if (item.type === "report") {
-      const href = getReportOpenHref(item.id, item.report_type);
-      const res = await fetch(href, { credentials: "same-origin" });
-      if (!res.ok) throw new Error(`Report-Download fehlgeschlagen (${res.status})`);
-      const blob = await res.blob();
       const fallbackName =
         item.report_type === "schichtenverzeichnis"
           ? "Schichtenverzeichnis"
           : item.report_type === "tagesbericht_rhein_main_link"
             ? "TB-RML"
             : "Tagesbericht";
-      await saveBlobWithUserTarget(blob, `${sanitizeDownloadFilename(item.title, fallbackName)}.pdf`);
+      const filename = `${sanitizeDownloadFilename(item.title, fallbackName)}.pdf`;
+      const href = getReportOpenHref(item.id, item.report_type);
+      const writable = batchDirectory ? null : await openSaveTarget(filename);
+      const res = await fetch(href, { credentials: "same-origin" });
+      if (!res.ok) throw new Error(`Report-Download fehlgeschlagen (${res.status})`);
+      if (batchDirectory) {
+        await writeResponseToDirectory(res, batchDirectory, filename);
+        return;
+      }
+      if (writable) {
+        await writeResponseToWritable(res, writable);
+      } else {
+        await writeResponseToTarget(res, filename);
+      }
       return;
     }
 
@@ -1741,10 +1849,18 @@ export default function ProjectDetailPage() {
       .from("dropData")
       .createSignedUrl(`${projectId}/${item.name}`, 60 * 10);
     if (error || !data?.signedUrl) throw new Error("Signed URL fehlgeschlagen");
+    const writable = batchDirectory ? null : await openSaveTarget(item.name);
     const res = await fetch(data.signedUrl);
     if (!res.ok) throw new Error(`Datei-Download fehlgeschlagen (${res.status})`);
-    const blob = await res.blob();
-    await saveBlobWithUserTarget(blob, item.name);
+    if (batchDirectory) {
+      await writeResponseToDirectory(res, batchDirectory, item.name);
+      return;
+    }
+    if (writable) {
+      await writeResponseToWritable(res, writable);
+      return;
+    }
+    await writeResponseToTarget(res, item.name);
   };
 
   const clickCameFromStreamMenu = (target: EventTarget | null) => {
@@ -1858,10 +1974,20 @@ export default function ProjectDetailPage() {
       return;
     }
     setDownloadingSelectedStream(true);
+    let batchDirectory: DirectoryHandle | null = null;
+    try {
+      batchDirectory = await openBatchSaveDirectory();
+    } catch (error) {
+      setDownloadingSelectedStream(false);
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      console.error("[STREAM BATCH DIRECTORY PICK FAILED]", error);
+      alert("Zielordner konnte nicht geöffnet werden.");
+      return;
+    }
     const failed: string[] = [];
     for (const item of selectedItems) {
       try {
-        await downloadStreamItem(item);
+        await downloadStreamItem(item, batchDirectory);
       } catch (error) {
         const label = item.type === "report" ? item.title : item.name;
         failed.push(label);
@@ -2062,6 +2188,9 @@ export default function ProjectDetailPage() {
                   project.program_borehole ? "Bohrlochsondierung" : null,
                   project.program_surface ? "Oberflächensondierung" : null,
                   project.program_ramming ? "Rammsondierung" : null,
+                  project.program_grab_drilling ? "Greiferbohrung" : null,
+                  project.program_pump_test ? "Pumpversuch" : null,
+                  project.program_well_regeneration ? "Brunnenregenerierung" : null,
                   project.program_custom?.trim() ? project.program_custom.trim() : null,
                 ]
                   .filter(Boolean)
@@ -3109,6 +3238,9 @@ export default function ProjectDetailPage() {
                   { id: "program_borehole", label: "Bohrlochsondierung" },
                   { id: "program_surface", label: "Oberflächensondierung" },
                   { id: "program_ramming", label: "Rammsondierung" },
+                  { id: "program_grab_drilling", label: "Greiferbohrung" },
+                  { id: "program_pump_test", label: "Pumpversuch" },
+                  { id: "program_well_regeneration", label: "Brunnenregenerierung" },
                 ].map((opt) => (
                   <label key={opt.id} className="flex items-center gap-2 text-sm text-gray-700">
                     <input
