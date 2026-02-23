@@ -538,20 +538,40 @@ export async function generateSchichtenverzeichnisPdf(
       });
     });
   };
-  const fitTextToTwoLines = (text: string, maxWidth: number, preferredSize: number, minSize = 7) => {
+  const fitTextToTwoLines = (
+    text: string,
+    maxWidth: number,
+    preferredSize: number,
+    minSize = 7,
+    options?: { ellipsis?: boolean }
+  ) => {
+    const useEllipsis = options?.ellipsis !== false;
+    const hardMinSize = useEllipsis ? minSize : 4;
     for (let size = preferredSize; size >= minSize; size -= 0.5) {
       const lines = wrapText(text, maxWidth, size);
       if (lines.length <= 2) return { size, lines };
     }
+    if (!useEllipsis) {
+      for (let size = minSize - 0.5; size >= hardMinSize; size -= 0.5) {
+        const lines = wrapText(text, maxWidth, size);
+        if (lines.length <= 2) return { size, lines };
+      }
+    }
     const size = minSize;
     const rawLines = wrapText(text, maxWidth, size);
     if (rawLines.length <= 2) return { size, lines: rawLines };
+    if (!useEllipsis) {
+      // Never cut characters for these fields. If it still doesn't fit in two lines,
+      // keep all text on line 2 (may overflow slightly, but no truncation).
+      return { size: hardMinSize, lines: [rawLines[0] ?? "", rawLines.slice(1).join(" ")] };
+    }
     const firstLine = rawLines[0];
     let secondLine = rawLines.slice(1).join(" ");
-    while (secondLine.length > 0 && font.widthOfTextAtSize(`${secondLine}...`, size) > maxWidth) {
+    const suffix = useEllipsis ? "..." : "";
+    while (secondLine.length > 0 && font.widthOfTextAtSize(`${secondLine}${suffix}`, size) > maxWidth) {
       secondLine = secondLine.slice(0, -1);
     }
-    return { size, lines: [firstLine, `${secondLine}...`] };
+    return { size, lines: [firstLine, `${secondLine}${suffix}`] };
   };
   const normalizeProbeArt = (value: string) => {
     const normalized = value.trim().toUpperCase();
@@ -780,9 +800,9 @@ export async function generateSchichtenverzeichnisPdf(
         drawText(pageIndex, text, x, y, baseSize);
         return;
       }
-      const fitted = fitTextToTwoLines(text, maxWidth, baseSize, 7);
-      const lineHeight = Math.max(7, Math.round(fitted.size * 1.15));
-      const startY = y + (fitted.lines.length > 1 ? 5 : 2);
+      const fitted = fitTextToTwoLines(text, maxWidth, baseSize, 7, { ellipsis: false });
+      const lineHeight = Math.max(8, Math.round(fitted.size * 1.25));
+      const startY = y + (fitted.lines.length > 1 ? 1 : 2);
       fitted.lines.forEach((line, idx) => {
         drawText(pageIndex, line, x, startY - idx * lineHeight, fitted.size);
       });
@@ -795,9 +815,9 @@ export async function generateSchichtenverzeichnisPdf(
         drawText(pageIndex, text, x, y, baseSize);
         return;
       }
-      const fitted = fitTextToTwoLines(text, maxWidth, baseSize, 6.5);
-      const lineHeight = Math.max(7, Math.round(fitted.size * 1.15));
-      const startY = y + (fitted.lines.length > 1 ? 5 : 2);
+      const fitted = fitTextToTwoLines(text, maxWidth, baseSize, 6.5, { ellipsis: false });
+      const lineHeight = Math.max(8, Math.round(fitted.size * 1.25));
+      const startY = y + (fitted.lines.length > 1 ? 1 : 2);
       fitted.lines.forEach((line, idx) => {
         drawText(pageIndex, line, x, startY - idx * lineHeight, fitted.size);
       });

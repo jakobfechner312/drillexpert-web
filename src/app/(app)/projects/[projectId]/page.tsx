@@ -193,15 +193,10 @@ const ProjectMapEmbed = memo(function ProjectMapEmbed({
 }) {
   return (
     <div className="mt-4 rounded-xl border border-slate-200/70 bg-white p-3 shadow-sm">
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-slate-800">{mapTitle || "Google My Maps"}</div>
           <div className="mt-1 truncate text-xs text-slate-500">{mapUrl}</div>
-        </div>
-        <div className="ml-2 shrink-0">
-          <a href={mapUrl} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-xs">
-            In Google Maps öffnen
-          </a>
         </div>
       </div>
       <div className="overflow-hidden rounded-lg border border-slate-200/70">
@@ -1659,7 +1654,7 @@ export default function ProjectDetailPage() {
   };
 
   const clickCameFromStreamMenu = (target: EventTarget | null) => {
-    return target instanceof HTMLElement && Boolean(target.closest("[data-stream-menu]"));
+    return target instanceof Element && Boolean(target.closest("[data-stream-menu]"));
   };
 
   const isImageFile = (name: string) => {

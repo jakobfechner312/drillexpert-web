@@ -4070,7 +4070,7 @@ export default function SchichtenverzeichnisForm({
                                 onChange={(e) => {
                                   if (e.target.value === "__custom__") {
                                     setKiesKoernungMode("custom");
-                                    update("kies_koernung", "");
+                                    update("kies_koernung", "benutzerdefiniert");
                                     return;
                                   }
                                   setKiesKoernungMode("list");
@@ -4089,7 +4089,11 @@ export default function SchichtenverzeichnisForm({
                                 <input
                                   className="mt-2 h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
                                   placeholder="Eigene Kies-Körnung"
-                                  value={data.kies_koernung ?? ""}
+                                  value={
+                                    String(data.kies_koernung ?? "").trim().toLowerCase() === "benutzerdefiniert"
+                                      ? ""
+                                      : (data.kies_koernung ?? "")
+                                  }
                                   onChange={(e) => update("kies_koernung", e.target.value)}
                                 />
                               ) : null}
@@ -4112,7 +4116,7 @@ export default function SchichtenverzeichnisForm({
                                 onChange={(e) => {
                                   if (e.target.value === "__custom__") {
                                     setGegenfilterKoernungMode("custom");
-                                    update("gegenfilter_koernung", "");
+                                    update("gegenfilter_koernung", "benutzerdefiniert");
                                     return;
                                   }
                                   setGegenfilterKoernungMode("list");
@@ -4131,7 +4135,11 @@ export default function SchichtenverzeichnisForm({
                                 <input
                                   className="mt-2 h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
                                   placeholder="Eigene Kies-Körnung"
-                                  value={data.gegenfilter_koernung ?? ""}
+                                  value={
+                                    String(data.gegenfilter_koernung ?? "").trim().toLowerCase() === "benutzerdefiniert"
+                                      ? ""
+                                      : (data.gegenfilter_koernung ?? "")
+                                  }
                                   onChange={(e) => update("gegenfilter_koernung", e.target.value)}
                                 />
                               ) : null}
