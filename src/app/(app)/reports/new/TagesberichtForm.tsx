@@ -145,6 +145,7 @@ const SPT_DEFAULT_SEGMENT_CM = 15;
 const DRILLER_DEVICE_HISTORY_KEY = "tagesbericht_driller_device_history_v1";
 const RML_BOHRHELFER_HISTORY_BY_USER_KEY = "tagesbericht_rml_bohrhelfer_history_by_user_v1";
 const RML_REPORT_COUNTER_BY_USER_KEY = "tagesbericht_rml_report_counter_by_user_v1";
+const RML_FIXED_CLIENT = "Amprion";
 
   const normalizeDrillerName = (value: unknown) =>
   String(value ?? "")
@@ -861,9 +862,9 @@ export default function TagesberichtForm({
     return {
       project: String(p.name ?? "").trim(),
       aNr: String(p.project_number ?? "").trim(),
-      client: String(p.client_name ?? "").trim(),
+      client: isRmlReport ? RML_FIXED_CLIENT : String(p.client_name ?? "").trim(),
     };
-  }, [supabase]);
+  }, [isRmlReport, supabase]);
 
   const applyProjectPrefill = useCallback(async (targetProjectId: string, force = false) => {
     const prefill = await fetchProjectPrefill(targetProjectId);
@@ -888,10 +889,10 @@ export default function TagesberichtForm({
         ...source,
         project: prefill.project || source.project,
         aNr: prefill.aNr || source.aNr,
-        client: prefill.client || source.client,
+        client: isRmlReport ? RML_FIXED_CLIENT : (prefill.client || source.client),
       };
     },
-    [fetchProjectPrefill]
+    [fetchProjectPrefill, isRmlReport]
   );
 
   const createProject = useCallback(async () => {
@@ -1884,9 +1885,10 @@ export default function TagesberichtForm({
         } else if (reportType === "tagesbericht_rhein_main_link") {
           const deCode = parseRmlDeviceSlots(reportForSave?.device)?.[0]?.code || "DE1";
           const datum = normalizeTitlePart(reportForSave?.date);
+          const compactDatum = datum.replace(/-/g, "");
           const bohrung = normalizeTitlePart(reportForSave?.bohrungNr);
           const safeBohrung = bohrung || "Bohrung";
-          title = `BTB_${deCode}_${datum}_${safeBohrung}`;
+          title = `BTB_${deCode}_${compactDatum || datum}_${safeBohrung}`;
         } else {
           title =
             reportForSave?.project?.trim()
@@ -2287,7 +2289,11 @@ if (mode === "edit") {
   const buildPdfPayload = (source: Tagesbericht): Tagesbericht => {
     const fixedCustomCycles = Array.isArray(customWorkCycles) ? customWorkCycles : [];
     if (source.workCyclesSame) {
-      return { ...source, customWorkCycles: fixedCustomCycles };
+      return {
+        ...source,
+        client: reportType === "tagesbericht_rhein_main_link" ? RML_FIXED_CLIENT : source.client,
+        customWorkCycles: fixedCustomCycles,
+      };
     }
     const workers = Array.isArray(source.workers) ? source.workers : [];
     const union: string[] = [];
@@ -2320,11 +2326,20 @@ if (mode === "edit") {
     });
     return {
       ...source,
+      client: reportType === "tagesbericht_rhein_main_link" ? RML_FIXED_CLIENT : source.client,
       workCycles: cycles,
       workers: mappedWorkers,
       customWorkCycles: fixedCustomCycles,
     };
   };
+
+  useEffect(() => {
+    if (!isRmlReport) return;
+    setReport((prev) => {
+      if (String(prev.client ?? "").trim() === RML_FIXED_CLIENT) return prev;
+      return { ...prev, client: RML_FIXED_CLIENT };
+    });
+  }, [isRmlReport]);
 
   useEffect(() => {
     if (mode === "edit" || hasDraftId) return;
@@ -2422,7 +2437,7 @@ if (mode === "edit") {
         date: today,
         project: "",
         firma: "",
-        client: "",
+        client: RML_FIXED_CLIENT,
         device: "Atego Tyroller",
         plz: "79312",
         ort: "Emmendingen",
@@ -2515,7 +2530,7 @@ if (mode === "edit") {
       reportType,
       date: today,
       project: "Baustelle Freiburg Nord",
-      client: "Stadt Freiburg",
+      client: RML_FIXED_CLIENT,
       firma: "Drillexpert GmbH",
       berichtNr: "RML-001",
       plz: "79312",

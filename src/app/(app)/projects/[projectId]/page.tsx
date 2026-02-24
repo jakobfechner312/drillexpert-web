@@ -337,6 +337,7 @@ export default function ProjectDetailPage() {
   const [renamingFile, setRenamingFile] = useState(false);
   const renameUploadBackdropPressRef = useRef(false);
   const renameFileBackdropPressRef = useRef(false);
+  const settingsBackdropPressRef = useRef(false);
   const [renameUploadOpen, setRenameUploadOpen] = useState(false);
   const [pendingUploadFiles, setPendingUploadFiles] = useState<PendingUploadFile[]>([]);
   const maxFileSizeMb = 25;
@@ -3087,10 +3088,14 @@ export default function ProjectDetailPage() {
       {settingsOpen && (
         <div
           className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4"
+          onMouseDown={(e) => {
+            settingsBackdropPressRef.current = e.target === e.currentTarget;
+          }}
           onClick={(e) => {
-            if (e.target === e.currentTarget) {
+            if (e.target === e.currentTarget && settingsBackdropPressRef.current) {
               setSettingsOpen(false);
             }
+            settingsBackdropPressRef.current = false;
           }}
         >
           <div

@@ -3,8 +3,8 @@ import fs from "fs";
 import path from "path";
 
 const CANDIDATE_TEMPLATE_NAMES = [
-  "RML_TB.pdf",
   "TB_RML.pdf",
+  "RML_TB.pdf",
   "tagesbericht_rhein_main_link.pdf",
   "rhein_main_tagesbericht.pdf",
   "rhein-main-link-tagesbericht.pdf",
