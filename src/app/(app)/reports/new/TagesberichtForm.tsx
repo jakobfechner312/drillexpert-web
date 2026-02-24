@@ -2779,6 +2779,9 @@ if (mode === "edit") {
     if (!isRml) return;
     setReport((prev) => {
       const rows = Array.isArray(prev.tableRows) && prev.tableRows.length ? prev.tableRows : [emptyTableRow()];
+      if (rows.length > MAX_TABLE_ROWS) {
+        return { ...prev, tableRows: rows.slice(0, MAX_TABLE_ROWS) };
+      }
       let changed = false;
       const nextRows = rows.map((row) => {
         const bohrverfahren = String(row.verrohrtFlags?.[0] ?? "").trim();
@@ -2803,7 +2806,7 @@ if (mode === "edit") {
       if (!changed) return prev;
       return { ...prev, tableRows: nextRows };
     });
-  }, [isRml]);
+  }, [isRml, MAX_TABLE_ROWS]);
   const safeWaterLevelRows = useMemo(
     () =>
       Array.isArray(report.waterLevelRows) && report.waterLevelRows.length
