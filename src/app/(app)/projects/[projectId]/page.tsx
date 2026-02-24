@@ -919,19 +919,23 @@ export default function ProjectDetailPage() {
     await persistProjectNotes(nextEntries, "Notiz aktualisiert ✅");
   };
 
-  const handleNotesInputChange = (value: string) => {
+  const handleNotesInputChange = (
+    value: string,
+    selection?: { start: number | null; end: number | null }
+  ) => {
     const next = value.slice(0, 1500);
     setNotesInput(next);
     if (notesError) setNotesError(null);
     if (notesOk) setNotesOk(null);
 
-    // Keep cursor stable on mobile Safari while state updates/re-renders.
+    // Keep cursor stable on mobile Safari while preserving in-text editing position.
     requestAnimationFrame(() => {
       const input = notesInputRef.current;
       if (!input) return;
       if (document.activeElement !== input) input.focus();
-      const pos = Math.min(next.length, input.value.length);
-      input.setSelectionRange(pos, pos);
+      const start = Math.max(0, Math.min(selection?.start ?? next.length, next.length));
+      const end = Math.max(0, Math.min(selection?.end ?? start, next.length));
+      input.setSelectionRange(start, end);
     });
   };
 
@@ -2837,7 +2841,12 @@ export default function ProjectDetailPage() {
             <textarea
               ref={notesInputRef}
               value={notesInput}
-              onChange={(e) => handleNotesInputChange(e.target.value)}
+              onChange={(e) =>
+                handleNotesInputChange(e.target.value, {
+                  start: e.target.selectionStart,
+                  end: e.target.selectionEnd,
+                })
+              }
               placeholder="z. B. Offene Bugs, Rückfragen vom Bauleiter, nächste Schritte…"
               className="min-h-[120px] w-full rounded-xl border border-slate-200/70 px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
             />

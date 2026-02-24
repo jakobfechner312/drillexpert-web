@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import "./globals.css";
@@ -18,7 +18,6 @@ export const metadata: Metadata = {
   description: "Digitale Tagesberichte",
   applicationName: "Drillexpert",
   manifest: "/manifest.json",
-  themeColor: "#0f6ca8",
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "32x32", type: "image/x-icon" },
@@ -38,6 +37,10 @@ export const metadata: Metadata = {
     "apple-mobile-web-app-status-bar-style": "default",
     "application-name": "Drillexpert",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f6ca8",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
