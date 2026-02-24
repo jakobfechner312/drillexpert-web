@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb, degrees } from "pdf-lib";
 import fs from "fs";
 import path from "path";
+import { requireApiUser } from "@/lib/apiAuth";
 
 function getWeekdayFromDate(dateStr: string): number {
       // dateStr = "YYYY-MM-DD"
@@ -35,6 +36,9 @@ function calcDurationHours(from: unknown, to: unknown): string {
 
 export async function POST(req: Request) {
   try {
+    const auth = await requireApiUser();
+    if (auth.response) return auth.response;
+
     const data = await req.json();
 
     const templatePath = path.join(process.cwd(), "public", "templates", "tagesbericht_template.pdf");

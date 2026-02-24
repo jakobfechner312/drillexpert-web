@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -79,6 +80,9 @@ const normalizeDomain = (raw: string) =>
     .replace(/\/.*$/, "");
 
 export async function GET(request: Request) {
+  const auth = await requireApiUser();
+  if (auth.response) return auth.response;
+
   const token = process.env.VERCEL_API_TOKEN?.trim();
   if (!token) {
     return NextResponse.json(

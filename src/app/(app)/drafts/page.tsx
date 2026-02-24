@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/browser";
-import { FileClock, FileText, Layers3, Search } from "lucide-react";
+import { FileClock, FileText, Layers3, MoreHorizontal, Search } from "lucide-react";
 
 type DraftRow = {
   id: string;
@@ -20,6 +20,7 @@ export default function DraftsPage() {
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
   const [query, setQuery] = useState("");
   const [kindFilter, setKindFilter] = useState<DraftKind>("all");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const deleteDraft = async (draftId: string) => {
     if (!confirm("Entwurf wirklich löschen?")) return;
@@ -61,6 +62,20 @@ export default function DraftsPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-kebab-menu]")) return;
+      setOpenMenuId(null);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
   }, []);
 
   const draftKind = (title: string): Exclude<DraftKind, "all"> => {
@@ -128,7 +143,7 @@ export default function DraftsPage() {
       {err && <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</p>}
 
       {!loading && !err && (
-        <div className="overflow-hidden rounded-3xl border border-teal-200/70 bg-gradient-to-b from-white via-white to-teal-50/40 shadow-sm">
+        <div className="rounded-3xl border border-teal-200/70 bg-gradient-to-b from-white via-white to-teal-50/40 shadow-sm">
           <div className="border-b border-teal-200/60 bg-gradient-to-r from-teal-50/60 to-white p-4">
             <div className="flex flex-col items-stretch justify-between gap-3 lg:flex-row lg:items-center">
               <div>
@@ -182,12 +197,14 @@ export default function DraftsPage() {
               {filteredDrafts.map((d) => {
                 const tone = draftTone(d.title);
                 const ToneIcon = tone.icon;
+                const draftMenuId = `draft-${d.id}`;
                 return (
                 <div
                   key={d.id}
                   className={[
-                    "rounded-2xl border border-slate-200/80 bg-gradient-to-br p-4 shadow-sm transition",
+                    "relative rounded-2xl border border-slate-200/80 bg-gradient-to-br p-4 shadow-sm transition",
                     "hover:-translate-y-0.5 hover:shadow-md",
+                    openMenuId === draftMenuId ? "z-20" : "z-0",
                     tone.card,
                   ].join(" ")}
                 >
@@ -206,20 +223,46 @@ export default function DraftsPage() {
                     </span>
                   </div>
 
-                  <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
-                    <Link
-                      href={`/reports/new?draftId=${d.id}`}
-                      className="btn btn-secondary btn-xs w-full sm:w-auto"
-                    >
-                      Öffnen
-                    </Link>
-                    <button
-                      type="button"
-                      className="btn btn-danger btn-xs w-full sm:w-auto"
-                      onClick={() => deleteDraft(d.id)}
-                    >
-                      Löschen
-                    </button>
+                  <div className="mt-4 flex justify-end">
+                    <div className="relative" data-kebab-menu>
+                      {(() => {
+                        const isOpen = openMenuId === draftMenuId;
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-50"
+                              onClick={() => setOpenMenuId(isOpen ? null : draftMenuId)}
+                              aria-label="Aktionen"
+                              aria-expanded={isOpen}
+                            >
+                              <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                            </button>
+                            {isOpen ? (
+                              <div className="absolute right-0 top-full z-[80] mt-2 w-44 rounded-xl border border-slate-200/80 bg-white p-1 shadow-lg">
+                                <Link
+                                  href={`/reports/new?draftId=${d.id}`}
+                                  className="flex rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                  onClick={() => setOpenMenuId(null)}
+                                >
+                                  Öffnen
+                                </Link>
+                                <button
+                                  type="button"
+                                  className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    deleteDraft(d.id);
+                                  }}
+                                >
+                                  Löschen
+                                </button>
+                              </div>
+                            ) : null}
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
               )})}

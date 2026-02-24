@@ -301,7 +301,9 @@ export async function generateTagesberichtPdf(data: any): Promise<Uint8Array> {
   const weekendWorkers = Array.isArray(data?.workers) ? data.workers : [];
   const weekendRows = weekendWorkers
     .map((w: any) => {
-      const active = Boolean(w?.wochenendfahrtJa) || String(w?.wochenendfahrt ?? "").trim().length > 0;
+      // Zusatzseite nur bei explizit gesetzter Wochenendfahrt (Ja).
+      // Legacy-Textwerte wie "0" sollen die Seite nicht ausloesen.
+      const active = w?.wochenendfahrtJa === true;
       const from = String(w?.wochenendfahrtVon ?? "").trim();
       const to = String(w?.wochenendfahrtBis ?? "").trim();
       const duration = calcDurationHours(from, to) || String(w?.wochenendfahrt ?? "").trim();

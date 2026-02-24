@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/apiAuth";
+import { isAllowedMapsUrl } from "@/lib/mapsUrlSafety";
 
 export const runtime = "nodejs";
 
@@ -222,6 +224,7 @@ const extractGoogleMapsUrlFromHtml = (html: string): string | null => {
 };
 
 const resolveMapsUrl = async (rawUrl: string): Promise<string> => {
+  if (!isAllowedMapsUrl(rawUrl)) return rawUrl;
   try {
     const parsed = new URL(rawUrl);
     const isShortGoogleMaps =
@@ -309,14 +312,23 @@ const geocodePlaceName = async (name: string): Promise<{ lat: number; lon: numbe
 };
 
 export async function GET(request: Request) {
+  const auth = await requireApiUser();
+  if (auth.response) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const mymapsUrl = searchParams.get("mymapsUrl")?.trim() ?? "";
   const placeHint = searchParams.get("placeHint")?.trim() ?? "";
   if (!mymapsUrl) {
     return NextResponse.json({ error: "Missing mymapsUrl" }, { status: 400 });
   }
+  if (!isAllowedMapsUrl(mymapsUrl)) {
+    return NextResponse.json({ error: "Ungültiger Maps-Link." }, { status: 400 });
+  }
 
   const resolvedUrl = await resolveMapsUrl(mymapsUrl);
+  if (!isAllowedMapsUrl(resolvedUrl)) {
+    return NextResponse.json({ error: "Ungültiger Maps-Link." }, { status: 400 });
+  }
   let coords = extractCoordsFromMapsUrl(mymapsUrl) ?? extractCoordsFromMapsUrl(resolvedUrl);
   if (!coords) {
     const mid = extractMidFromMapsUrl(mymapsUrl) ?? extractMidFromMapsUrl(resolvedUrl);
@@ -334,6 +346,9 @@ export async function GET(request: Request) {
         },
       });
       if (res.ok) {
+        if (res.url && !isAllowedMapsUrl(res.url)) {
+          return NextResponse.json({ error: "Ungültiger Redirect-Zielhost." }, { status: 400 });
+        }
         const html = await res.text();
         coords = extractCoordsFromText(html);
         const place = extractPlaceTitleFromHtml(html);

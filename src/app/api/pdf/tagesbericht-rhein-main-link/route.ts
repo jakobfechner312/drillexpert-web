@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { generateTagesberichtRheinMainLinkPdf } from "@/lib/pdf/tagesberichtRheinMainLink";
+import { requireApiUser } from "@/lib/apiAuth";
 
 export async function POST(req: Request) {
   try {
+    const auth = await requireApiUser();
+    if (auth.response) return auth.response;
+
     const data = await req.json();
     const pdfBytes = await generateTagesberichtRheinMainLinkPdf(data);
 

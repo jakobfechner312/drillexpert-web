@@ -229,8 +229,13 @@ export default function ArchivePage() {
               <p className="mt-3 text-sm text-slate-500">Keine archivierten Projekte.</p>
             ) : (
               <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {projects.map((project) => (
-                  <div key={project.id} className="rounded-2xl border border-cyan-200/60 bg-white p-3.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                {projects.map((project) => {
+                  const projectMenuId = `project-${project.id}`;
+                  return (
+                  <div key={project.id} className={[
+                    "relative rounded-2xl border border-cyan-200/60 bg-white p-3.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+                    openMenuId === projectMenuId ? "z-20" : "z-0",
+                  ].join(" ")}>
                     <div className="font-medium text-slate-900">
                       {project.project_number ? `${project.project_number} - ${project.name}` : project.name}
                     </div>
@@ -243,15 +248,14 @@ export default function ArchivePage() {
                       ) : <span />}
                       <div className="relative" data-kebab-menu>
                         {(() => {
-                          const menuId = `project-${project.id}`;
-                          const isOpen = openMenuId === menuId;
+                          const isOpen = openMenuId === projectMenuId;
                           const canRestore = currentUserId && project.owner_id === currentUserId;
                           return (
                             <>
                               <button
                                 type="button"
                                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-50"
-                                onClick={() => setOpenMenuId(isOpen ? null : menuId)}
+                                onClick={() => setOpenMenuId(isOpen ? null : projectMenuId)}
                                 aria-label="Aktionen"
                                 aria-expanded={isOpen}
                               >
@@ -275,7 +279,7 @@ export default function ArchivePage() {
                       </div>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </section>
@@ -292,8 +296,13 @@ export default function ArchivePage() {
               <p className="mt-3 text-sm text-slate-500">Keine archivierten Berichte.</p>
             ) : (
               <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {reports.map((report) => (
-                  <div key={report.id} className="rounded-2xl border border-blue-200/60 bg-white p-3.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                {reports.map((report) => {
+                  const archivedReportMenuId = `archived-report-${report.id}`;
+                  return (
+                  <div key={report.id} className={[
+                    "relative rounded-2xl border border-blue-200/60 bg-white p-3.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+                    openMenuId === archivedReportMenuId ? "z-20" : "z-0",
+                  ].join(" ")}>
                     <div className="font-medium text-slate-900 break-words">{report.title}</div>
                     <div className="mt-1 text-xs text-slate-500">
                       {new Date(report.created_at).toLocaleString()}
@@ -309,8 +318,7 @@ export default function ArchivePage() {
                     <div className="mt-3 flex justify-end">
                       <div className="relative" data-kebab-menu>
                         {(() => {
-                          const menuId = `archived-report-${report.id}`;
-                          const isOpen = openMenuId === menuId;
+                          const isOpen = openMenuId === archivedReportMenuId;
                           const openHref =
                             report.report_type === "schichtenverzeichnis"
                               ? `/api/pdf/schichtenverzeichnis/${report.id}`
@@ -322,7 +330,7 @@ export default function ArchivePage() {
                               <button
                                 type="button"
                                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-50"
-                                onClick={() => setOpenMenuId(isOpen ? null : menuId)}
+                                onClick={() => setOpenMenuId(isOpen ? null : archivedReportMenuId)}
                                 aria-label="Aktionen"
                                 aria-expanded={isOpen}
                               >
@@ -344,7 +352,7 @@ export default function ArchivePage() {
                       </div>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </section>

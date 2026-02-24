@@ -1981,7 +1981,7 @@ export default function ProjectDetailPage() {
     }
     if (!supportsBatchDirectoryPicker) {
       const confirmed = window.confirm(
-        `${browserDownloadModeLabel} unterstützt hier keinen Ordner-Picker. Die ausgewählten Dateien laufen über normale Browser-Downloads (${selectedItems.length}x). Fortfahren?`
+        `${browserDownloadModeLabel} unterstützt hier keinen Ordner-Picker. Die ausgewählten Dateien laufen über Browser-Downloads (${selectedItems.length}x). Fortfahren?`
       );
       if (!confirmed) return;
     }
@@ -2400,8 +2400,8 @@ export default function ProjectDetailPage() {
             className="overflow-visible"
             bodyClassName="overflow-visible"
             action={
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
-                <div className="flex flex-wrap gap-2">
+              <div className="flex w-full flex-col items-end gap-2">
+                <div className="flex w-full flex-wrap justify-end gap-2">
                   <button
                     type="button"
                     className={[
@@ -2422,7 +2422,7 @@ export default function ProjectDetailPage() {
                     <>
                       <button
                         type="button"
-                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
                         onClick={() =>
                           setSelectedStreamKeys(allVisibleSelected ? [] : items.map((item) => streamItemKey(item)))
                         }
@@ -2433,7 +2433,7 @@ export default function ProjectDetailPage() {
                       </button>
                       <button
                         type="button"
-                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 shadow-sm hover:bg-emerald-100 disabled:opacity-60"
                         onClick={() => void downloadSelectedStreamItems()}
                         disabled={selectedVisibleCount === 0 || downloadingSelectedStream}
                       >
@@ -2444,12 +2444,12 @@ export default function ProjectDetailPage() {
                   ) : null}
                 </div>
                 {streamSelectMode && !supportsBatchDirectoryPicker ? (
-                  <div className="max-w-md rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <div className="w-full max-w-md self-end rounded-lg border border-amber-200/90 bg-amber-50/80 px-3 py-2 text-[11px] leading-4 text-amber-900">
                     {browserDownloadModeLabel} unterstützt hier keinen Ordner-Picker. Download läuft über Browser-Downloads
                     (normaler Download-Ordner / Browser-Einstellung).
                   </div>
                 ) : null}
-                <div className="flex flex-wrap gap-2">
+                <div className="flex w-full flex-wrap justify-end gap-2">
                   {[
                     { id: "all", label: "Alle" },
                     { id: "reports", label: "Berichte" },
@@ -2471,7 +2471,7 @@ export default function ProjectDetailPage() {
                     </button>
                   ))}
                 </div>
-                <label className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm sm:w-64">
+                <label className="flex w-full max-w-sm self-end items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm sm:w-72">
                   <Search className="h-4 w-4 text-slate-400" aria-hidden="true" />
                   <input
                     className="w-full border-0 bg-transparent p-0 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"

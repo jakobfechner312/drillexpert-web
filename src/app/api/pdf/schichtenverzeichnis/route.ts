@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { generateSchichtenverzeichnisPdf } from "@/lib/pdf/schichtenverzeichnis";
+import { requireApiUser } from "@/lib/apiAuth";
 
 export async function GET(req: Request) {
   try {
+    const auth = await requireApiUser();
+    if (auth.response) return auth.response;
+
     const url = new URL(req.url);
     const debugGrid = url.searchParams.get("debug") === "1";
     const debugGridStep = Number(url.searchParams.get("grid") ?? "") || undefined;
@@ -49,6 +53,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const auth = await requireApiUser();
+    if (auth.response) return auth.response;
+
     const data = await req.json();
     const url = new URL(req.url);
     const debugGrid = url.searchParams.get("debug") === "1";

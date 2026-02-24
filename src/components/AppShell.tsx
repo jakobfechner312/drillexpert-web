@@ -8,6 +8,18 @@ import { ReactNode, useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { ChevronDown, Menu, X } from "lucide-react";
 
+const EXCEL_BETA_USERS_CLIENT = new Set(
+  (process.env.NEXT_PUBLIC_EXCEL_BETA_USERS ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+const canUseExcelBetaClient = (email: string | null | undefined) => {
+  const normalized = String(email ?? "").trim().toLowerCase();
+  return Boolean(normalized) && EXCEL_BETA_USERS_CLIENT.has(normalized);
+};
+
 export default function AppShell({
   title = "Drillexpert",
   subtitle,
@@ -578,6 +590,7 @@ function SidebarNav() {
       <SidebarLink href="/dashboard" label="Dashboard" />
       <SidebarProjects />
       <SidebarReports />
+      <SidebarExcelBeta />
       <SidebarLink href="/drafts" label="Meine Entwürfe" />
       <SidebarLink href="/settings" label="Einstellungen" />
       <SidebarLink href="/archive" label="Archiv" />
@@ -590,4 +603,24 @@ function SidebarNav() {
       </div>
     </nav>
   );
+}
+
+function SidebarExcelBeta() {
+  const supabase = useMemo(() => createClient(), []);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!mounted) return;
+      setVisible(canUseExcelBetaClient(data.user?.email ?? null));
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
+
+  if (!visible) return null;
+  return <SidebarLink href="/excel" label="Excel-Formulare (Beta)" />;
 }

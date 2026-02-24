@@ -526,38 +526,45 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   } as const;
   const selectedPegelDm = pegelRows.find((row: any) => String(row?.pegelDm ?? "").trim().length > 0)?.pegelDm;
   draw(selectedPegelDm, 195, 360, 9, 14);
-  for (let i = 0; i < Math.min(10, pegelRows.length); i++) {
+  const lowerRowCount = Math.min(10, Math.max(pegelRows.length, rows.length));
+  for (let i = 0; i < lowerRowCount; i++) {
     const p = pegelRows[i] ?? {};
-    const rowHasValue = Object.values(p).some((v) => {
+    const rowHasPegelValue = Object.values(p).some((v) => {
       if (typeof v === "boolean") return v;
       return String(v ?? "").trim() !== "";
     });
-    if (!rowHasValue) continue;
+    const rowHasSptValue = Object.values(rows[i] ?? {}).some((v) => {
+      if (typeof v === "boolean") return v;
+      return String(v ?? "").trim() !== "";
+    });
+    if (!rowHasPegelValue && !rowHasSptValue) continue;
     const y = lowerYStart - i * lowerYStep;
-    const explicitType = String(p?.ausbauArtType ?? "").trim();
-    const customAusbauArt = String(p?.ausbauArtCustom ?? "").trim();
-    const ausbauArt = explicitType === "stahlaufsatz"
-      ? "Stahlaufsatz"
-      : explicitType === "vollrohr"
-        ? "Vollrohr"
-        : explicitType === "individuell"
-          ? (customAusbauArt || "Individuell")
-          : p?.aufsatzStahlVon || p?.aufsatzStahlBis
-            ? "Stahlaufsatz"
-            : p?.rohrePvcVon || p?.rohrePvcBis
-              ? "Vollrohr"
-              : customAusbauArt || "Filter";
-    const sw = String(p?.schlitzweiteSwMm ?? "").trim();
-    const isFilter = explicitType === "filter" || (!explicitType && ausbauArt === "Filter");
-    const ausbauLabel = isFilter && sw ? `${ausbauArt}, SW: ${sw} mm` : ausbauArt;
+    if (rowHasPegelValue) {
+      const explicitType = String(p?.ausbauArtType ?? "").trim();
+      const customAusbauArt = String(p?.ausbauArtCustom ?? "").trim();
+      const ausbauArt = explicitType === "stahlaufsatz"
+        ? "Stahlaufsatz"
+        : explicitType === "vollrohr"
+          ? "Vollrohr"
+          : explicitType === "individuell"
+            ? (customAusbauArt || "Individuell")
+            : p?.aufsatzStahlVon || p?.aufsatzStahlBis
+              ? "Stahlaufsatz"
+              : p?.rohrePvcVon || p?.rohrePvcBis
+                ? "Vollrohr"
+                : customAusbauArt || "Filter";
+      const sw = String(p?.schlitzweiteSwMm ?? "").trim();
+      const isFilter = explicitType === "filter" || (!explicitType && ausbauArt === "Filter");
+      const ausbauLabel = isFilter && sw ? `${ausbauArt}, SW: ${sw} mm` : ausbauArt;
 
-    draw(p?.filterVon, lowerCols.ausbauVon, y, 9, 8);
-    draw(p?.filterBis, lowerCols.ausbauBis, y, 9, 8);
-    draw(ausbauLabel, lowerCols.ausbauRohr, y, 9, 32);
+      draw(p?.filterVon, lowerCols.ausbauVon, y, 9, 8);
+      draw(p?.filterBis, lowerCols.ausbauBis, y, 9, 8);
+      draw(ausbauLabel, lowerCols.ausbauRohr, y, 9, 32);
 
-    draw(p?.tonVon, lowerCols.verfVon, y, 9, 8);
-    draw(p?.tonBis, lowerCols.verfBis, y, 9, 8);
-    draw(p?.filterkiesKoernung, lowerCols.verfMaterial, y, 8, 24);
+      draw(p?.tonVon, lowerCols.verfVon, y, 9, 8);
+      draw(p?.tonBis, lowerCols.verfBis, y, 9, 8);
+      draw(p?.filterkiesKoernung, lowerCols.verfMaterial, y, 8, 24);
+    }
 
     const s = rows[i]?.spt ? String(rows[i].spt).split("/") : [];
     draw(rows[i]?.gebohrtVon, lowerCols.sptVon, y, 9, 8);

@@ -220,12 +220,14 @@ export default function MyReportsPage() {
             <div className="grid grid-cols-1 gap-3 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-3">
               {filteredReports.map((r) => {
                 const type = typeBadge(r.report_type);
+                const reportMenuId = `report-${r.id}`;
                 return (
                   <div
                     key={r.id}
                     className={[
-                      "rounded-2xl border border-slate-200/80 bg-gradient-to-br p-4 shadow-sm transition",
+                      "relative rounded-2xl border border-slate-200/80 bg-gradient-to-br p-4 shadow-sm transition",
                       "hover:-translate-y-0.5 hover:shadow-md",
+                      openMenuId === reportMenuId ? "z-20" : "z-0",
                       type.card,
                     ].join(" ")}
                   >
@@ -251,8 +253,7 @@ export default function MyReportsPage() {
                     <div className="mt-4 flex justify-end">
                       <div className="relative" data-kebab-menu>
                         {(() => {
-                          const menuId = `report-${r.id}`;
-                          const isOpen = openMenuId === menuId;
+                          const isOpen = openMenuId === reportMenuId;
                           const openHref =
                             r.report_type === "schichtenverzeichnis"
                               ? `/api/pdf/schichtenverzeichnis/${r.id}`
@@ -270,7 +271,7 @@ export default function MyReportsPage() {
                               <button
                                 type="button"
                                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-50"
-                                onClick={() => setOpenMenuId(isOpen ? null : menuId)}
+                                onClick={() => setOpenMenuId(isOpen ? null : reportMenuId)}
                                 aria-label="Aktionen"
                                 aria-expanded={isOpen}
                               >

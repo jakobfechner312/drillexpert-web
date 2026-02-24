@@ -275,6 +275,9 @@ const FILTER_PAIR_CONFIG: Array<{
     bisLabel: "Bohrgut bis",
   },
 ];
+const TONDICHTUNG_TOP_PAIR_ID = "tondichtung_1";
+const TONDICHTUNG_BOTTOM_PAIR_ID = "tondichtung_2";
+const TONDICHTUNG_TOTAL_ROWS_KEY = "tondichtung_total";
 const formatDateForRange = (value: string | undefined | null) => {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
@@ -738,7 +741,7 @@ const normalizeFilterRows = (raw: unknown, fallback: FormData): FilterRow[] => {
 };
 const buildFilterPairRowCounts = (rows: FilterRow[]) => {
   const source = rows.length > 0 ? rows : [emptyFilterRow()];
-  return Object.fromEntries(
+  const counts = Object.fromEntries(
     FILTER_PAIR_CONFIG.map((cfg) => {
       let lastFilledIndex = -1;
       source.forEach((row, idx) => {
@@ -746,9 +749,15 @@ const buildFilterPairRowCounts = (rows: FilterRow[]) => {
           lastFilledIndex = idx;
         }
       });
-      return [cfg.id, Math.max(1, lastFilledIndex + 1)];
+      const isTondichtungBottom = cfg.id === TONDICHTUNG_BOTTOM_PAIR_ID;
+      const minRows = isTondichtungBottom ? 0 : 1;
+      return [cfg.id, Math.max(minRows, lastFilledIndex + 1)];
     })
   ) as Record<string, number>;
+  const topCount = Math.max(0, Math.min(2, Number(counts[TONDICHTUNG_TOP_PAIR_ID]) || 0));
+  const bottomCount = Math.max(0, Math.min(2, Number(counts[TONDICHTUNG_BOTTOM_PAIR_ID]) || 0));
+  counts[TONDICHTUNG_TOTAL_ROWS_KEY] = Math.max(1, Math.min(4, topCount + bottomCount || 1));
+  return counts;
 };
 const emptyBohrungEntry = (): BohrungEntry => ({
   verfahren: "ramm",
@@ -1415,6 +1424,153 @@ export default function SchichtenverzeichnisForm({
     },
     [filterRows, filterPairRowCounts]
   );
+  const getTondichtungTotalRows = useCallback(() => {
+    const explicit = Number(filterPairRowCounts[TONDICHTUNG_TOTAL_ROWS_KEY]);
+    if (Number.isFinite(explicit) && explicit >= 1) {
+      return Math.max(1, Math.min(4, Math.trunc(explicit)));
+    }
+    const topCount = Math.max(0, Math.min(2, Number(filterPairRowCounts[TONDICHTUNG_TOP_PAIR_ID]) || 0));
+    const bottomCount = Math.max(0, Math.min(2, Number(filterPairRowCounts[TONDICHTUNG_BOTTOM_PAIR_ID]) || 0));
+    const inferred = topCount + bottomCount;
+    return Math.max(1, Math.min(4, inferred || 1));
+  }, [filterPairRowCounts]);
+  const getTondichtungVisibleRows = useCallback(
+    (pairId: string) => {
+      const total = getTondichtungTotalRows();
+      if (pairId === TONDICHTUNG_TOP_PAIR_ID) {
+        if (total >= 3) return 2;
+        return total >= 1 ? 1 : 0;
+      }
+      if (pairId === TONDICHTUNG_BOTTOM_PAIR_ID) {
+        if (total >= 4) return 2;
+        if (total >= 2) return 1;
+        return 0;
+      }
+      return Math.max(1, Math.min(2, Number(filterPairRowCounts[pairId]) || 1));
+    },
+    [filterPairRowCounts, getTondichtungTotalRows]
+  );
+  const getTondichtungEntries = useCallback(
+    (pairId: string, vonKey: FilterPairFieldKey, bisKey: FilterPairFieldKey) => {
+      const visibleRows = getTondichtungVisibleRows(pairId);
+      return Array.from({ length: visibleRows }, (_, idx) => ({
+        von: filterRows[idx]?.[vonKey] ?? "",
+        bis: filterRows[idx]?.[bisKey] ?? "",
+      }));
+    },
+    [filterRows, getTondichtungVisibleRows]
+  );
+  const setTondichtungEntries = useCallback(
+    (pairId: string, vonKey: FilterPairFieldKey, bisKey: FilterPairFieldKey, entries: Array<{ von: string; bis: string }>) => {
+      const visibleRows = getTondichtungVisibleRows(pairId);
+      const cappedEntries = entries.slice(0, visibleRows);
+      setFilterRows((prev) => {
+        const nextLength = Math.max(prev.length, visibleRows, 1);
+        const next = Array.from({ length: nextLength }, (_, idx) => ({
+          ...emptyFilterRow(),
+          ...(prev[idx] ?? {}),
+        }));
+        for (let i = 0; i < nextLength; i += 1) {
+          next[i][vonKey] = cappedEntries[i]?.von ?? (i < visibleRows ? next[i][vonKey] ?? "" : "");
+          next[i][bisKey] = cappedEntries[i]?.bis ?? (i < visibleRows ? next[i][bisKey] ?? "" : "");
+        }
+        return next;
+      });
+    },
+    [getTondichtungVisibleRows]
+  );
+  const getCombinedTondichtungEntries = useCallback(() => {
+    const total = getTondichtungTotalRows();
+    const top = getTondichtungEntries(TONDICHTUNG_TOP_PAIR_ID, "tondichtung_von", "tondichtung_bis");
+    const bottom = getTondichtungEntries(TONDICHTUNG_BOTTOM_PAIR_ID, "tondichtung_von_2", "tondichtung_bis_2");
+    const combined = [
+      top[0] ?? { von: "", bis: "" },
+      bottom[0] ?? { von: "", bis: "" },
+      top[1] ?? { von: "", bis: "" },
+      bottom[1] ?? { von: "", bis: "" },
+    ];
+    return combined.slice(0, total);
+  }, [getTondichtungEntries, getTondichtungTotalRows]);
+  const setCombinedTondichtungEntries = useCallback((entries: Array<{ von: string; bis: string }>) => {
+    const capped = entries.slice(0, 4);
+    const nextTotal = Math.max(1, Math.min(4, capped.length || 1));
+    const topEntries = [capped[0] ?? { von: "", bis: "" }, capped[2] ?? { von: "", bis: "" }].filter(
+      (_entry, idx) => (nextTotal >= 3 ? true : idx === 0)
+    );
+    const bottomEntries = [
+      capped[1] ?? { von: "", bis: "" },
+      capped[3] ?? { von: "", bis: "" },
+    ].filter((_entry, idx) => (nextTotal >= 4 ? true : nextTotal >= 2 ? idx === 0 : false));
+
+    setFilterPairRowCounts((prev) => ({
+      ...prev,
+      [TONDICHTUNG_TOTAL_ROWS_KEY]: nextTotal,
+      [TONDICHTUNG_TOP_PAIR_ID]: nextTotal >= 3 ? 2 : 1,
+      [TONDICHTUNG_BOTTOM_PAIR_ID]: nextTotal >= 4 ? 2 : nextTotal >= 2 ? 1 : 0,
+    }));
+
+    setFilterRows((prev) => {
+      const next = Array.from({ length: Math.max(prev.length, 2, 1) }, (_, idx) => ({
+        ...emptyFilterRow(),
+        ...(prev[idx] ?? {}),
+      }));
+
+      next[0].tondichtung_von = topEntries[0]?.von ?? "";
+      next[0].tondichtung_bis = topEntries[0]?.bis ?? "";
+      next[0].tondichtung_von_2 = bottomEntries[0]?.von ?? "";
+      next[0].tondichtung_bis_2 = bottomEntries[0]?.bis ?? "";
+
+      next[1].tondichtung_von = topEntries[1]?.von ?? "";
+      next[1].tondichtung_bis = topEntries[1]?.bis ?? "";
+      next[1].tondichtung_von_2 = bottomEntries[1]?.von ?? "";
+      next[1].tondichtung_bis_2 = bottomEntries[1]?.bis ?? "";
+
+      return next;
+    });
+  }, []);
+  const adjustTondichtungTotalRows = useCallback((delta: number) => {
+    setFilterPairRowCounts((prev) => {
+      const currentExplicit = Number(prev[TONDICHTUNG_TOTAL_ROWS_KEY]);
+      const current =
+        Number.isFinite(currentExplicit) && currentExplicit >= 1
+          ? Math.max(1, Math.min(4, Math.trunc(currentExplicit)))
+          : 1;
+      const nextTotal = Math.max(1, Math.min(4, current + delta));
+      const topRows = nextTotal >= 3 ? 2 : nextTotal >= 1 ? 1 : 0;
+      const bottomRows = nextTotal >= 4 ? 2 : nextTotal >= 2 ? 1 : 0;
+      return {
+        ...prev,
+        [TONDICHTUNG_TOTAL_ROWS_KEY]: nextTotal,
+        [TONDICHTUNG_TOP_PAIR_ID]: topRows,
+        [TONDICHTUNG_BOTTOM_PAIR_ID]: bottomRows,
+      };
+    });
+    setFilterRows((prev) => {
+      const next = Array.from({ length: Math.max(prev.length, 2, 1) }, (_, idx) => ({
+        ...emptyFilterRow(),
+        ...(prev[idx] ?? {}),
+      }));
+      const explicit = Number(filterPairRowCounts[TONDICHTUNG_TOTAL_ROWS_KEY]);
+      const current =
+        Number.isFinite(explicit) && explicit >= 1 ? Math.max(1, Math.min(4, Math.trunc(explicit))) : 1;
+      const nextTotal = Math.max(1, Math.min(4, current + delta));
+      const topRows = nextTotal >= 3 ? 2 : nextTotal >= 1 ? 1 : 0;
+      const bottomRows = nextTotal >= 4 ? 2 : nextTotal >= 2 ? 1 : 0;
+      if (topRows < 2 && next[1]) {
+        next[1].tondichtung_von = "";
+        next[1].tondichtung_bis = "";
+      }
+      if (bottomRows < 2 && next[1]) {
+        next[1].tondichtung_von_2 = "";
+        next[1].tondichtung_bis_2 = "";
+      }
+      if (bottomRows < 1 && next[0]) {
+        next[0].tondichtung_von_2 = "";
+        next[0].tondichtung_bis_2 = "";
+      }
+      return next;
+    });
+  }, [filterPairRowCounts]);
   const setFilterPairEntries = useCallback(
     (
       pairId: string,
@@ -3996,7 +4152,16 @@ export default function SchichtenverzeichnisForm({
                 </div>
                 <div className="space-y-3">
                   {FILTER_PAIR_CONFIG.map((cfg) => {
-                    const entries = getFilterPairEntries(cfg.id, cfg.vonKey, cfg.bisKey);
+                    if (cfg.id === TONDICHTUNG_BOTTOM_PAIR_ID) return null;
+                    const isTondichtungGroup =
+                      cfg.id === TONDICHTUNG_TOP_PAIR_ID || cfg.id === TONDICHTUNG_BOTTOM_PAIR_ID;
+                    const isCombinedTondichtung = cfg.id === TONDICHTUNG_TOP_PAIR_ID;
+                    const entries = isTondichtungGroup
+                      ? isCombinedTondichtung
+                        ? getCombinedTondichtungEntries()
+                        : getTondichtungEntries(cfg.id, cfg.vonKey, cfg.bisKey)
+                      : getFilterPairEntries(cfg.id, cfg.vonKey, cfg.bisKey);
+                    const tondichtungTotalRows = isTondichtungGroup ? getTondichtungTotalRows() : null;
                     return (
                       <div key={cfg.id} className="rounded-xl border border-slate-200/80 bg-slate-50/30 p-3">
                         <div className="mb-3 flex items-center justify-between gap-2">
@@ -4007,28 +4172,36 @@ export default function SchichtenverzeichnisForm({
                             <button
                               type="button"
                               className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
-                              onClick={() =>
+                              onClick={() => {
+                                if (isTondichtungGroup) {
+                                  adjustTondichtungTotalRows(1);
+                                  return;
+                                }
                                 setFilterPairEntries(cfg.id, cfg.vonKey, cfg.bisKey, [
                                   ...entries,
                                   { von: "", bis: "" },
-                                ])
-                              }
-                              disabled={entries.length >= 2}
+                                ]);
+                              }}
+                              disabled={isTondichtungGroup ? (tondichtungTotalRows ?? 1) >= 4 : entries.length >= 2}
                             >
                               + Zeile
                             </button>
                             <button
                               type="button"
                               className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
-                              onClick={() =>
+                              onClick={() => {
+                                if (isTondichtungGroup) {
+                                  adjustTondichtungTotalRows(-1);
+                                  return;
+                                }
                                 setFilterPairEntries(
                                   cfg.id,
                                   cfg.vonKey,
                                   cfg.bisKey,
                                   entries.slice(0, -1)
-                                )
-                              }
-                              disabled={entries.length <= 1}
+                                );
+                              }}
+                              disabled={isTondichtungGroup ? (tondichtungTotalRows ?? 1) <= 1 : entries.length <= 1}
                             >
                               - Zeile
                             </button>
@@ -4038,21 +4211,49 @@ export default function SchichtenverzeichnisForm({
                           {entries.map((entry, idx) => (
                             <div key={`${cfg.id}-${idx}`} className="grid gap-4 lg:grid-cols-2">
                               <Field
-                                label={idx === 0 ? cfg.vonLabel : `${cfg.vonLabel} ${idx + 1}`}
+                                label={
+                                  isCombinedTondichtung
+                                    ? idx === 0
+                                      ? "Tondichtung von"
+                                      : `Tondichtung von ${idx + 1}`
+                                    : idx === 0
+                                      ? cfg.vonLabel
+                                      : `${cfg.vonLabel} ${idx + 1}`
+                                }
                                 value={entry.von}
                                 onChange={(v) => {
                                   const next = [...entries];
                                   next[idx] = { ...next[idx], von: v };
-                                  setFilterPairEntries(cfg.id, cfg.vonKey, cfg.bisKey, next);
+                                  if (isCombinedTondichtung) {
+                                    setCombinedTondichtungEntries(next);
+                                  } else if (isTondichtungGroup) {
+                                    setTondichtungEntries(cfg.id, cfg.vonKey, cfg.bisKey, next);
+                                  } else {
+                                    setFilterPairEntries(cfg.id, cfg.vonKey, cfg.bisKey, next);
+                                  }
                                 }}
                               />
                               <Field
-                                label={idx === 0 ? cfg.bisLabel : `${cfg.bisLabel} ${idx + 1}`}
+                                label={
+                                  isCombinedTondichtung
+                                    ? idx === 0
+                                      ? "Tondichtung bis"
+                                      : `Tondichtung bis ${idx + 1}`
+                                    : idx === 0
+                                      ? cfg.bisLabel
+                                      : `${cfg.bisLabel} ${idx + 1}`
+                                }
                                 value={entry.bis}
                                 onChange={(v) => {
                                   const next = [...entries];
                                   next[idx] = { ...next[idx], bis: v };
-                                  setFilterPairEntries(cfg.id, cfg.vonKey, cfg.bisKey, next);
+                                  if (isCombinedTondichtung) {
+                                    setCombinedTondichtungEntries(next);
+                                  } else if (isTondichtungGroup) {
+                                    setTondichtungEntries(cfg.id, cfg.vonKey, cfg.bisKey, next);
+                                  } else {
+                                    setFilterPairEntries(cfg.id, cfg.vonKey, cfg.bisKey, next);
+                                  }
                                 }}
                               />
                             </div>

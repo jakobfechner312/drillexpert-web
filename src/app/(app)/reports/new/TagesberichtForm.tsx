@@ -126,7 +126,7 @@ const RML_BOHRVERFAHREN_OPTIONS = [
   "Rotationsbohrung",
   "Vollbohrung",
 ] as const;
-const RML_SCHAPPE_DURCHMESSER_OPTIONS = ["120", "140", "160", "180"] as const;
+const RML_SCHAPPE_DURCHMESSER_OPTIONS = ["120", "140", "160", "180", "230", "270"] as const;
 const RML_AUFSCHLUSS_KRONE_146_TO_509 = ["146", "178", "220", "273", "324", "368", "419", "509"] as const;
 const RML_AUFSCHLUSS_KRONE_178_TO_509 = ["178", "220", "273", "324", "368", "419", "509"] as const;
 const PEGEL_DM_OPTIONS = ['2"', '3"', '4"', '5"', '6"'] as const;
@@ -2917,6 +2917,15 @@ if (mode === "edit") {
     const current = safeTableRows[rowIndex];
     const parts = [...getSptParts(current?.spt)] as string[];
     parts[partIndex] = normalizeSptSchlagInput(value);
+    // Wenn ein Segment bei 50 stoppt, müssen nachfolgende Segmente im State leer sein,
+    // sonst werden alte Werte weiterhin in Preview/PDF gedruckt.
+    if (partIndex === 0 && parts[0] === String(SPT_MAX_SCHLAEGE)) {
+      parts[1] = "";
+      parts[2] = "";
+    }
+    if (partIndex === 1 && parts[1] === String(SPT_MAX_SCHLAEGE)) {
+      parts[2] = "";
+    }
     const next = parts.map((p) => p.trim());
     const spt = next.some((p) => p.length > 0) ? next.join("/") : "";
     const bis = getSptBisFromVon(rowIndex, String(current?.gebohrtVon ?? ""), next[0] ?? "", next[1] ?? "", next[2] ?? "");

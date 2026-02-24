@@ -112,8 +112,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!report) return NextResponse.json({ error: "Report nicht gefunden." }, { status: 404 });
 
-    console.log("[SAVED data]", report.data);
-
     const origin = new URL(req.url).origin;
     const previewUrl = new URL("/api/pdf/tagesbericht", origin);
     const payload = alignTagesberichtPayloadForPdf(normalizeTagesberichtPayload(report.data));

@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/apiAuth";
+import { isAllowedMapsHostname, isAllowedMapsUrl } from "@/lib/mapsUrlSafety";
 
 export const runtime = "nodejs";
 
@@ -117,11 +119,17 @@ const followShortLink = async (startUrl: string): Promise<string> => {
 };
 
 export async function GET(request: Request) {
+  const auth = await requireApiUser();
+  if (auth.response) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const url = searchParams.get("url");
 
   if (!url) {
     return NextResponse.json({ error: "Missing url" }, { status: 400 });
+  }
+  if (!isAllowedMapsUrl(url)) {
+    return NextResponse.json({ error: "Ungültiger Maps-Link" }, { status: 400 });
   }
 
   try {
@@ -138,6 +146,21 @@ export async function GET(request: Request) {
     }
 
     const current = await followShortLink(url);
+    let currentParsed: URL;
+    try {
+      currentParsed = new URL(current);
+    } catch {
+      return NextResponse.json({ error: "Ungültiger Maps-Link" }, { status: 400 });
+    }
+    if (!isAllowedMapsHostname(currentParsed.hostname)) {
+      return NextResponse.json({ error: "Ungültiger Maps-Link" }, { status: 400 });
+    }
+    if (
+      /(^|\.)goo\.gl$/i.test(currentParsed.hostname) ||
+      /(^|\.)maps\.app\.goo\.gl$/i.test(currentParsed.hostname)
+    ) {
+      return NextResponse.json({ error: "Maps-Link konnte nicht aufgelöst werden" }, { status: 422 });
+    }
 
     const res = await fetch(current, {
       headers: {
@@ -151,6 +174,9 @@ export async function GET(request: Request) {
 
     if (!res.ok) {
       return NextResponse.json({ title: "Google Maps", resolvedUrl: url });
+    }
+    if (res.url && !isAllowedMapsUrl(res.url)) {
+      return NextResponse.json({ error: "Ungültiger Redirect-Zielhost" }, { status: 400 });
     }
 
     const html = await res.text();
