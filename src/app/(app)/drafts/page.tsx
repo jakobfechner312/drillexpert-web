@@ -9,6 +9,7 @@ type DraftRow = {
   id: string;
   title: string;
   created_at: string;
+  report_type?: string | null;
 };
 
 type DraftKind = "all" | "tb" | "rml" | "sv";
@@ -46,7 +47,7 @@ export default function DraftsPage() {
 
     const { data, error } = await supabase
       .from("drafts")
-      .select("id,title,created_at")
+      .select("id,title,created_at,report_type")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -85,40 +86,29 @@ export default function DraftsPage() {
     return "tb";
   };
 
+  const draftKindByType = (draft: DraftRow): Exclude<DraftKind, "all"> => {
+    const type = String(draft.report_type ?? "").trim().toLowerCase();
+    if (type === "tagesbericht_rhein_main_link") return "rml";
+    if (type === "schichtenverzeichnis") return "sv";
+    if (type === "tagesbericht") return "tb";
+    return draftKind(draft.title);
+  };
+
+  const draftOpenHref = (draft: DraftRow) => {
+    const type = String(draft.report_type ?? "").trim().toLowerCase();
+    if (type === "tagesbericht_rhein_main_link") return `/reports/new/rhein-main-link?draftId=${draft.id}`;
+    if (type === "schichtenverzeichnis") return `/reports/schichtenverzeichnis/step?draftId=${draft.id}`;
+    return `/reports/new?draftId=${draft.id}`;
+  };
+
   const filteredDrafts = useMemo(() => {
     const q = query.trim().toLowerCase();
     return drafts.filter((d) => {
       const matchesQuery = !q || (d.title ?? "").toLowerCase().includes(q);
-      const matchesKind = kindFilter === "all" || draftKind(d.title) === kindFilter;
+      const matchesKind = kindFilter === "all" || draftKindByType(d) === kindFilter;
       return matchesQuery && matchesKind;
     });
   }, [drafts, query, kindFilter]);
-
-  const draftTone = (title: string) => {
-    const kind = draftKind(title);
-    if (kind === "sv") {
-      return {
-        card: "from-amber-50/80 via-white to-orange-50/60",
-        badge: "border-amber-200 bg-amber-50 text-amber-800",
-        label: "Schichtenverzeichnis",
-        icon: Layers3,
-      };
-    }
-    if (kind === "rml") {
-      return {
-        card: "from-indigo-50/80 via-white to-cyan-50/70",
-        badge: "border-indigo-200 bg-indigo-50 text-indigo-800",
-        label: "TB Rhein-Main-Link",
-        icon: FileClock,
-      };
-    }
-    return {
-      card: "from-sky-50/80 via-white to-cyan-50/60",
-      badge: "border-sky-200 bg-sky-50 text-sky-800",
-      label: "Tagesbericht",
-      icon: FileText,
-    };
-  };
 
   return (
     <div className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 py-6 sm:px-6 lg:px-8 space-y-6">
@@ -195,7 +185,31 @@ export default function DraftsPage() {
           ) : (
             <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
               {filteredDrafts.map((d) => {
-                const tone = draftTone(d.title);
+                const tone = (() => {
+                  const kind = draftKindByType(d);
+                  if (kind === "sv") {
+                    return {
+                      card: "from-amber-50/80 via-white to-orange-50/60",
+                      badge: "border-amber-200 bg-amber-50 text-amber-800",
+                      label: "Schichtenverzeichnis",
+                      icon: Layers3,
+                    };
+                  }
+                  if (kind === "rml") {
+                    return {
+                      card: "from-indigo-50/80 via-white to-cyan-50/70",
+                      badge: "border-indigo-200 bg-indigo-50 text-indigo-800",
+                      label: "TB Rhein-Main-Link",
+                      icon: FileClock,
+                    };
+                  }
+                  return {
+                    card: "from-sky-50/80 via-white to-cyan-50/60",
+                    badge: "border-sky-200 bg-sky-50 text-sky-800",
+                    label: "Tagesbericht",
+                    icon: FileText,
+                  };
+                })();
                 const ToneIcon = tone.icon;
                 const draftMenuId = `draft-${d.id}`;
                 return (
@@ -241,7 +255,7 @@ export default function DraftsPage() {
                             {isOpen ? (
                               <div className="absolute right-0 top-full z-[80] mt-2 w-44 rounded-xl border border-slate-200/80 bg-white p-1 shadow-lg">
                                 <Link
-                                  href={`/reports/new?draftId=${d.id}`}
+                                  href={draftOpenHref(d)}
                                   className="flex rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                   onClick={() => setOpenMenuId(null)}
                                 >

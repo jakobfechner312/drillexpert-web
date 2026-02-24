@@ -494,6 +494,7 @@ function SidebarProjects() {
           status: row.project?.status ?? null,
         }))
         .filter((row) => Boolean(row.id) && row.status !== "archived")
+        .sort((a, b) => compareProjectListOrder(a, b))
         .slice(0, 12);
 
       setProjects(mapped);
@@ -578,6 +579,43 @@ function SidebarProjects() {
       </div>
     </>
   );
+}
+
+function compareProjectListOrder(a: SidebarProjectItem, b: SidebarProjectItem) {
+  const aKey = String(a.project_number ?? "").trim();
+  const bKey = String(b.project_number ?? "").trim();
+
+  if (aKey && bKey) {
+    const aParsed = parseProjectNumberForSort(aKey);
+    const bParsed = parseProjectNumberForSort(bKey);
+    if (aParsed && bParsed) {
+      if (aParsed.year !== bParsed.year) return aParsed.year - bParsed.year;
+      if (aParsed.sequence !== bParsed.sequence) return aParsed.sequence - bParsed.sequence;
+      const bySuffix = aParsed.rest.localeCompare(bParsed.rest, "de", { numeric: true, sensitivity: "base" });
+      if (bySuffix !== 0) return bySuffix;
+    } else {
+      const byNumber = aKey.localeCompare(bKey, "de", { numeric: true, sensitivity: "base" });
+      if (byNumber !== 0) return byNumber;
+    }
+  } else if (aKey || bKey) {
+    return aKey ? -1 : 1;
+  }
+
+  return String(a.name ?? "").localeCompare(String(b.name ?? ""), "de", {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function parseProjectNumberForSort(value: string): { year: number; sequence: number; rest: string } | null {
+  const trimmed = String(value ?? "").trim();
+  // Beispiele: 2025-0320, 2024-0429-1
+  const match = trimmed.match(/^(\d{4})-(\d+)(.*)$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const sequence = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(sequence)) return null;
+  return { year, sequence, rest: match[3] ?? "" };
 }
 
 function SidebarNav() {

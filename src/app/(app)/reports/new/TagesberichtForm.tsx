@@ -1772,6 +1772,23 @@ export default function TagesberichtForm({
     [effectiveProjectId, enforcedProjectId, hydrateReportWithProject, reportTitleLabel, reportType]
   );
 
+  const deleteOpenedDraftAfterFinalProjectSave = useCallback(
+    async (projectIdForFinalSave: string | null | undefined) => {
+      if (!hasDraftId) return;
+      if (!projectIdForFinalSave) return;
+      try {
+        const supabase = createClient();
+        const { error } = await supabase.from("drafts").delete().eq("id", draftId);
+        if (error) {
+          console.warn("[DRAFT DELETE AFTER FINAL SAVE FAILED]", { draftId, error });
+        }
+      } catch (error) {
+        console.warn("[DRAFT DELETE AFTER FINAL SAVE EXCEPTION]", { draftId, error });
+      }
+    },
+    [draftId, hasDraftId]
+  );
+
   useEffect(() => {
     console.log("[Form] register save handlers");
     const supabase = createClient();
@@ -1915,11 +1932,13 @@ if (mode === "edit") {
     const { error: deleteOldErr } = await supabase.from("reports").delete().eq("id", reportId);
     if (deleteOldErr) {
       console.warn("[EDIT MOVE] Zielbericht erstellt, alter Bericht blieb bestehen", deleteOldErr);
+      await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
       alert("Bericht im Projekt gespeichert ✅ (alter Eintrag blieb zusätzlich in „Meine Berichte“)");
       triggerProjectSaveCelebration();
       return;
     }
 
+    await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
     alert("Bericht ins Projekt verschoben ✅");
     triggerProjectSaveCelebration();
     return;
@@ -1982,16 +2001,19 @@ if (mode === "edit") {
     const { error: deleteOldErr } = await supabase.from("reports").delete().eq("id", reportId);
     if (deleteOldErr) {
       console.warn("[EDIT SAVE FALLBACK] Kopie im Projekt erstellt, alter Bericht konnte nicht gelöscht werden", deleteOldErr);
+      await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
       alert("Bericht im Projekt gespeichert ✅ (alter Eintrag blieb zusätzlich in „Meine Berichte“)");
       triggerProjectSaveCelebration();
       return;
     }
 
+    await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
     alert("Bericht ins Projekt verschoben ✅");
     triggerProjectSaveCelebration();
     return;
   }
 
+  await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
   alert("Bericht aktualisiert ✅");
   if (finalProjectId) triggerProjectSaveCelebration();
   return;
@@ -2045,6 +2067,7 @@ if (mode === "edit") {
     setReport((prev) => ({ ...prev, berichtNr: String(nextCounter) }));
     await persistRmlCounter(nextCounter);
   }
+  await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
   alert("Bericht gespeichert ✅");
   if (finalProjectId) triggerProjectSaveCelebration();
       } finally {
@@ -2073,6 +2096,7 @@ if (mode === "edit") {
     rmlNextReportNr,
     persistRmlCounter,
     saveDraftToServer,
+    deleteOpenedDraftAfterFinalProjectSave,
     saveScope,
     triggerProjectSaveCelebration,
     useStepper,
@@ -2726,7 +2750,7 @@ if (mode === "edit") {
   }
 
   /** ---------- Tabelle ---------- */
-  const MAX_TABLE_ROWS = isRml ? 10 : 5;
+  const MAX_TABLE_ROWS = isRml ? 6 : 5;
   const MAX_UMSETZEN_ROWS = 3;
   const MAX_PEGEL_ROWS = isRml ? 10 : 3;
   const MAX_WATER_LEVEL_ROWS = isRml ? 32 : 4;

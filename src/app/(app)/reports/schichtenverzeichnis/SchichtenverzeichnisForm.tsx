@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 import { useDraftActions } from "@/components/DraftActions";
 import { SV_FIELDS } from "@/lib/pdf/schichtenverzeichnis.mapping";
@@ -911,6 +912,9 @@ export default function SchichtenverzeichnisForm({
   mode = "create",
   stepper = false,
 }: SchichtenverzeichnisFormProps) {
+  const searchParams = useSearchParams();
+  const draftId = useMemo(() => searchParams.get("draftId") ?? "", [searchParams]);
+  const hasDraftId = draftId.length > 0;
   const openNativePicker = (input: HTMLInputElement | null) => {
     if (!input) return;
     const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
@@ -1853,6 +1857,21 @@ export default function SchichtenverzeichnisForm({
   }, [normalizedFilterRowsForPayload]);
 
   const supabase = useMemo(() => createClient(), []);
+  const deleteOpenedDraftAfterFinalProjectSave = useCallback(
+    async (projectIdForFinalSave: string | null | undefined) => {
+      if (!hasDraftId) return;
+      if (!projectIdForFinalSave) return;
+      try {
+        const { error } = await supabase.from("drafts").delete().eq("id", draftId);
+        if (error) {
+          console.warn("[SV DRAFT DELETE AFTER FINAL SAVE FAILED]", { draftId, error });
+        }
+      } catch (error) {
+        console.warn("[SV DRAFT DELETE AFTER FINAL SAVE EXCEPTION]", { draftId, error });
+      }
+    },
+    [draftId, hasDraftId, supabase]
+  );
   const isDevOnlyUser = DEV_ONLY_EMAILS.has(currentUserEmail);
   const {
     setSaveDraftHandler,
@@ -2563,11 +2582,13 @@ export default function SchichtenverzeichnisForm({
             const { error: deleteOldErr } = await supabase.from("reports").delete().eq("id", reportId);
             if (deleteOldErr) {
               console.warn("[SV EDIT MOVE] Zielbericht erstellt, alter Bericht blieb bestehen", deleteOldErr);
+              await deleteOpenedDraftAfterFinalProjectSave(targetProjectId);
               alert("Bericht im Projekt gespeichert ✅ (alter Eintrag blieb zusätzlich in „Meine Berichte“)");
               triggerProjectSaveCelebration();
               return;
             }
 
+            await deleteOpenedDraftAfterFinalProjectSave(targetProjectId);
             alert("Bericht ins Projekt verschoben ✅");
             triggerProjectSaveCelebration();
             return;
@@ -2630,16 +2651,19 @@ export default function SchichtenverzeichnisForm({
                 "[SV EDIT SAVE FALLBACK] Kopie im Projekt erstellt, alter Bericht konnte nicht gelöscht werden",
                 deleteOldErr
               );
+              await deleteOpenedDraftAfterFinalProjectSave(targetProjectId);
               alert("Bericht im Projekt gespeichert ✅ (alter Eintrag blieb zusätzlich in „Meine Berichte“)");
               triggerProjectSaveCelebration();
               return;
             }
 
+            await deleteOpenedDraftAfterFinalProjectSave(targetProjectId);
             alert("Bericht ins Projekt verschoben ✅");
             triggerProjectSaveCelebration();
             return;
           }
 
+          await deleteOpenedDraftAfterFinalProjectSave(scope === "project" ? selectedProjectId : null);
           alert("Bericht aktualisiert ✅");
           if (scope === "project") triggerProjectSaveCelebration();
           return;
@@ -2669,6 +2693,7 @@ export default function SchichtenverzeichnisForm({
         }
 
         reportSaveKeyRef.current = null;
+        await deleteOpenedDraftAfterFinalProjectSave(scope === "project" ? selectedProjectId : null);
         alert("Bericht gespeichert ✅");
         if (scope === "project") triggerProjectSaveCelebration();
       } finally {
@@ -2709,6 +2734,7 @@ export default function SchichtenverzeichnisForm({
     ensureRequiredDurchfuehrungszeit,
     ensureRequiredSchichtfelder,
     saveDraftToServer,
+    deleteOpenedDraftAfterFinalProjectSave,
     setSaveDraftHandler,
     setSaveReportHandler,
     triggerProjectSaveCelebration,
