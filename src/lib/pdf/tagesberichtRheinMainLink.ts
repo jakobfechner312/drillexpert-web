@@ -267,7 +267,7 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
 
     wasserspiegelAbGok: { x: 165, y: 569 },
     verrohrungAbGok: { x: 445, y: 569 },
-    temperatur: { x: 400, y: 661 },
+    temperatur: { x: 400, y: 663 },
     wetter: { x: 500, y: 661 },
 
     bohrmeister: { x: 401, y: 646 },
@@ -403,7 +403,7 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
 
   const tempMax = data?.weather?.tempMaxC;
   const tempMin = data?.weather?.tempMinC;
-  drawTemperatureMinMax(tempMin, tempMax, header.temperatur.x, header.temperatur.y, 7);
+  drawTemperatureMinMax(tempMin, tempMax, header.temperatur.x, header.temperatur.y, 6);
   const weatherLabel = Array.isArray(data?.weather?.conditions)
     ? data.weather.conditions.join("/")
     : data?.weather;
@@ -545,6 +545,11 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     if (rowHasPegelValue) {
       const explicitType = String(p?.ausbauArtType ?? "").trim();
       const customAusbauArt = String(p?.ausbauArtCustom ?? "").trim();
+      const hasFilterValues = Boolean(
+        String(p?.filterVon ?? "").trim() ||
+        String(p?.filterBis ?? "").trim() ||
+        String(p?.schlitzweiteSwMm ?? "").trim()
+      );
       const ausbauArt = explicitType === "stahlaufsatz"
         ? "Stahlaufsatz"
         : explicitType === "vollrohr"
@@ -555,9 +560,13 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
               ? "Stahlaufsatz"
               : p?.rohrePvcVon || p?.rohrePvcBis
                 ? "Vollrohr"
-                : customAusbauArt || "Filter";
+                : customAusbauArt
+                  ? customAusbauArt
+                  : hasFilterValues
+                    ? "Filter"
+                    : "";
       const sw = String(p?.schlitzweiteSwMm ?? "").trim();
-      const isFilter = explicitType === "filter" || (!explicitType && ausbauArt === "Filter");
+      const isFilter = explicitType === "filter" || (!explicitType && hasFilterValues && ausbauArt === "Filter");
       const ausbauLabel = isFilter && sw ? `${ausbauArt}, SW: ${sw} mm` : ausbauArt;
 
       draw(p?.filterVon, lowerCols.ausbauVon, y, 9, 8);

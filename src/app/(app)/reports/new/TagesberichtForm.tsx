@@ -5474,16 +5474,23 @@ if (mode === "edit") {
             </div>
             <div className="space-y-2">
               {safePegel.map((row, i) => {
-                const derivedAusbauArt: "filter" | "vollrohr" | "stahlaufsatz" | "individuell" =
+                const hasFilterValues = Boolean(
+                  String(row.filterVon ?? "").trim() ||
+                  String(row.filterBis ?? "").trim() ||
+                  String(row.schlitzweiteSwMm ?? "").trim()
+                );
+                const derivedAusbauArt: "filter" | "vollrohr" | "stahlaufsatz" | "individuell" | "" =
                   row.aufsatzStahlVon || row.aufsatzStahlBis
                     ? "stahlaufsatz"
                     : row.rohrePvcVon || row.rohrePvcBis
                       ? "vollrohr"
                       : String(row.ausbauArtCustom ?? "").trim()
                         ? "individuell"
-                      : "filter";
+                        : hasFilterValues
+                          ? "filter"
+                          : "";
                 const explicitAusbauArt = row.ausbauArtType;
-                const ausbauArt: "filter" | "vollrohr" | "stahlaufsatz" | "individuell" =
+                const ausbauArt: "filter" | "vollrohr" | "stahlaufsatz" | "individuell" | "" =
                   explicitAusbauArt === "filter" ||
                   explicitAusbauArt === "vollrohr" ||
                   explicitAusbauArt === "stahlaufsatz" ||
@@ -5509,7 +5516,21 @@ if (mode === "edit") {
                       className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-3"
                       value={ausbauArt}
                       onChange={(e) => {
-                        const nextArt = e.target.value as "filter" | "vollrohr" | "stahlaufsatz" | "individuell";
+                        const nextArt = e.target.value as "filter" | "vollrohr" | "stahlaufsatz" | "individuell" | "";
+                        if (nextArt === "") {
+                          updatePegel(i, {
+                            ausbauArtType: "",
+                            schlitzweiteSwMm: "",
+                            filterVon: "",
+                            filterBis: "",
+                            rohrePvcVon: "",
+                            rohrePvcBis: "",
+                            aufsatzStahlVon: "",
+                            aufsatzStahlBis: "",
+                            ausbauArtCustom: "",
+                          });
+                          return;
+                        }
                         if (nextArt === "stahlaufsatz") {
                           updatePegel(i, {
                             ausbauArtType: "stahlaufsatz",
@@ -5561,6 +5582,7 @@ if (mode === "edit") {
                         });
                       }}
                     >
+                      <option value="">Bitte wählen...</option>
                       <option value="filter">Filter</option>
                       <option value="vollrohr">Vollrohr</option>
                       <option value="stahlaufsatz">Stahlaufsatz</option>
@@ -5587,7 +5609,10 @@ if (mode === "edit") {
                     <input
                       className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-3"
                       value={fromValue}
+                      disabled={ausbauArt === ""}
+                      readOnly={ausbauArt === ""}
                       onChange={(e) => {
+                        if (ausbauArt === "") return;
                         const nextFrom = e.target.value;
                         if (ausbauArt === "stahlaufsatz") {
                           updatePegel(i, { aufsatzStahlVon: nextFrom });
@@ -5599,12 +5624,15 @@ if (mode === "edit") {
                         }
                         updatePegel(i, { filterVon: nextFrom });
                       }}
-                      placeholder="von"
+                      placeholder={ausbauArt === "" ? "erst Art wählen" : "von"}
                     />
                     <input
                       className="col-span-12 rounded-lg border px-3 py-2 text-sm md:col-span-3"
                       value={toValue}
+                      disabled={ausbauArt === ""}
+                      readOnly={ausbauArt === ""}
                       onChange={(e) => {
+                        if (ausbauArt === "") return;
                         const nextTo = e.target.value;
                         if (ausbauArt === "stahlaufsatz") {
                           updatePegel(i, { aufsatzStahlBis: nextTo });
@@ -5616,7 +5644,7 @@ if (mode === "edit") {
                         }
                         updatePegel(i, { filterBis: nextTo });
                       }}
-                      placeholder="bis"
+                      placeholder={ausbauArt === "" ? "erst Art wählen" : "bis"}
                     />
                     {ausbauArt === "individuell" ? (
                       <input
