@@ -299,10 +299,10 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   drawBohrrichtungMarker(data?.bohrrichtung);
 
   const verrohrungLayout = {
-    diameterX: 238,
+    diameterX: 243,
     meterX: 303,
     startY: 645,
-    rowStep: 14,
+    rowStep: 16,
     maxRows: 4,
     fontSize: 9,
   } as const;
@@ -315,10 +315,29 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     draw(row?.diameter, verrohrungLayout.diameterX, y, verrohrungLayout.fontSize, 10);
     draw(row?.meters, verrohrungLayout.meterX, y, verrohrungLayout.fontSize, 10);
   }
+  // Statische Beschriftungen für die unteren (neu nutzbaren) Verrohrungs-Zeilen.
+  const lowerVerrohrungLabelY = [628, 600] as const;
+  const verrohrungLabelLayout = {
+    dmPrefixX: 230,
+    bisX: 276,
+    meterUnitX: 345,
+    size: 8,
+    dmPrefixSize: 7,
+    meterUnitSize: 7,
+  } as const;
+  for (let i = 2; i < verrohrungLayout.maxRows; i += 1) {
+    const y = lowerVerrohrungLabelY[i - 2] ?? (verrohrungLayout.startY - i * verrohrungLayout.rowStep);
+    page.drawText("Ø", { x: verrohrungLabelLayout.dmPrefixX, y, size: verrohrungLabelLayout.dmPrefixSize, font, color: black });
+    page.drawText("bis", { x: verrohrungLabelLayout.bisX, y, size: verrohrungLabelLayout.size, font, color: black });
+    page.drawText("m", { x: verrohrungLabelLayout.meterUnitX, y, size: verrohrungLabelLayout.meterUnitSize, font, color: black });
+  }
   const waterLevelRows = Array.isArray(data?.waterLevelRows) ? data.waterLevelRows : [];
   const waterLevelLayout = {
+    umX: 57,
     timeX: 73,
+    uhrX: 131.5,
     meterX: 160,
+    meterUnitX: 205.5,
     startY: verrohrungLayout.startY,
     rowStep: verrohrungLayout.rowStep,
     maxRows: 4,
@@ -331,6 +350,26 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     const y = waterLevelLayout.startY - i * waterLevelLayout.rowStep;
     draw(row?.time, waterLevelLayout.timeX, y, waterLevelLayout.fontSize, 8);
     draw(row?.meters, waterLevelLayout.meterX, y, waterLevelLayout.fontSize, 8);
+  }
+  // Statische Beschriftungen für die unteren (neu nutzbaren) Wasserspiegel-Zeilen
+  // immer zeichnen, auch wenn dort noch keine Werte eingetragen sind.
+  const lowerWaterLabelY = [628, 600] as const;
+  for (let i = 2; i < waterLevelLayout.maxRows; i += 1) {
+    const y = lowerWaterLabelY[i - 2] ?? (waterLevelLayout.startY - i * waterLevelLayout.rowStep);
+    page.drawText("um", { x: waterLevelLayout.umX, y, size: 7.5, font, color: black });
+    page.drawText("Uhr", { x: waterLevelLayout.uhrX, y, size: 7, font, color: black });
+    page.drawText("m", { x: waterLevelLayout.meterUnitX, y, size: 8, font, color: black });
+  }
+  // Manuelle Trennlinien im Kopfbereich (Wasserspiegel/Verrohrung), exakt auf den Zeilenrändern.
+  // Baselines liegen bei 645 / 631 / 617 / 603, daher sind die Zwischenlinien symmetrisch bei 624 und 610.
+  const topSectionDivider = { x1: 56, x2: 474, yValues: [624, 610] as const, thickness: 1.1 } as const;
+  for (const y of topSectionDivider.yValues) {
+    page.drawLine({
+      start: { x: topSectionDivider.x1, y },
+      end: { x: topSectionDivider.x2, y },
+      thickness: topSectionDivider.thickness,
+      color: rgb(0, 0, 0),
+    });
   }
   if (!waterLevelRows.length && data?.ruhewasserVorArbeitsbeginnM != null) {
     draw(data?.ruhewasserVorArbeitsbeginnM, waterLevelLayout.meterX, waterLevelLayout.startY, waterLevelLayout.fontSize, 10);
@@ -435,10 +474,20 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     : "";
   if (Array.isArray(bohrhelferJoined)) {
     const helperFontSize = 8;
-    const helperLineStep = 10;
+    const helperLineStep = verrohrungLayout.rowStep;
+    const helperStartY = verrohrungLayout.startY - verrohrungLayout.rowStep;
     bohrhelferJoined.forEach((name, idx) => {
-      draw(name, header.bohrhelfer.x, header.bohrhelfer.y - idx * helperLineStep, helperFontSize, 24);
+      draw(name, header.bohrhelfer.x, helperStartY - idx * helperLineStep, helperFontSize, 24);
     });
+  }
+  // Zusätzliche Zeilen im Bohrhelfer-Bereich (Zeile 2 und 4) schwarz beschriften.
+  const bohrhelferExtraLabelX = 361;
+  const bohrhelferExtraLabelY = [
+    verrohrungLayout.startY - verrohrungLayout.rowStep,
+    verrohrungLayout.startY - verrohrungLayout.rowStep * 3,
+  ] as const;
+  for (const y of bohrhelferExtraLabelY) {
+    page.drawText("Bohrhelfer:", { x: bohrhelferExtraLabelX, y, size: 7, font, color: black });
   }
 
   // Wochentag markieren
@@ -475,6 +524,7 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     });
     if (!rowHasValue) continue;
     const y = tableYStart - i * tableYStep;
+    const isLastMainTableRow = i === 9;
     const bohrverfahren = String(r?.verrohrtFlags?.[0] ?? r?.verrohrtFlags?.join("/") ?? "").trim();
     const schappeDm = String(r?.schappeDurchmesser ?? "").trim();
     const aufschlussLabelMap: Record<string, string> = {
@@ -484,11 +534,12 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
     };
     const aufschlussLabel = aufschlussLabelMap[bohrverfahren] ?? (r?.verrohrtFlags?.join("/") || "Spülung");
     if (bohrverfahren === "Rammkernbohrung" && schappeDm) {
-      // Two-line entry: start slightly higher to avoid clipping at top border.
-      draw("Rammkern.", tableCols.aufschluss, y + 6, 6.5, 14);
-      draw("Schappe", tableCols.aufschluss, y - 2, 6.5, 14);
-      draw(r?.boNr, tableCols.krone, y + 6, 6.5, 12);
-      draw(schappeDm, tableCols.krone, y - 2, 6.5, 12);
+      // In der letzten Tabellenzeile etwas tiefer starten, damit die obere Linie nicht schneidet.
+      const twoLineYOffset = isLastMainTableRow ? -2 : 0;
+      draw("Rammkern.", tableCols.aufschluss, y + 6 + twoLineYOffset, 6.5, 14);
+      draw("Schappe", tableCols.aufschluss, y - 2 + twoLineYOffset, 6.5, 14);
+      draw(r?.boNr, tableCols.krone, y + 6 + twoLineYOffset, 6.5, 12);
+      draw(schappeDm, tableCols.krone, y - 2 + twoLineYOffset, 6.5, 12);
     } else {
       draw(aufschlussLabel, tableCols.aufschluss, y, 7, 14);
       draw(r?.boNr, tableCols.krone, y, 7, 12);
