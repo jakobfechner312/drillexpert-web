@@ -1496,6 +1496,94 @@ export default function TagesberichtForm({
     [supabase]
   );
 
+  const resequenceRmlReportsByDate = useCallback(
+    async (savedReportId?: string | null) => {
+      if (!isRml) return null;
+      const { data } = await supabase.auth.getUser();
+      const user = data?.user;
+      if (!user?.id) return null;
+
+      const { data: reports, error } = await supabase
+        .from("reports")
+        .select("id, created_at, data")
+        .eq("user_id", user.id)
+        .eq("report_type", "tagesbericht_rhein_main_link");
+
+      if (error || !Array.isArray(reports)) {
+        if (error) console.warn("[rml_report_counter] resequence fetch failed", error);
+        return null;
+      }
+
+      const dateKey = (value: unknown) => {
+        const raw = String(value ?? "").trim();
+        return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "9999-12-31";
+      };
+      const createdAtKey = (value: unknown) => {
+        const ts = Date.parse(String(value ?? ""));
+        return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER;
+      };
+
+      const sortable = reports
+        .map((row) => {
+          const id = String((row as { id?: unknown }).id ?? "");
+          const created_at = (row as { created_at?: unknown }).created_at;
+          const dataObj = (((row as { data?: unknown }).data ?? {}) as Record<string, unknown>);
+          const currentNr = parsePositiveInteger((dataObj as { berichtNr?: unknown }).berichtNr);
+          return {
+            id,
+            created_at,
+            dataObj,
+            currentNr,
+            date: dateKey((dataObj as { date?: unknown }).date),
+          };
+        })
+        .filter((row) => row.id);
+
+      sortable.sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        const createdDiff = createdAtKey(a.created_at) - createdAtKey(b.created_at);
+        if (createdDiff !== 0) return createdDiff;
+        return a.id.localeCompare(b.id);
+      });
+
+      if (!sortable.length) return null;
+
+      const existingNumbers = sortable
+        .map((row) => row.currentNr)
+        .filter((value): value is number => value != null);
+      const baseNumber = existingNumbers.length ? Math.min(...existingNumbers) : 1;
+
+      const assignedById: Record<string, number> = {};
+      for (let index = 0; index < sortable.length; index += 1) {
+        const row = sortable[index];
+        const nextNr = baseNumber + index;
+        assignedById[row.id] = nextNr;
+        if (row.currentNr === nextNr) continue;
+
+        const nextData = { ...row.dataObj, berichtNr: String(nextNr) };
+        const { error: updateErr } = await supabase.from("reports").update({ data: nextData }).eq("id", row.id);
+        if (updateErr) {
+          console.warn("[rml_report_counter] resequence update failed", updateErr);
+          return null;
+        }
+      }
+
+      const nextCounter = baseNumber + sortable.length;
+      setRmlNextReportNr(nextCounter);
+      setReport((prev) => ({
+        ...prev,
+        berichtNr: String(savedReportId && assignedById[savedReportId] ? assignedById[savedReportId] : nextCounter),
+      }));
+      await persistRmlCounter(nextCounter);
+
+      return {
+        nextCounter,
+        assignedCurrentNr: savedReportId ? assignedById[savedReportId] ?? null : null,
+      };
+    },
+    [isRml, persistRmlCounter, supabase]
+  );
+
   useEffect(() => {
     if (mode !== "create") return;
     const drillerKey = normalizeDrillerName(report.signatures?.drillerName);
@@ -1853,10 +1941,8 @@ export default function TagesberichtForm({
         }
         const projectScoped = finalProjectId;
         let reportForSave = await hydrateReportWithProject(currentReport, projectScoped);
-        let usedRmlReportNr: number | null = null;
         if (reportType === "tagesbericht_rhein_main_link") {
           const currentNr = parsePositiveInteger(reportForSave.berichtNr) ?? rmlNextReportNr ?? 1;
-          usedRmlReportNr = currentNr;
           reportForSave = { ...reportForSave, berichtNr: String(currentNr) };
         }
         if (projectScoped && prefillProjectId && prefillProjectId !== projectScoped) {
@@ -1946,12 +2032,18 @@ if (mode === "edit") {
     const { error: deleteOldErr } = await supabase.from("reports").delete().eq("id", reportId);
     if (deleteOldErr) {
       console.warn("[EDIT MOVE] Zielbericht erstellt, alter Bericht blieb bestehen", deleteOldErr);
+      if (reportType === "tagesbericht_rhein_main_link") {
+        await resequenceRmlReportsByDate(insertedMovedReport.id);
+      }
       await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
       alert("Bericht im Projekt gespeichert ✅ (alter Eintrag blieb zusätzlich in „Meine Berichte“)");
       triggerProjectSaveCelebration();
       return;
     }
 
+    if (reportType === "tagesbericht_rhein_main_link") {
+      await resequenceRmlReportsByDate(insertedMovedReport.id);
+    }
     await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
     alert("Bericht ins Projekt verschoben ✅");
     triggerProjectSaveCelebration();
@@ -2015,18 +2107,27 @@ if (mode === "edit") {
     const { error: deleteOldErr } = await supabase.from("reports").delete().eq("id", reportId);
     if (deleteOldErr) {
       console.warn("[EDIT SAVE FALLBACK] Kopie im Projekt erstellt, alter Bericht konnte nicht gelöscht werden", deleteOldErr);
+      if (reportType === "tagesbericht_rhein_main_link") {
+        await resequenceRmlReportsByDate(insertedCopy.id);
+      }
       await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
       alert("Bericht im Projekt gespeichert ✅ (alter Eintrag blieb zusätzlich in „Meine Berichte“)");
       triggerProjectSaveCelebration();
       return;
     }
 
+    if (reportType === "tagesbericht_rhein_main_link") {
+      await resequenceRmlReportsByDate(insertedCopy.id);
+    }
     await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
     alert("Bericht ins Projekt verschoben ✅");
     triggerProjectSaveCelebration();
     return;
   }
 
+  if (reportType === "tagesbericht_rhein_main_link") {
+    await resequenceRmlReportsByDate(updatedReport.id);
+  }
   await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
   alert("Bericht aktualisiert ✅");
   if (finalProjectId) triggerProjectSaveCelebration();
@@ -2060,7 +2161,7 @@ if (mode === "edit") {
     idempotency_key: string;
   };
 
-  const { error } = await supabase.from("reports").insert(payload);
+  const { data: insertedReport, error } = await supabase.from("reports").insert(payload).select("id").maybeSingle();
 
   if (error) {
     if (typeof error === "object" && error && "code" in error && (error as { code?: string }).code === "23505") {
@@ -2076,10 +2177,7 @@ if (mode === "edit") {
 
   reportSaveKeyRef.current = null;
   if (reportType === "tagesbericht_rhein_main_link") {
-    const nextCounter = Math.max(1, (usedRmlReportNr ?? rmlNextReportNr ?? 1) + 1);
-    setRmlNextReportNr(nextCounter);
-    setReport((prev) => ({ ...prev, berichtNr: String(nextCounter) }));
-    await persistRmlCounter(nextCounter);
+    await resequenceRmlReportsByDate(insertedReport?.id ?? null);
   }
   await deleteOpenedDraftAfterFinalProjectSave(finalProjectId);
   alert("Bericht gespeichert ✅");
