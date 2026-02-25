@@ -287,6 +287,9 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
   const wt = Array.isArray(data?.workTimeRows) ? data.workTimeRows : [];
   const pauses = Array.isArray(data?.breakRows) ? data.breakRows : [];
   const rows = Array.isArray(data?.tableRows) ? data.tableRows : [];
+  const rmlSptRows = Array.isArray((data as any)?.rmlSptRows) && (data as any).rmlSptRows.length
+    ? (data as any).rmlSptRows
+    : rows;
   const timeValueFontSize = 10;
   draw(wt[0]?.from, header.zeitVon.x, header.zeitVon.y, timeValueFontSize, 8);
   draw(wt[0]?.to, header.zeitBis.x, header.zeitBis.y, timeValueFontSize, 8);
@@ -566,9 +569,10 @@ export async function generateTagesberichtRheinMainLinkPdf(data: any): Promise<U
       draw(p?.filterkiesKoernung, lowerCols.verfMaterial, y, 8, 24);
     }
 
-    const s = rows[i]?.spt ? String(rows[i].spt).split("/") : [];
-    draw(rows[i]?.gebohrtVon, lowerCols.sptVon, y, 9, 8);
-    draw(rows[i]?.gebohrtBis, lowerCols.sptBis, y, 9, 8);
+    const sptRow = rmlSptRows[i];
+    const s = sptRow?.spt ? String(sptRow.spt).split("/") : [];
+    draw(sptRow?.gebohrtVon, lowerCols.sptVon, y, 9, 8);
+    draw(sptRow?.gebohrtBis, lowerCols.sptBis, y, 9, 8);
     draw(s[0], lowerCols.sptA, y, 9, 6);
     draw(s[1], lowerCols.sptB, y, 9, 6);
     draw(s[2], lowerCols.sptC, y, 9, 6);

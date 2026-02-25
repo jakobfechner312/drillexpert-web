@@ -501,6 +501,18 @@ function normalizeTagesbericht(raw: unknown): Tagesbericht {
       probenValues: typeof row?.probenValues === "object" && row?.probenValues ? row.probenValues : {},
     })
   );
+  const rawRmlSptRows = Array.isArray((r as Tagesbericht).rmlSptRows) ? (r as Tagesbericht).rmlSptRows : null;
+  const legacyRmlSptRows = r.tableRows.filter((row) => {
+    const hasSpt = String(row?.spt ?? "").trim().length > 0;
+    return hasSpt;
+  });
+  r.rmlSptRows = (rawRmlSptRows && rawRmlSptRows.length ? rawRmlSptRows : legacyRmlSptRows.length ? legacyRmlSptRows : [emptyTableRow()]).map(
+    (row) => ({
+      ...emptyTableRow(),
+      ...row,
+      probenValues: typeof row?.probenValues === "object" && row?.probenValues ? row.probenValues : {},
+    })
+  );
   r.workers = (Array.isArray(r.workers) && r.workers.length ? r.workers : [emptyWorker()]).map((w) => {
     const cycles = Array.isArray((w as any).workCycles) && (w as any).workCycles.length ? (w as any).workCycles : r.workCycles ?? [""];
     const st = Array.isArray(w.stunden) ? [...w.stunden] : [];
@@ -2775,6 +2787,10 @@ if (mode === "edit") {
     () => (Array.isArray(report.tableRows) && report.tableRows.length ? report.tableRows : [emptyTableRow()]),
     [report.tableRows]
   );
+  const safeRmlSptRows = useMemo<TableRow[]>(
+    () => (Array.isArray(report.rmlSptRows) && report.rmlSptRows.length ? report.rmlSptRows : [emptyTableRow()]),
+    [report.rmlSptRows]
+  );
   useEffect(() => {
     if (!isRml) return;
     setReport((prev) => {
@@ -2826,6 +2842,13 @@ if (mode === "edit") {
       const rows = Array.isArray(p.tableRows) && p.tableRows.length ? [...p.tableRows] : [emptyTableRow()];
       rows[i] = { ...rows[i], ...patch };
       return { ...p, tableRows: rows };
+    });
+  }
+  function setRmlSptRow(i: number, patch: Partial<TableRow>) {
+    setReport((p) => {
+      const rows = Array.isArray(p.rmlSptRows) && p.rmlSptRows.length ? [...p.rmlSptRows] : [emptyTableRow()];
+      rows[i] = { ...rows[i], ...patch };
+      return { ...p, rmlSptRows: rows };
     });
   }
   function setWaterLevelRow(i: number, patch: { time?: string; meters?: string }) {
@@ -2956,7 +2979,7 @@ if (mode === "edit") {
   };
 
   const setSptPart = (rowIndex: number, partIndex: 0 | 1 | 2, value: string) => {
-    const current = safeTableRows[rowIndex];
+    const current = safeRmlSptRows[rowIndex];
     const parts = [...getSptParts(current?.spt)] as string[];
     parts[partIndex] = normalizeSptSchlagInput(value);
     // Wenn ein Segment bei 50 stoppt, müssen nachfolgende Segmente im State leer sein,
@@ -2971,7 +2994,7 @@ if (mode === "edit") {
     const next = parts.map((p) => p.trim());
     const spt = next.some((p) => p.length > 0) ? next.join("/") : "";
     const bis = getSptBisFromVon(rowIndex, String(current?.gebohrtVon ?? ""), next[0] ?? "", next[1] ?? "", next[2] ?? "");
-    setRow(rowIndex, { spt, gebohrtBis: bis });
+    setRmlSptRow(rowIndex, { spt, gebohrtBis: bis });
   };
 
   function addRow() {
@@ -2989,6 +3012,23 @@ if (mode === "edit") {
       if (rows.length <= 1) return { ...p, tableRows: rows };
       rows.pop();
       return { ...p, tableRows: rows };
+    });
+  }
+  function addRmlSptRow() {
+    setReport((p) => {
+      const rows = Array.isArray(p.rmlSptRows) && p.rmlSptRows.length ? [...p.rmlSptRows] : [emptyTableRow()];
+      if (rows.length >= MAX_TABLE_ROWS) return { ...p, rmlSptRows: rows };
+      rows.push(emptyTableRow());
+      return { ...p, rmlSptRows: rows };
+    });
+  }
+
+  function removeLastRmlSptRow() {
+    setReport((p) => {
+      const rows = Array.isArray(p.rmlSptRows) && p.rmlSptRows.length ? [...p.rmlSptRows] : [emptyTableRow()];
+      if (rows.length <= 1) return { ...p, rmlSptRows: rows };
+      rows.pop();
+      return { ...p, rmlSptRows: rows };
     });
   }
 
@@ -5673,10 +5713,10 @@ if (mode === "edit") {
             <RowActions
               addLabel="+ Zeile"
               removeLabel="– Zeile"
-              onAdd={addRow}
-              onRemove={removeLastRow}
-              countLabel={`Zeilen: ${safeTableRows.length} / ${MAX_TABLE_ROWS}`}
-              disableAdd={safeTableRows.length >= MAX_TABLE_ROWS}
+              onAdd={addRmlSptRow}
+              onRemove={removeLastRmlSptRow}
+              countLabel={`Zeilen: ${safeRmlSptRows.length} / ${MAX_TABLE_ROWS}`}
+              disableAdd={safeRmlSptRows.length >= MAX_TABLE_ROWS}
             />
             <div className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-slate-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
               <div className="col-span-2 normal-case">von (m)</div>
@@ -5686,7 +5726,7 @@ if (mode === "edit") {
               <div className="col-span-3">30-45 cm</div>
             </div>
             <div className="space-y-2">
-              {safeTableRows.map((row, i) => {
+              {safeRmlSptRows.map((row, i) => {
                 const [s1, s2, s3] = getSptParts(row.spt);
                 const stopAfter1 = normalizeSptSchlagInput(s1) === String(SPT_MAX_SCHLAEGE);
                 const stopAfter2 = normalizeSptSchlagInput(s2) === String(SPT_MAX_SCHLAEGE);
@@ -5700,7 +5740,7 @@ if (mode === "edit") {
                       onChange={(e) => {
                         const nextVon = e.target.value;
                         const bis = getSptBisFromVon(i, nextVon, s1, s2, s3);
-                        setRow(i, { gebohrtVon: nextVon, gebohrtBis: bis });
+                        setRmlSptRow(i, { gebohrtVon: nextVon, gebohrtBis: bis });
                       }}
                       placeholder="von"
                     />
@@ -5750,7 +5790,7 @@ if (mode === "edit") {
                             };
                             setRmlSptCmOverrides(nextOverrides);
                             const bis = getSptBisFromVon(i, String(row.gebohrtVon ?? ""), s1, s2, s3, nextOverrides);
-                            setRow(i, { gebohrtBis: bis });
+                            setRmlSptRow(i, { gebohrtBis: bis });
                           }}
                           placeholder="cm"
                         />
@@ -5770,7 +5810,7 @@ if (mode === "edit") {
                             };
                             setRmlSptCmOverrides(nextOverrides);
                             const bis = getSptBisFromVon(i, String(row.gebohrtVon ?? ""), s1, s2, s3, nextOverrides);
-                            setRow(i, { gebohrtBis: bis });
+                            setRmlSptRow(i, { gebohrtBis: bis });
                           }}
                           placeholder="cm"
                         />
@@ -5790,7 +5830,7 @@ if (mode === "edit") {
                             };
                             setRmlSptCmOverrides(nextOverrides);
                             const bis = getSptBisFromVon(i, String(row.gebohrtVon ?? ""), s1, s2, s3, nextOverrides);
-                            setRow(i, { gebohrtBis: bis });
+                            setRmlSptRow(i, { gebohrtBis: bis });
                           }}
                           placeholder="cm"
                         />

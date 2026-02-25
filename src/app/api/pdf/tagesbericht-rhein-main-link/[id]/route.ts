@@ -32,6 +32,7 @@ function normalizeTagesberichtPayload(raw: unknown) {
     breakRows: Array.isArray(src.breakRows) ? src.breakRows : base.breakRows,
     transportRows: Array.isArray(src.transportRows) ? src.transportRows : base.transportRows,
     tableRows: Array.isArray(src.tableRows) ? src.tableRows : base.tableRows,
+    rmlSptRows: Array.isArray(src.rmlSptRows) ? src.rmlSptRows : base.rmlSptRows,
     workers: Array.isArray(src.workers) ? src.workers : base.workers,
     umsetzenRows: Array.isArray(src.umsetzenRows) ? src.umsetzenRows : base.umsetzenRows,
     pegelAusbauRows: Array.isArray(src.pegelAusbauRows) ? src.pegelAusbauRows : base.pegelAusbauRows,

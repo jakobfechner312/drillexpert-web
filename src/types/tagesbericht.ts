@@ -184,6 +184,7 @@ export type Tagesbericht = {
   // ===== Tabelle =====
   tableSectionsEnabled: TableSectionsEnabled;
   tableRows: TableRow[];
+  rmlSptRows?: TableRow[];
 
   // ===== Arbeiterblock =====
   workers: WorkerRow[];
