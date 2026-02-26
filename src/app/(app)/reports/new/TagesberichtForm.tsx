@@ -1707,8 +1707,10 @@ export default function TagesberichtForm({
     if (mode !== "create") return;
     if (hasDraftId) return;
     if (!effectiveProjectId) return;
-    void applyProjectPrefill(effectiveProjectId, false);
-  }, [mode, hasDraftId, effectiveProjectId, applyProjectPrefill]);
+    const isProjectRouteCreate = Boolean(projectId || enforcedProjectId);
+    const projectSourceChanged = Boolean(prefillProjectId && prefillProjectId !== effectiveProjectId);
+    void applyProjectPrefill(effectiveProjectId, isProjectRouteCreate || projectSourceChanged);
+  }, [mode, hasDraftId, effectiveProjectId, applyProjectPrefill, projectId, enforcedProjectId, prefillProjectId]);
 
   useEffect(() => {
     if (mode !== "create" || hasDraftId) return;
