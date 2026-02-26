@@ -183,6 +183,7 @@ const KIES_KOERNUNG_OPTIONS = ["0,71-1,25", "1,0-2,0", "2,0-3,15", "3,15-5,6", "
 const UEBERGEBEN_AN_OPTIONS = ["Gutachter", "Lager Teningen", "Kernlager BV"] as const;
 const SCHICHT_E_OPTIONS = ["0", "+", "++"] as const;
 const SCHICHT_C_OPTIONS = ["leicht", "mittel", "schwer"] as const;
+const SCHICHT_G_OPTIONS = ["Breisgau Formation"] as const;
 const SCHICHT_B_OPTIONS = [
   "Breiig",
   "Weich",
@@ -4688,17 +4689,52 @@ export default function SchichtenverzeichnisForm({
                     </label>
                     <label className="border-r border-slate-200 px-3 py-2">
                       g) Geologisch
-                      <input
+                      <select
                         className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-                        value={row.g}
+                        value={
+                          row.g === ""
+                            ? ""
+                            : SCHICHT_G_OPTIONS.includes(row.g as (typeof SCHICHT_G_OPTIONS)[number])
+                              ? row.g
+                              : "__custom__"
+                        }
                         onChange={(e) =>
                           setSchichtRows((prev) => {
                             const next = [...prev];
-                            next[idx] = { ...next[idx], g: e.target.value };
+                            next[idx] = {
+                              ...next[idx],
+                              g: e.target.value === "__custom__" ? "individuell" : e.target.value,
+                            };
                             return next;
                           })
                         }
-                      />
+                      >
+                        <option value="">Bitte wählen…</option>
+                        {SCHICHT_G_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                        <option value="__custom__">individuell</option>
+                      </select>
+                      {(
+                        row.g === "individuell" ||
+                        (!SCHICHT_G_OPTIONS.includes(row.g as (typeof SCHICHT_G_OPTIONS)[number]) &&
+                          row.g !== "")
+                      ) ? (
+                        <input
+                          className="mt-1 h-7 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                          value={row.g === "individuell" ? "" : row.g}
+                          onChange={(e) =>
+                            setSchichtRows((prev) => {
+                              const next = [...prev];
+                              next[idx] = { ...next[idx], g: e.target.value };
+                              return next;
+                            })
+                          }
+                          placeholder="Individuell geologisch"
+                        />
+                      ) : null}
                     </label>
                     <label className="border-r border-slate-200 px-3 py-2">
                       h) Gruppe

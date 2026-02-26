@@ -1163,7 +1163,7 @@ export async function generateSchichtenverzeichnisPdf(
             ? getPage1FieldOffset(fieldKey, "y") +
               getRowFieldOffsetPage1Y(localIdx, fieldKey)
             : 0);
-        const baseSize = field.size ?? 10;
+        const baseSize = Math.max(6, (field.size ?? 10) - (fieldKey === "schicht_g" ? 1 : 0));
         const shouldWrapInSmallField =
           fieldKey === "schicht_b" || fieldKey === "schicht_c" || fieldKey === "schicht_d";
         if (!shouldWrapInSmallField) {
