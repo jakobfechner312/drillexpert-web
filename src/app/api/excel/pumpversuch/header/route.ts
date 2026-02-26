@@ -48,12 +48,6 @@ function setIfPresent(sheet: ExcelJS.Worksheet, cell: string, value: unknown) {
   sheet.getCell(cell).value = text;
 }
 
-function getFlowRateHeaderLabel(unit: unknown): string {
-  const normalized = String(unit ?? "").trim().toLowerCase();
-  if (normalized === "m3h") return "m³/h";
-  return "l/s";
-}
-
 function estimateWrappedLineCount(text: string, approxCharsPerLine = 20, maxLines = 8): number {
   const normalized = text.replace(/\r\n/g, "\n").trim();
   if (!normalized) return 1;
@@ -79,6 +73,7 @@ function estimateWrappedLineCount(text: string, approxCharsPerLine = 20, maxLine
           currentLen = wordLen;
           continue;
         }
+        // Excel wraps long tokens without spaces; reserve multiple visual lines.
         lines += Math.floor((wordLen - 1) / approxCharsPerLine);
         currentLen = ((wordLen - 1) % approxCharsPerLine) + 1;
         continue;
@@ -112,10 +107,17 @@ function applyBemerkungCellLayout(sheet: ExcelJS.Worksheet, rowNo: number, bemer
     vertical: "top",
   };
 
+  // Row 16+ in the template is compact; grow only when needed and cap to keep the layout usable.
   const lineCount = estimateWrappedLineCount(text, 20, 8);
   const baseRowHeightPt = 18;
   const extraLineHeightPt = 15;
   sheet.getRow(rowNo).height = baseRowHeightPt + (lineCount - 1) * extraLineHeightPt;
+}
+
+function getFlowRateHeaderLabel(unit: unknown): string {
+  const normalized = String(unit ?? "").trim().toLowerCase();
+  if (normalized === "m3h") return "m³/h";
+  return "l/s";
 }
 
 function writeMessRows(
@@ -182,9 +184,9 @@ export async function GET() {
 
   return NextResponse.json({
     ok: true,
-    route: "/api/excel/klarspuel/header",
+    route: "/api/excel/pumpversuch/header",
     method: "POST",
-    note: "Befuellt nur Headerfelder des KlarSpuel-Templates. Tabellenzeilen kommen spaeter.",
+    note: "Befuellt das Pumpversuch-Formular (aktuell noch auf KlarSpuel-Template-Basis).",
     examplePayload: {
       bv: "BV Musterprojekt",
       bohrungNr: "B-12",
@@ -255,6 +257,7 @@ export async function POST(req: Request) {
     }
 
     // Headerfelder
+    sheet.getCell("A3").value = "Pumpversuch";
     setIfPresent(sheet, "B5", payload.bv);
     setIfPresent(sheet, "I6", payload.bohrungNr);
     setIfPresent(sheet, "I7", payload.blatt);
@@ -267,7 +270,7 @@ export async function POST(req: Request) {
     setIfPresent(sheet, "C14", payload.hoeheGok);
     sheet.getCell("E15").value = getFlowRateHeaderLabel(payload.flowRateUnit);
 
-    // Tabellenbereiche (Klarspuel-Messdaten)
+    // Tabellenbereiche (Pumpversuch-Messdaten auf KlarSpuel-Template)
     const grundwasserStartRow = 16;
     const grundwasserRows = payload.grundwasserRows ?? [];
     const wiederanstiegRows = payload.wiederanstiegRows ?? [];
@@ -297,7 +300,7 @@ export async function POST(req: Request) {
     const body = Buffer.from(out as ArrayBuffer);
 
     const stamp = new Date().toISOString().slice(0, 10);
-    const fileName = `KlarSpuel-Header-${stamp}.xlsx`;
+    const fileName = `Pumpversuch-${stamp}.xlsx`;
 
     return new NextResponse(body, {
       headers: {

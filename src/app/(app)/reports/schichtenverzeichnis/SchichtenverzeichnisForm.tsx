@@ -3116,11 +3116,11 @@ export default function SchichtenverzeichnisForm({
   const fillTestData = () => {
     setData({
       ...data,
-      auftrag_nr: "DE-2026-001",
-      bohrmeister: "Max Mustermann",
+      auftrag_nr: "SV TEST 2026-001",
+      bohrmeister: "Max Muster",
       blatt_nr: "1",
       projekt_name: "Baustelle Freiburg Nord",
-      bohrung_nr: "B-12",
+      bohrung_nr: "B 12-A",
       durchfuehrungszeit: "30.01.2026 - 31.01.2026",
       durchfuehrungszeit_von: "2026-01-30",
       durchfuehrungszeit_bis: "2026-01-31",

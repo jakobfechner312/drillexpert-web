@@ -394,6 +394,11 @@ function SidebarReports() {
   const pathname = usePathname();
   const active = pathname.startsWith("/reports");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [desktopOpen, setDesktopOpen] = useState(active);
+
+  useEffect(() => {
+    if (active) setDesktopOpen(true);
+  }, [active]);
 
   const renderReportLinks = (className = "") => (
     <div className={className}>
@@ -424,22 +429,30 @@ function SidebarReports() {
         {mobileOpen ? renderReportLinks("ml-2 mt-1 space-y-1") : null}
       </div>
 
-      <div className="group hidden lg:block">
-        <Link
-          href="/reports"
+      <div className="hidden lg:block">
+        <div
           className={[
-            "block rounded-xl px-3 py-2 text-sm transition",
+            "flex items-center rounded-xl text-sm transition",
             active ? "bg-drill-50 font-medium" : "hover:bg-base-bg",
           ].join(" ")}
         >
-          Meine Berichte
-        </Link>
-        {renderReportLinks(
-          [
-            "nav-subitems ml-2 mt-1 hidden space-y-1",
-            active ? "lg:block" : "lg:group-hover:block",
-          ].join(" ")
-        )}
+          <Link href="/reports" className="flex-1 px-3 py-2">
+            Meine Berichte
+          </Link>
+          <button
+            type="button"
+            className="px-3 py-2"
+            onClick={() => setDesktopOpen((prev) => !prev)}
+            aria-expanded={desktopOpen}
+            aria-label={desktopOpen ? "Berichte-Untermenü schließen" : "Berichte-Untermenü öffnen"}
+          >
+            <ChevronDown
+              className={["h-4 w-4 transition-transform", desktopOpen ? "rotate-180" : ""].join(" ")}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+        {desktopOpen ? renderReportLinks("ml-2 mt-1 space-y-1") : null}
       </div>
     </>
   );
@@ -455,9 +468,14 @@ type SidebarProjectItem = {
 function SidebarProjects() {
   const pathname = usePathname();
   const supabase = useMemo(() => createClient(), []);
-  const [projects, setProjects] = useState<SidebarProjectItem[]>([]);
-  const [mobileOpen, setMobileOpen] = useState(false);
   const active = pathname.startsWith("/projects");
+  const [projects, setProjects] = useState<SidebarProjectItem[]>([]);
+  const [mobileOpen, setMobileOpen] = useState(true);
+  const [desktopOpen, setDesktopOpen] = useState(true);
+
+  useEffect(() => {
+    if (active) setDesktopOpen(true);
+  }, [active]);
 
   useEffect(() => {
     let mounted = true;
@@ -560,22 +578,30 @@ function SidebarProjects() {
         {mobileOpen ? renderProjectLinks("ml-2 mt-1 space-y-1") : null}
       </div>
 
-      <div className="group hidden lg:block">
-        <Link
-          href="/projects"
+      <div className="hidden lg:block">
+        <div
           className={[
-            "block rounded-xl px-3 py-2 text-sm transition",
+            "flex items-center rounded-xl text-sm transition",
             active ? "bg-drill-50 font-medium" : "hover:bg-base-bg",
           ].join(" ")}
         >
-          Meine Projekte
-        </Link>
-        {renderProjectLinks(
-          [
-            "ml-2 mt-1 hidden space-y-1",
-            active ? "lg:block" : "lg:group-hover:block",
-          ].join(" ")
-        )}
+          <Link href="/projects" className="flex-1 px-3 py-2">
+            Meine Projekte
+          </Link>
+          <button
+            type="button"
+            className="px-3 py-2"
+            onClick={() => setDesktopOpen((prev) => !prev)}
+            aria-expanded={desktopOpen}
+            aria-label={desktopOpen ? "Projekte-Untermenü schließen" : "Projekte-Untermenü öffnen"}
+          >
+            <ChevronDown
+              className={["h-4 w-4 transition-transform", desktopOpen ? "rotate-180" : ""].join(" ")}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+        {desktopOpen ? renderProjectLinks("ml-2 mt-1 space-y-1") : null}
       </div>
     </>
   );
@@ -645,7 +671,15 @@ function SidebarNav() {
 
 function SidebarExcelBeta() {
   const supabase = useMemo(() => createClient(), []);
+  const pathname = usePathname();
+  const active = pathname.startsWith("/excel");
   const [visible, setVisible] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [desktopOpen, setDesktopOpen] = useState(active);
+
+  useEffect(() => {
+    if (active) setDesktopOpen(true);
+  }, [active]);
 
   useEffect(() => {
     let mounted = true;
@@ -660,5 +694,67 @@ function SidebarExcelBeta() {
   }, [supabase]);
 
   if (!visible) return null;
-  return <SidebarLink href="/excel" label="Excel-Formulare (Beta)" />;
+
+  const renderExcelLinks = (className = "") => (
+    <div className={className}>
+      <SidebarLink href="/excel/pumpversuch" label="Pumpversuch" />
+      <SidebarLink href="/excel/klarspuelprotokoll" label="Klarspülprotokoll" />
+    </div>
+  );
+
+  return (
+    <>
+      <div className="lg:hidden">
+        <div
+          className={[
+            "flex items-center rounded-xl text-sm transition",
+            active ? "bg-drill-50 font-medium" : "hover:bg-base-bg",
+          ].join(" ")}
+        >
+          <Link href="/excel" className="flex-1 px-3 py-2">
+            Meine Excel
+          </Link>
+          <button
+            type="button"
+            className="px-3 py-2"
+            onClick={() => setMobileOpen((prev) => !prev)}
+            aria-expanded={mobileOpen}
+            aria-label={mobileOpen ? "Excel-Untermenü schließen" : "Excel-Untermenü öffnen"}
+          >
+            <ChevronDown
+              className={["h-4 w-4 transition-transform", mobileOpen ? "rotate-180" : ""].join(" ")}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+        {mobileOpen ? renderExcelLinks("ml-2 mt-1 space-y-1") : null}
+      </div>
+
+      <div className="hidden lg:block">
+        <div
+          className={[
+            "flex items-center rounded-xl text-sm transition",
+            active ? "bg-drill-50 font-medium" : "hover:bg-base-bg",
+          ].join(" ")}
+        >
+          <Link href="/excel" className="flex-1 px-3 py-2">
+            Meine Excel
+          </Link>
+          <button
+            type="button"
+            className="px-3 py-2"
+            onClick={() => setDesktopOpen((prev) => !prev)}
+            aria-expanded={desktopOpen}
+            aria-label={desktopOpen ? "Excel-Untermenü schließen" : "Excel-Untermenü öffnen"}
+          >
+            <ChevronDown
+              className={["h-4 w-4 transition-transform", desktopOpen ? "rotate-180" : ""].join(" ")}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+        {desktopOpen ? renderExcelLinks("ml-2 mt-1 space-y-1") : null}
+      </div>
+    </>
+  );
 }

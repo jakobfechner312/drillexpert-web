@@ -33,6 +33,21 @@ const HIDDEN_FIELD_KEYS = new Set([
 ]);
 const MARKER_HIGHLIGHT_KEYS = new Set(["passavant", "seba", "betonsockel"]);
 
+function sanitizeFilenamePart(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9-_]+/gi, "_");
+}
+
+function buildSchichtenverzeichnisPageLabel(data: any, pageNumber: number) {
+  return [
+    sanitizeFilenamePart(data?.auftrag_nr) || "ohne_auftragsnummer",
+    sanitizeFilenamePart(data?.bohrung_nr) || "ohne_bohrung",
+    `Seite-${pageNumber}`,
+  ].join("_");
+}
+
 function getTemplatePath(fileName: string) {
   return path.join(process.cwd(), "public", "templates", fileName);
 }
@@ -131,6 +146,14 @@ export async function generateSchichtenverzeichnisPdf(
   function formatDepthNumeric(value: number): string {
     const fixed = Number.isInteger(value) ? value.toString() : value.toFixed(2).replace(/\.?0+$/, "");
     return fixed.replace(".", ",");
+  }
+  function formatFixedTwoDecimals(value: unknown): string {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    const normalized = raw.replace(",", ".");
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) return raw;
+    return parsed.toFixed(2).replace(".", ",");
   }
   function computeSptBisFromEntry(entry: { von_m?: string; schlag_1?: string; schlag_2?: string; schlag_3?: string }) {
     const fromValue = parseDepthNumeric(entry?.von_m);
@@ -321,6 +344,11 @@ export async function generateSchichtenverzeichnisPdf(
     if (!page) return;
     page.drawText(text ?? "", { x, y, size, font, color: rgb(0, 0, 0) });
   };
+  for (let pageIndex = 1; pageIndex < pages.length; pageIndex += 1) {
+    const pageNumber = pageIndex + 1;
+    const pageLabel = buildSchichtenverzeichnisPageLabel(data, pageNumber);
+    drawText(pageIndex, pageLabel, 392, 25, 9);
+  }
   const drawCircleMarker = (pageIndex: number, x: number, y: number, radius = 5.2) => {
     const page = pages[pageIndex];
     if (!page) return;
@@ -332,6 +360,16 @@ export async function generateSchichtenverzeichnisPdf(
       borderColor: rgb(0, 0.35, 0.9),
     });
   };
+  const page1 = pages[0];
+  if (page1) {
+    page1.drawText("Digitale Felderfassung", {
+      x: 75,
+      y: 700,
+      size: 11,
+      font,
+      color: rgb(0.85, 0.1, 0.1),
+    });
+  }
   const buildBohrungen = () => {
     const normalizeType = (value: unknown) => {
       const raw = String(value ?? "").trim().toLowerCase();
@@ -1022,7 +1060,7 @@ export async function generateSchichtenverzeichnisPdf(
       if (ansatzField) {
         const value = row?.ansatzpunkt_bis;
         const isLastSchichtRow = idx === lastSchichtRowIndex;
-        const text = value == null ? "" : String(value);
+        const text = formatFixedTwoDecimals(value);
         const drawX =
           ansatzField.x +
           pageXOffset +
