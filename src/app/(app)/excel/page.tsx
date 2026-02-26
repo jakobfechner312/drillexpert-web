@@ -212,6 +212,37 @@ export default function ExcelPage() {
     setOk(null);
   };
 
+  const submitKlarspuelExcelViaForm = (payload: KlarspuelExcelExportPayload, openInBrowser: boolean) => {
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "/api/excel/klarspuel/header";
+    form.style.display = "none";
+
+    if (openInBrowser) {
+      form.target = "_blank";
+    } else {
+      const iframeName = "klarspuel-excel-download-frame";
+      let iframe = document.querySelector(`iframe[name="${iframeName}"]`) as HTMLIFrameElement | null;
+      if (!iframe) {
+        iframe = document.createElement("iframe");
+        iframe.name = iframeName;
+        iframe.style.display = "none";
+        document.body.appendChild(iframe);
+      }
+      form.target = iframeName;
+    }
+
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "payload_json";
+    input.value = JSON.stringify(payload);
+    form.appendChild(input);
+
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+  };
+
   const runKlarspuelExcel = async (openInBrowser = false) => {
     setError(null);
     setOk(null);
@@ -222,58 +253,60 @@ export default function ExcelPage() {
       return;
     }
 
+    const payload: KlarspuelExcelExportPayload = {
+      ...klarspuelHeaderForm,
+      grundwasserRows,
+      wiederanstiegRows,
+    };
+
     setLoading(true);
     try {
-      const payload: KlarspuelExcelExportPayload = {
-        ...klarspuelHeaderForm,
-        grundwasserRows,
-        wiederanstiegRows,
-      };
+      // Sichtbarer Vorab-Check, damit 403/500 nicht als "Download geht nicht" erscheinen.
+      const health = await fetch("/api/excel/klarspuel/header", {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (!health.ok) {
+        let detail = "";
+        try {
+          const data = (await health.json()) as { error?: string; detail?: string };
+          detail = data?.error || data?.detail || "";
+        } catch {
+          detail = (await health.text().catch(() => "")).slice(0, 160);
+        }
+        throw new Error(`Excel-API nicht bereit (${health.status})${detail ? `: ${detail}` : ""}`);
+      }
 
-      const res = await fetch("/api/excel/klarspuel/header", {
+      // Optionaler POST-Check (gleiche Payload wie Export), damit Serverfehler sichtbar werden.
+      const probe = await fetch("/api/excel/klarspuel/header", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error || `Fehler (${res.status})`);
-      }
-
-      const blob = await res.blob();
-      const contentDisposition = res.headers.get("content-disposition") ?? "";
-      const fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
-      const fileName = fileNameMatch?.[1] || "KlarSpuel-Header.xlsx";
-
-      const url = window.URL.createObjectURL(blob);
-      if (openInBrowser) {
-        const win = window.open(url, "_blank", "noopener,noreferrer");
-        if (!win) {
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = fileName;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
+      if (!probe.ok) {
+        let detail = "";
+        try {
+          const data = (await probe.json()) as { error?: string; detail?: string };
+          detail = data?.error || data?.detail || "";
+        } catch {
+          detail = (await probe.text().catch(() => "")).slice(0, 160);
         }
-        setTimeout(() => window.URL.revokeObjectURL(url), 15_000);
-        setOk("Excel-Datei erzeugt (Browser-Ansicht versucht; je nach Browser wird sie heruntergeladen).");
-      } else {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
-        setOk("Excel-Datei erzeugt und heruntergeladen.");
+        throw new Error(`Excel-Export fehlgeschlagen (${probe.status})${detail ? `: ${detail}` : ""}`);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Excel konnte nicht erzeugt werden.");
-    } finally {
       setLoading(false);
+      setError(e instanceof Error ? e.message : "Excel-Export-Check fehlgeschlagen.");
+      return;
     }
+
+    // Browsernativer POST-Download ist in Chrome robuster als Blob-Download nach fetch().
+    submitKlarspuelExcelViaForm(payload, openInBrowser);
+    setOk(
+      openInBrowser
+        ? "Excel-Export im neuen Tab/Download gestartet."
+        : "Excel-Download gestartet."
+    );
+    setLoading(false);
   };
 
   const updateMessRow = (
@@ -333,37 +366,49 @@ export default function ExcelPage() {
   };
 
   const insertNextRowFromDelta = (
+    currentRows: KlarspuelMessRow[],
     setter: Dispatch<SetStateAction<KlarspuelMessRow[]>>,
     prefix: "grundwasser-row" | "wiederanstieg-row",
     scheduleConfig: KlarspuelScheduleConfig,
     iPerSecValue: string,
     rowId: string,
     deltaCm: number
-  ): void => {
-    setter((prev) => {
-      const index = prev.findIndex((row) => row.id === rowId);
-      if (index < 0) return prev;
+  ): boolean => {
+    const index = currentRows.findIndex((row) => row.id === rowId);
+    if (index < 0) return false;
 
-      const sourceRow = prev[index];
-      const parsedMass = parseAbstichmassMeters(sourceRow.abstichmassAbGok);
-      const next = [...prev];
+    const sourceRow = currentRows[index];
+    const parsedMass = parseAbstichmassMeters(sourceRow.abstichmassAbGok);
+    const next = [...currentRows];
 
-      // Bevorzugt die bereits vorhandene nächste Zeile befüllen (fixe Standardzeilen).
-      const existingNextRow = next[index + 1];
-      if (existingNextRow) {
-        const nextRow = { ...existingNextRow };
-        nextRow.iPerSec = iPerSecValue;
-        if (!nextRow.uhrzeit) {
-          nextRow.uhrzeit = getNextScheduleTimeAfterRow(prev, index, scheduleConfig);
-        }
-        if (parsedMass != null) {
-          nextRow.abstichmassAbGok = formatAbstichmassMeters(parsedMass + deltaCm / 100);
-        }
-        next[index + 1] = nextRow;
-        return next;
+    // Bevorzugt die bereits vorhandene nächste Zeile befüllen (fixe Standardzeilen).
+    const existingNextRow = next[index + 1];
+    if (existingNextRow) {
+      const nextRow = { ...existingNextRow };
+      nextRow.iPerSec = iPerSecValue;
+      if (!nextRow.uhrzeit) {
+        nextRow.uhrzeit = getNextScheduleTimeAfterRow(currentRows, index, scheduleConfig);
       }
-      return next;
-    });
+      if (parsedMass != null) {
+        nextRow.abstichmassAbGok = formatAbstichmassMeters(parsedMass + deltaCm / 100);
+      }
+      next[index + 1] = nextRow;
+      setter(next);
+      return true;
+    }
+
+    // Wenn keine nächste Zeile existiert (z. B. nach 2:00 und Ende der vorgebauten Liste),
+    // neue Zeile unbegrenzt anhängen und nächsten Zeitwert berechnen.
+    const appendedRow = createEmptyMessRow(`${prefix}-${Date.now()}`);
+    appendedRow.iPerSec = iPerSecValue;
+    const nextTime = getNextScheduleTimeAfterRow(currentRows, index, scheduleConfig);
+    if (!nextTime) return false;
+    appendedRow.uhrzeit = nextTime;
+    if (parsedMass != null) {
+      appendedRow.abstichmassAbGok = formatAbstichmassMeters(parsedMass + deltaCm / 100);
+    }
+    setter([...next, appendedRow]);
+    return true;
   };
 
   const updateScheduleField = (
@@ -419,56 +464,48 @@ export default function ExcelPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-slate-200/70 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 bg-sky-50/60 px-5 py-3">
-          <div>
-            <h1 className="text-base font-semibold text-sky-900">Excel-Formulare (Beta)</h1>
-            <p className="mt-1 text-xs text-slate-500">
-              Eigener Bereich für Excel-Vorlagen und spätere Excel-Reports.
-            </p>
-          </div>
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
-            Nur für freigegebene Nutzer
-          </span>
-        </div>
-
         <div className="p-5">
-          <div className="mb-5 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className={[
-                "rounded-xl border px-3 py-2 text-sm font-semibold transition",
-                step === 1
-                  ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-              ].join(" ")}
-              onClick={() => setStep(1)}
-            >
-              1. Stammdaten
-            </button>
-            <button
-              type="button"
-              className={[
-                "rounded-xl border px-3 py-2 text-sm font-semibold transition",
-                step === 2
-                  ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-              ].join(" ")}
-              onClick={() => setStep(2)}
-            >
-              2. Messdaten Grundwasser
-            </button>
-            <button
-              type="button"
-              className={[
-                "rounded-xl border px-3 py-2 text-sm font-semibold transition",
-                step === 3
-                  ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-              ].join(" ")}
-              onClick={() => setStep(3)}
-            >
-              3. Messdaten Wiederanstieg
-            </button>
+          <div className="mb-4 rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">Bericht</div>
+            <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-2xl font-semibold tracking-tight text-slate-900">Pumpversuch</div>
+                <div className="mt-1 text-sm text-slate-500">Klarspül-Protokoll (Excel-Beta)</div>
+              </div>
+              <span className="rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+                Nur für freigegebene Nutzer
+              </span>
+            </div>
+          </div>
+
+          <div className="mb-4 rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700/80">
+              Schritt {step} von 3
+            </div>
+            <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+              {step === 1 ? "Stammdaten" : step === 2 ? "Messdaten Grundwasser" : "Messdaten Wiederanstieg"}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {[
+                { value: 1 as const, label: "1. Stammdaten" },
+                { value: 2 as const, label: "2. Grundwasser" },
+                { value: 3 as const, label: "3. Wiederanstieg" },
+              ].map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  className={[
+                    "rounded-full border px-4 py-2 text-sm font-semibold transition",
+                    step === item.value
+                      ? "border-emerald-300 bg-white text-emerald-900 shadow-sm"
+                      : "border-emerald-100 bg-white/70 text-slate-600 hover:bg-white hover:text-slate-800",
+                  ].join(" ")}
+                  onClick={() => setStep(item.value)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="mb-4 flex items-start gap-3 rounded-xl border border-emerald-200/70 bg-emerald-50/40 p-3">
@@ -479,6 +516,17 @@ export default function ExcelPage() {
               <div className="text-sm font-semibold text-slate-800">Klarspül-Protokoll (Header-MVP)</div>
             </div>
           </div>
+
+          {error ? (
+            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {error}
+            </div>
+          ) : null}
+          {ok ? (
+            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              {ok}
+            </div>
+          ) : null}
 
           {step === 1 ? (
             <>
@@ -520,9 +568,6 @@ export default function ExcelPage() {
               Testdaten füllen
             </button>
           </div>
-
-          {error ? <div className="mt-2 text-xs text-red-600">{error}</div> : null}
-          {ok ? <div className="mt-2 text-xs text-emerald-700">{ok}</div> : null}
 
           <div className="mt-5 rounded-2xl border border-slate-200/70 bg-slate-50/50 p-4">
             <div className="mb-3 flex items-center justify-between gap-2">
@@ -604,12 +649,20 @@ export default function ExcelPage() {
                   <Download className="h-4 w-4" aria-hidden="true" />
                   {loading ? "Erzeuge Excel…" : "Excel erstellen"}
                 </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-200/80 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                  onClick={() => void runKlarspuelExcel(true)}
+                  disabled={loading}
+                >
+                  {loading ? "Öffne…" : "Im Browser öffnen"}
+                </button>
               </div>
 
               <div className="rounded-2xl border border-slate-200/70 bg-slate-50/50 p-4 space-y-4">
                 <div className="grid gap-2 sm:max-w-xs">
                   <label className="space-y-1">
-                    <span className="text-xs font-medium text-slate-600">l / sec. (für alle Zeilen)</span>
+                    <span className="text-xs font-medium text-slate-600">l / sec. (für alle Zeilen, Pflicht für Export)</span>
                     <input
                       className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm outline-none focus:border-sky-300"
                       value={grundwasserIPerSec}
@@ -618,7 +671,7 @@ export default function ExcelPage() {
                         setGrundwasserIPerSec(value);
                         applyUniformIPerSec(setGrundwasserRows, value);
                       }}
-                      placeholder="optional"
+                      placeholder="z. B. 1,2"
                     />
                   </label>
                 </div>
@@ -650,6 +703,7 @@ export default function ExcelPage() {
                 onClearAllValues={() => clearAllMessValues(setGrundwasserRows)}
                 onAddNextRow={(rowId, deltaCm) =>
                   insertNextRowFromDelta(
+                      grundwasserRows,
                       setGrundwasserRows,
                       "grundwasser-row",
                       grundwasserSchedule,
@@ -684,25 +738,17 @@ export default function ExcelPage() {
                   <Download className="h-4 w-4" aria-hidden="true" />
                   {loading ? "Erzeuge Excel…" : "Excel erstellen"}
                 </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-200/80 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                  onClick={() => void runKlarspuelExcel(true)}
+                  disabled={loading}
+                >
+                  {loading ? "Öffne…" : "Im Browser öffnen"}
+                </button>
               </div>
 
               <div className="rounded-2xl border border-slate-200/70 bg-slate-50/50 p-4 space-y-4">
-                <div className="grid gap-2 sm:max-w-xs">
-                  <label className="space-y-1">
-                    <span className="text-xs font-medium text-slate-600">l / sec. (für alle Zeilen)</span>
-                    <input
-                      className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm outline-none focus:border-sky-300"
-                      value={wiederanstiegIPerSec}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setWiederanstiegIPerSec(value);
-                        applyUniformIPerSec(setWiederanstiegRows, value);
-                      }}
-                      placeholder="optional"
-                    />
-                  </label>
-                </div>
-
                 {showWiederanstiegTaktEditor ? (
                   <ScheduleEditor
                     config={wiederanstiegSchedule}
@@ -730,6 +776,7 @@ export default function ExcelPage() {
                   onClearAllValues={clearAllWiederanstiegMessValues}
                   onAddNextRow={(rowId, deltaCm) =>
                     insertNextRowFromDelta(
+                      wiederanstiegRows,
                       setWiederanstiegRows,
                       "wiederanstieg-row",
                       wiederanstiegSchedule,
@@ -868,7 +915,16 @@ function getNextScheduleMinute(currentMinute: number | null, scheduleConfig: Kla
   if (!durations.length) return null;
   if (currentMinute == null) return durations[0] ?? null;
   const next = durations.find((minute) => minute > currentMinute);
-  return next ?? null;
+  if (next != null) return next;
+
+  // Für lange Pumpversuche: ab 2 Stunden unbegrenzt im Stundenschritt fortsetzen
+  // (3:00, 4:00, 5:00, ...), auch wenn der konfigurierte Takt bei 120 min endet.
+  if (currentMinute >= 120) {
+    const hoursAfterTwo = Math.floor((currentMinute - 120) / 60) + 1;
+    return 120 + hoursAfterTwo * 60;
+  }
+
+  return null;
 }
 
 function getNextScheduleTimeForAppend(rows: KlarspuelMessRow[], scheduleConfig: KlarspuelScheduleConfig): string {
@@ -1086,10 +1142,11 @@ function MessRowsEditor({
   titlePrefix: string;
   onChangeRow: (id: string, key: keyof Omit<KlarspuelMessRow, "id">, value: string) => void;
   onClearAllValues: () => void;
-  onAddNextRow: (rowId: string, deltaCm: number) => void;
+  onAddNextRow: (rowId: string, deltaCm: number) => boolean;
 }) {
   const deltaButtons = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5];
   const [activeRowId, setActiveRowId] = useState<string | null>(rows[0]?.id ?? null);
+  const [pendingAdvanceFromRowId, setPendingAdvanceFromRowId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!rows.length) {
@@ -1100,6 +1157,19 @@ function MessRowsEditor({
       setActiveRowId(rows[0].id);
     }
   }, [rows, activeRowId]);
+
+  useEffect(() => {
+    if (!pendingAdvanceFromRowId) return;
+    const fromIndex = rows.findIndex((row) => row.id === pendingAdvanceFromRowId);
+    if (fromIndex < 0) {
+      setPendingAdvanceFromRowId(null);
+      return;
+    }
+    const nextRow = rows[fromIndex + 1];
+    if (!nextRow?.id) return;
+    setActiveRowId(nextRow.id);
+    setPendingAdvanceFromRowId(null);
+  }, [rows, pendingAdvanceFromRowId]);
 
   const activeIndex = rows.findIndex((row) => row.id === activeRowId);
   const safeActiveIndex = activeIndex >= 0 ? activeIndex : 0;
@@ -1205,11 +1275,19 @@ function MessRowsEditor({
                       : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
                 ].join(" ")}
                 onClick={() => {
-                  onAddNextRow(activeRow.id, deltaCm);
+                  const didAdvance = onAddNextRow(activeRow.id, deltaCm);
+                  if (!didAdvance) {
+                    setPendingAdvanceFromRowId(null);
+                    return;
+                  }
+                  setPendingAdvanceFromRowId(activeRow.id);
                   const nextRowId = rows[safeActiveIndex + 1]?.id;
-                  if (nextRowId) setActiveRowId(nextRowId);
+                  if (nextRowId) {
+                    setActiveRowId(nextRowId);
+                    setPendingAdvanceFromRowId(null);
+                  }
                 }}
-                disabled={firstAbstichMissing || activeAbstichMissing || safeActiveIndex >= rows.length - 1}
+                disabled={firstAbstichMissing || activeAbstichMissing}
               >
                 {deltaCm > 0 ? `+${deltaCm}` : String(deltaCm)}
               </button>

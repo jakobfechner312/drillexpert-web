@@ -151,7 +151,18 @@ export async function POST(req: Request) {
     const forbidden = ensureExcelBetaUser(auth.user?.email);
     if (forbidden) return forbidden;
 
-    const payload = (await req.json()) as KlarspuelHeaderPayload;
+    let payload: KlarspuelHeaderPayload;
+    const contentType = req.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      payload = (await req.json()) as KlarspuelHeaderPayload;
+    } else {
+      const form = await req.formData();
+      const payloadRaw = form.get("payload_json") ?? form.get("payload");
+      if (typeof payloadRaw !== "string" || !payloadRaw.trim()) {
+        return NextResponse.json({ error: "Missing payload_json" }, { status: 400 });
+      }
+      payload = JSON.parse(payloadRaw) as KlarspuelHeaderPayload;
+    }
     const templateBytes = Buffer.from(await readFile(TEMPLATE_PATH));
 
     const workbook = new ExcelJS.Workbook();
