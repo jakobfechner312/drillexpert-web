@@ -34,6 +34,14 @@ type KlarspuelExcelExportPayload = KlarspuelHeaderFormState & {
   flowRateUnit?: "lps" | "m3h";
   grundwasserRows: KlarspuelMessRow[];
   wiederanstiegRows: KlarspuelMessRow[];
+  messungen?: KlarspuelMessungPayload[];
+};
+
+type KlarspuelMessungPayload = KlarspuelHeaderFormState & {
+  sheetName?: string;
+  flowRateUnit?: "lps" | "m3h";
+  grundwasserRows: KlarspuelMessRow[];
+  wiederanstiegRows: KlarspuelMessRow[];
 };
 
 type KlarspuelScheduleRule = {
@@ -62,6 +70,7 @@ const canUseExcelBetaClient = (email: string | null | undefined) => {
 };
 const PUMPVERSUCH_EXCEL_API_ROUTE = "/api/excel/pumpversuch/header";
 const KLARSPUEL_EXCEL_API_ROUTE = "/api/excel/klarspuel/header";
+const KLARSPUEL_PDF_API_ROUTE = "/api/pdf/excel/klarspuel";
 
 export default function ExcelPage() {
   const excelApiRoute = KLARSPUEL_EXCEL_API_ROUTE;
@@ -104,6 +113,8 @@ export default function ExcelPage() {
   const [showGrundwasserTaktEditor, setShowGrundwasserTaktEditor] = useState(false);
   const [showWiederanstiegTaktEditor, setShowWiederanstiegTaktEditor] = useState(false);
   const [wiederanstiegStartAutoSyncEnabled, setWiederanstiegStartAutoSyncEnabled] = useState(true);
+  const [savedMessungen, setSavedMessungen] = useState<KlarspuelMessungPayload[]>([]);
+  const [editingMessungIndex, setEditingMessungIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -151,20 +162,155 @@ export default function ExcelPage() {
     const dd = String(today.getDate()).padStart(2, "0");
     const mm = String(today.getMonth() + 1).padStart(2, "0");
     const yyyy = String(today.getFullYear());
+    const formatMass = (value: number) => value.toFixed(2).replace(".", ",");
+    const flow = "1,2";
+
+    const buildGrundwasserRows = (suffix: string, start: number, plateau: number): KlarspuelMessRow[] => {
+      const rows = createRowsFromSchedule("grundwasser-row", grundwasserSchedule, flow);
+      return rows.map((row, index) => {
+        let value = plateau;
+        if (index === 0) value = start;
+        else if (index <= 8) {
+          value = Math.min(plateau, start + index * 0.055);
+        } else {
+          value = index % 2 === 0 ? plateau : plateau + 0.01;
+        }
+
+        return {
+          ...row,
+          id: `grundwasser-row-${suffix}-${index}`,
+          iPerSec: flow,
+          abstichmassAbGok: formatMass(value),
+          bemerkungen:
+            index === 0
+              ? "Pumpstart"
+              : index === 8
+                ? "eingespiegelt"
+                : row.bemerkungen,
+        };
+      });
+    };
+
+    const buildWiederanstiegRows = (
+      suffix: string,
+      fromPlateau: number,
+      toPlateau: number
+    ): KlarspuelMessRow[] => {
+      const rows = createRowsFromSchedule("wiederanstieg-row", wiederanstiegSchedule, "");
+      return rows.map((row, index) => {
+        let value = toPlateau;
+        if (index === 0) value = fromPlateau;
+        else if (index <= 5) {
+          value = Math.min(toPlateau, fromPlateau + index * 0.065);
+        } else {
+          value = index % 2 === 0 ? toPlateau : toPlateau - 0.01;
+        }
+
+        return {
+          ...row,
+          id: `wiederanstieg-row-${suffix}-${index}`,
+          abstichmassAbGok: formatMass(value),
+          bemerkungen:
+            index === 0
+              ? "Pumpe aus"
+              : index === 5
+                ? "eingespiegelt"
+                : row.bemerkungen,
+        };
+      });
+    };
+
+    const variants = [
+      {
+        bohrungNr: "B-10",
+        messstelle: "GWMS-1",
+        hoeheGok: "123,45",
+        pumpeneinlaufBeiM: "12,50",
+        ablaufleitungM: "8,20",
+        grundwasserStart: 2.18,
+        grundwasserPlateau: 2.62,
+        wiederanstiegPlateau: 2.96,
+      },
+      {
+        bohrungNr: "B-11",
+        messstelle: "GWMS-2",
+        hoeheGok: "124,05",
+        pumpeneinlaufBeiM: "11,80",
+        ablaufleitungM: "7,90",
+        grundwasserStart: 2.04,
+        grundwasserPlateau: 2.48,
+        wiederanstiegPlateau: 2.79,
+      },
+      {
+        bohrungNr: "B-12",
+        messstelle: "GWMS-3",
+        hoeheGok: "123,70",
+        pumpeneinlaufBeiM: "12,10",
+        ablaufleitungM: "8,00",
+        grundwasserStart: 2.26,
+        grundwasserPlateau: 2.69,
+        wiederanstiegPlateau: 3.01,
+      },
+    ] as const;
+
+    const buildMessung = (v: (typeof variants)[number], idx: number): KlarspuelMessungPayload => {
+      const grundwasserRows = buildGrundwasserRows(
+        `m${idx + 1}`,
+        v.grundwasserStart,
+        v.grundwasserPlateau
+      );
+      const wiederanstiegRows = buildWiederanstiegRows(
+        `m${idx + 1}`,
+        v.grundwasserPlateau,
+        v.wiederanstiegPlateau
+      );
+
+      return {
+        bv: "BV Testbaustelle Nord",
+        bohrungNr: v.bohrungNr,
+        blatt: "1",
+        auftragsNr: `KS-${yyyy}-001`,
+        datum: `${dd}.${mm}.${yyyy}`,
+        ausgefuehrtVon: "Jakob (Test)",
+        pumpeneinlaufBeiM: v.pumpeneinlaufBeiM,
+        ablaufleitungM: v.ablaufleitungM,
+        messstelle: v.messstelle,
+        hoeheGok: v.hoeheGok,
+        sheetName: `${v.bohrungNr}_M${idx + 1}`,
+        flowRateUnit: "lps",
+        grundwasserRows,
+        wiederanstiegRows,
+      };
+    };
+
+    const allMessungen = variants.map((variant, idx) => buildMessung(variant, idx));
+    const activeMessung = allMessungen[2];
+
     setKlarspuelHeaderForm({
-      bv: "BV Testbaustelle Nord",
-      bohrungNr: "B-12",
-      blatt: "1",
-      auftragsNr: `KS-${yyyy}-001`,
-      datum: `${dd}.${mm}.${yyyy}`,
-      ausgefuehrtVon: "Jakob (Test)",
-      pumpeneinlaufBeiM: "12,50",
-      ablaufleitungM: "8,20",
-      messstelle: "GWMS-1",
-      hoeheGok: "123,45",
+      bv: activeMessung.bv,
+      bohrungNr: activeMessung.bohrungNr,
+      blatt: activeMessung.blatt,
+      auftragsNr: activeMessung.auftragsNr,
+      datum: activeMessung.datum,
+      ausgefuehrtVon: activeMessung.ausgefuehrtVon,
+      pumpeneinlaufBeiM: activeMessung.pumpeneinlaufBeiM,
+      ablaufleitungM: activeMessung.ablaufleitungM,
+      messstelle: activeMessung.messstelle,
+      hoeheGok: activeMessung.hoeheGok,
     });
+    setSavedMessungen(allMessungen);
+    setEditingMessungIndex(null);
+    setGrundwasserFlowRateUnit("lps");
+    setGrundwasserIPerSec(flow);
+    setWiederanstiegIPerSec("");
+    setWiederanstiegStartAutoSyncEnabled(false);
+    setGrundwasserRows(activeMessung.grundwasserRows.map((row) => ({ ...row })));
+    setWiederanstiegRows(activeMessung.wiederanstiegRows.map((row) => ({ ...row })));
+    setShowGrundwasserTaktEditor(false);
+    setShowWiederanstiegTaktEditor(false);
+
     setError(null);
-    setOk(null);
+    setOk("Testdaten geladen: 3 Messungen sind direkt gespeichert. Du kannst sofort Excel erstellen.");
     setPreviewData(null);
     setStep(1);
   };
@@ -224,16 +370,169 @@ export default function ExcelPage() {
     setOk(null);
   };
 
-  const submitKlarspuelExcelViaForm = (payload: KlarspuelExcelExportPayload, openInBrowser: boolean) => {
+  const buildCurrentMessungPayload = (): KlarspuelMessungPayload => {
+    const bohrungNr = String(klarspuelHeaderForm.bohrungNr ?? "").trim();
+    return {
+      ...klarspuelHeaderForm,
+      sheetName: bohrungNr || undefined,
+      flowRateUnit: grundwasserFlowRateUnit,
+      grundwasserRows: grundwasserRows.map((row) => ({ ...row })),
+      wiederanstiegRows: wiederanstiegRows.map((row) => ({ ...row })),
+    };
+  };
+
+  const hasSomeMessdaten = (rows: KlarspuelMessRow[]) =>
+    rows.some(
+      (row) =>
+        String(row.abstichmassAbGok ?? "").trim() !== "" ||
+        String(row.bemerkungen ?? "").trim() !== "" ||
+        String(row.uhrzeit ?? "").trim() !== ""
+    );
+
+  const normalizeMessungForCompare = (messung: KlarspuelMessungPayload) => ({
+    bv: String(messung.bv ?? "").trim(),
+    bohrungNr: String(messung.bohrungNr ?? "").trim(),
+    blatt: String(messung.blatt ?? "").trim(),
+    auftragsNr: String(messung.auftragsNr ?? "").trim(),
+    datum: String(messung.datum ?? "").trim(),
+    ausgefuehrtVon: String(messung.ausgefuehrtVon ?? "").trim(),
+    pumpeneinlaufBeiM: String(messung.pumpeneinlaufBeiM ?? "").trim(),
+    ablaufleitungM: String(messung.ablaufleitungM ?? "").trim(),
+    messstelle: String(messung.messstelle ?? "").trim(),
+    hoeheGok: String(messung.hoeheGok ?? "").trim(),
+    flowRateUnit: messung.flowRateUnit ?? "lps",
+    grundwasserRows: (messung.grundwasserRows ?? []).map((row) => ({
+      uhrzeit: String(row.uhrzeit ?? "").trim(),
+      abstichmassAbGok: String(row.abstichmassAbGok ?? "").trim(),
+      iPerSec: String(row.iPerSec ?? "").trim(),
+      bemerkungen: String(row.bemerkungen ?? "").trim(),
+    })),
+    wiederanstiegRows: (messung.wiederanstiegRows ?? []).map((row) => ({
+      uhrzeit: String(row.uhrzeit ?? "").trim(),
+      abstichmassAbGok: String(row.abstichmassAbGok ?? "").trim(),
+      iPerSec: String(row.iPerSec ?? "").trim(),
+      bemerkungen: String(row.bemerkungen ?? "").trim(),
+    })),
+  });
+
+  const saveCurrentMessungAsSheet = () => {
+    if (!hasSomeMessdaten(grundwasserRows) && !hasSomeMessdaten(wiederanstiegRows)) {
+      setError("Bitte erst Messwerte eintragen, bevor du eine Messung als Tabellenblatt speicherst.");
+      setOk(null);
+      return;
+    }
+    const isEditing = editingMessungIndex != null && editingMessungIndex >= 0 && editingMessungIndex < savedMessungen.length;
+    const current = buildCurrentMessungPayload();
+    if (isEditing) {
+      const existing = savedMessungen[editingMessungIndex];
+      current.sheetName = existing?.sheetName || current.sheetName;
+      setSavedMessungen((prev) =>
+        prev.map((entry, idx) => (idx === editingMessungIndex ? current : entry))
+      );
+      setEditingMessungIndex(null);
+    } else {
+      const nextIndex = savedMessungen.length + 1;
+      const bohrung = String(current.bohrungNr ?? "").trim();
+      current.sheetName = bohrung ? `${bohrung}_M${nextIndex}` : `Messung_${nextIndex}`;
+      setSavedMessungen((prev) => [...prev, current]);
+    }
+
+    setGrundwasserIPerSec("");
+    setWiederanstiegIPerSec("");
+    setGrundwasserFlowRateUnit("lps");
+    setWiederanstiegStartAutoSyncEnabled(true);
+    setShowGrundwasserTaktEditor(false);
+    setShowWiederanstiegTaktEditor(false);
+    setGrundwasserRows(createRowsFromSchedule("grundwasser-row", grundwasserSchedule, ""));
+    setWiederanstiegRows(createRowsFromSchedule("wiederanstieg-row", wiederanstiegSchedule, ""));
+    setStep(2);
+    setError(null);
+    setOk(
+      isEditing
+        ? "Messung aktualisiert. Schritt 2/3 wurden für die nächste Messung zurückgesetzt."
+        : `Messung ${savedMessungen.length + 1} als zusätzliches Tabellenblatt gespeichert. Schritt 2/3 wurden zurückgesetzt.`
+    );
+  };
+
+  const removeSavedMessung = (index: number) => {
+    setSavedMessungen((prev) => prev.filter((_, i) => i !== index));
+    setEditingMessungIndex((prev) => {
+      if (prev == null) return prev;
+      if (prev === index) return null;
+      if (prev > index) return prev - 1;
+      return prev;
+    });
+  };
+
+  const openSavedMessungForEdit = (index: number) => {
+    const target = savedMessungen[index];
+    if (!target) return;
+    const confirmed = window.confirm(
+      "Gespeicherte Messung zum Bearbeiten laden? Nicht gespeicherte aktuelle Änderungen in Schritt 2/3 werden verworfen."
+    );
+    if (!confirmed) return;
+
+    setKlarspuelHeaderForm({
+      bv: String(target.bv ?? ""),
+      bohrungNr: String(target.bohrungNr ?? ""),
+      blatt: String(target.blatt ?? ""),
+      auftragsNr: String(target.auftragsNr ?? ""),
+      datum: String(target.datum ?? ""),
+      ausgefuehrtVon: String(target.ausgefuehrtVon ?? ""),
+      pumpeneinlaufBeiM: String(target.pumpeneinlaufBeiM ?? ""),
+      ablaufleitungM: String(target.ablaufleitungM ?? ""),
+      messstelle: String(target.messstelle ?? ""),
+      hoeheGok: String(target.hoeheGok ?? ""),
+    });
+    setGrundwasserFlowRateUnit(target.flowRateUnit === "m3h" ? "m3h" : "lps");
+
+    const loadedGrundwasserRows = (target.grundwasserRows ?? []).map((row, idx) => ({
+      ...createEmptyMessRow(`grundwasser-row-load-${index}-${idx}`),
+      ...row,
+      id: `grundwasser-row-load-${index}-${idx}`,
+    }));
+    const loadedWiederanstiegRows = (target.wiederanstiegRows ?? []).map((row, idx) => ({
+      ...createEmptyMessRow(`wiederanstieg-row-load-${index}-${idx}`),
+      ...row,
+      id: `wiederanstieg-row-load-${index}-${idx}`,
+    }));
+
+    const firstGrundwasserIPerSec =
+      loadedGrundwasserRows.find((row) => String(row.iPerSec ?? "").trim())?.iPerSec ?? "";
+    const firstWiederanstiegIPerSec =
+      loadedWiederanstiegRows.find((row) => String(row.iPerSec ?? "").trim())?.iPerSec ?? "";
+
+    setGrundwasserIPerSec(String(firstGrundwasserIPerSec ?? ""));
+    setWiederanstiegIPerSec(String(firstWiederanstiegIPerSec ?? ""));
+    setGrundwasserRows(
+      loadedGrundwasserRows.length
+        ? loadedGrundwasserRows
+        : createRowsFromSchedule("grundwasser-row", grundwasserSchedule, "")
+    );
+    setWiederanstiegRows(
+      loadedWiederanstiegRows.length
+        ? loadedWiederanstiegRows
+        : createRowsFromSchedule("wiederanstieg-row", wiederanstiegSchedule, "")
+    );
+    setWiederanstiegStartAutoSyncEnabled(false);
+    setShowGrundwasserTaktEditor(false);
+    setShowWiederanstiegTaktEditor(false);
+    setEditingMessungIndex(index);
+    setStep(2);
+    setError(null);
+    setOk(`Messung ${index + 1} geladen. Änderungen mit "Aktuelle Messung als Blatt speichern" übernehmen.`);
+  };
+
+  const submitViaForm = (action: string, payload: KlarspuelExcelExportPayload, openInBrowser: boolean) => {
     const form = document.createElement("form");
     form.method = "POST";
-    form.action = excelApiRoute;
+    form.action = action;
     form.style.display = "none";
 
     if (openInBrowser) {
       form.target = "_blank";
     } else {
-      const iframeName = "klarspuel-excel-download-frame";
+      const iframeName = "klarspuel-export-download-frame";
       let iframe = document.querySelector(`iframe[name="${iframeName}"]`) as HTMLIFrameElement | null;
       if (!iframe) {
         iframe = document.createElement("iframe");
@@ -273,11 +572,22 @@ export default function ExcelPage() {
       return;
     }
 
+    const currentMessung = buildCurrentMessungPayload();
+    const currentHasData = hasSomeMessdaten(currentMessung.grundwasserRows) || hasSomeMessdaten(currentMessung.wiederanstiegRows);
+    const currentComparable = normalizeMessungForCompare(currentMessung);
+    const alreadySaved = savedMessungen.some(
+      (entry) => JSON.stringify(normalizeMessungForCompare(entry)) === JSON.stringify(currentComparable)
+    );
+    const exportMessungen = currentHasData && !alreadySaved
+      ? [...savedMessungen, currentMessung]
+      : [...savedMessungen];
+
     const payload: KlarspuelExcelExportPayload = {
       ...klarspuelHeaderForm,
       flowRateUnit: grundwasserFlowRateUnit,
       grundwasserRows,
       wiederanstiegRows,
+      messungen: exportMessungen,
     };
 
     setLoading(true);
@@ -321,12 +631,58 @@ export default function ExcelPage() {
     }
 
     // Browsernativer POST-Download ist in Chrome robuster als Blob-Download nach fetch().
-    submitKlarspuelExcelViaForm(payload, openInBrowser);
+    submitViaForm(excelApiRoute, payload, openInBrowser);
     setOk(
       openInBrowser
         ? "Excel-Export im neuen Tab/Download gestartet."
         : "Excel-Download gestartet."
     );
+    setLoading(false);
+  };
+
+  const runKlarspuelPdf = async (openInBrowser = true) => {
+    setError(null);
+    setOk(null);
+
+    if (!String(klarspuelHeaderForm.messstelle ?? "").trim()) {
+      setError("Bitte in den Stammdaten die Messstelle eintragen.");
+      return;
+    }
+    if (!String(klarspuelHeaderForm.hoeheGok ?? "").trim()) {
+      setError("Bitte in den Stammdaten die Höhe GOK eintragen.");
+      return;
+    }
+
+    const currentMessung = buildCurrentMessungPayload();
+    const currentHasData = hasSomeMessdaten(currentMessung.grundwasserRows) || hasSomeMessdaten(currentMessung.wiederanstiegRows);
+    const currentComparable = normalizeMessungForCompare(currentMessung);
+    const alreadySaved = savedMessungen.some(
+      (entry) => JSON.stringify(normalizeMessungForCompare(entry)) === JSON.stringify(currentComparable)
+    );
+    const exportMessungen = currentHasData && !alreadySaved
+      ? [...savedMessungen, currentMessung]
+      : [...savedMessungen];
+
+    const payload: KlarspuelExcelExportPayload = {
+      ...klarspuelHeaderForm,
+      flowRateUnit: grundwasserFlowRateUnit,
+      grundwasserRows,
+      wiederanstiegRows,
+      messungen: exportMessungen,
+    };
+
+    setLoading(true);
+    try {
+      const health = await fetch(KLARSPUEL_PDF_API_ROUTE, { method: "GET", cache: "no-store" });
+      if (!health.ok) throw new Error(`PDF-API nicht bereit (${health.status})`);
+    } catch (e) {
+      setLoading(false);
+      setError(e instanceof Error ? e.message : "PDF-Export-Check fehlgeschlagen.");
+      return;
+    }
+
+    submitViaForm(KLARSPUEL_PDF_API_ROUTE, payload, openInBrowser);
+    setOk(openInBrowser ? "PDF-Export im neuen Tab gestartet." : "PDF-Download gestartet.");
     setLoading(false);
   };
 
@@ -531,8 +887,25 @@ export default function ExcelPage() {
           </div>
 
           <div className="mb-4 rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700/80">
-              Schritt {step} von 3
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700/80">
+                Schritt {step} von 3
+              </div>
+              {step !== 1 ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  onClick={() =>
+                    step === 2
+                      ? setShowGrundwasserTaktEditor((prev) => !prev)
+                      : setShowWiederanstiegTaktEditor((prev) => !prev)
+                  }
+                  aria-label="Einstellungen"
+                >
+                  <Settings className="h-4 w-4" aria-hidden="true" />
+                  Einstellungen
+                </button>
+              ) : null}
             </div>
             <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
               {step === 1 ? "Stammdaten" : step === 2 ? "Messdaten Grundwasser" : "Messdaten Wiederanstieg"}
@@ -579,6 +952,53 @@ export default function ExcelPage() {
               {ok}
             </div>
           ) : null}
+
+          <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-semibold text-slate-800">Mehrere Messungen in einer Excel</div>
+              <button
+                type="button"
+                className="rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-50"
+                onClick={saveCurrentMessungAsSheet}
+                disabled={loading}
+              >
+                {editingMessungIndex == null ? "Aktuelle Messung als Blatt speichern" : "Aktuelle Messung aktualisieren"}
+              </button>
+            </div>
+            <div className="mt-1 text-xs text-slate-600">
+              Export enthält immer: gespeicherte Messungen + aktuelle Messung als letztes Blatt.
+            </div>
+            {savedMessungen.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {savedMessungen.map((messung, idx) => (
+                  <div
+                    key={`${messung.sheetName ?? "Messung"}-${idx}`}
+                    className="flex items-center justify-between rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <div className="text-slate-800">
+                      Blatt {idx + 1}: <span className="font-semibold">{messung.sheetName || `Messung_${idx + 1}`}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                        onClick={() => openSavedMessungForEdit(idx)}
+                      >
+                        {editingMessungIndex === idx ? "In Bearbeitung" : "Öffnen"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                        onClick={() => removeSavedMessung(idx)}
+                      >
+                        Entfernen
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
 
           {step === 1 ? (
             <>
@@ -691,15 +1111,6 @@ export default function ExcelPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  onClick={() => setShowGrundwasserTaktEditor((prev) => !prev)}
-                  aria-label="Einstellungen"
-                >
-                  <Settings className="h-4 w-4" aria-hidden="true" />
-                  Einstellungen
-                </button>
-                <button
-                  type="button"
                   className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100 disabled:opacity-60"
                   onClick={() => void runKlarspuelExcel(false)}
                   disabled={loading}
@@ -714,6 +1125,14 @@ export default function ExcelPage() {
                   disabled={loading}
                 >
                   {loading ? "Öffne…" : "Im Browser öffnen"}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60"
+                  onClick={() => void runKlarspuelPdf(true)}
+                  disabled={loading}
+                >
+                  {loading ? "Erzeuge PDF…" : "PDF erstellen"}
                 </button>
               </div>
 
@@ -787,15 +1206,6 @@ export default function ExcelPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  onClick={() => setShowWiederanstiegTaktEditor((prev) => !prev)}
-                  aria-label="Einstellungen"
-                >
-                  <Settings className="h-4 w-4" aria-hidden="true" />
-                  Einstellungen
-                </button>
-                <button
-                  type="button"
                   className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100 disabled:opacity-60"
                   onClick={() => void runKlarspuelExcel(false)}
                   disabled={loading}
@@ -810,6 +1220,14 @@ export default function ExcelPage() {
                   disabled={loading}
                 >
                   {loading ? "Öffne…" : "Im Browser öffnen"}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60"
+                  onClick={() => void runKlarspuelPdf(true)}
+                  disabled={loading}
+                >
+                  {loading ? "Erzeuge PDF…" : "PDF erstellen"}
                 </button>
               </div>
 

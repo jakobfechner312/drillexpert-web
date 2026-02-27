@@ -61,7 +61,7 @@ const canUseExcelBetaClient = (email: string | null | undefined) => {
   return Boolean(normalized) && EXCEL_BETA_USERS_CLIENT.has(normalized);
 };
 const PUMPVERSUCH_EXCEL_API_ROUTE = "/api/excel/pumpversuch/header";
-const KLARSPUEL_EXCEL_API_ROUTE = "/api/excel/klarspuel/header";
+const PUMPVERSUCH_PDF_API_ROUTE = "/api/pdf/excel/pumpversuch";
 
 export default function ExcelPage() {
   const excelApiRoute = PUMPVERSUCH_EXCEL_API_ROUTE;
@@ -151,6 +151,12 @@ export default function ExcelPage() {
     const dd = String(today.getDate()).padStart(2, "0");
     const mm = String(today.getMonth() + 1).padStart(2, "0");
     const yyyy = String(today.getFullYear());
+    const formatMass = (value: number) => value.toFixed(2).replace(".", ",");
+    const flow = "1,2";
+    const grundwasserStart = 2.18;
+    const grundwasserPlateau = 2.62;
+    const wiederanstiegPlateau = 2.96;
+
     setKlarspuelHeaderForm({
       bv: "BV Testbaustelle Nord",
       bohrungNr: "B-12",
@@ -163,6 +169,63 @@ export default function ExcelPage() {
       messstelle: "GWMS-1",
       hoeheGok: "123,45",
     });
+
+    setGrundwasserFlowRateUnit("lps");
+    setGrundwasserIPerSec(flow);
+    setWiederanstiegIPerSec("");
+    setWiederanstiegStartAutoSyncEnabled(false);
+
+    setGrundwasserRows((prev) => {
+      const base = createRowsFromSchedule("grundwasser-row", grundwasserSchedule, flow);
+      const rows = base.length ? base : prev;
+      return rows.map((row, index) => {
+        let value = grundwasserPlateau;
+        if (index === 0) value = grundwasserStart;
+        else if (index <= 8) {
+          value = Math.min(grundwasserPlateau, grundwasserStart + index * 0.055);
+        } else {
+          value = index % 2 === 0 ? grundwasserPlateau : grundwasserPlateau + 0.01;
+        }
+
+        return {
+          ...row,
+          iPerSec: flow,
+          abstichmassAbGok: formatMass(value),
+          bemerkungen:
+            index === 0
+              ? "Pumpstart"
+              : index === 8
+                ? "eingespiegelt"
+                : row.bemerkungen,
+        };
+      });
+    });
+
+    setWiederanstiegRows((prev) => {
+      const base = createRowsFromSchedule("wiederanstieg-row", wiederanstiegSchedule, "");
+      const rows = base.length ? base : prev;
+      return rows.map((row, index) => {
+        let value = wiederanstiegPlateau;
+        if (index === 0) value = grundwasserPlateau;
+        else if (index <= 5) {
+          value = Math.min(wiederanstiegPlateau, grundwasserPlateau + index * 0.065);
+        } else {
+          value = index % 2 === 0 ? wiederanstiegPlateau : wiederanstiegPlateau - 0.01;
+        }
+
+        return {
+          ...row,
+          abstichmassAbGok: formatMass(value),
+          bemerkungen:
+            index === 0
+              ? "Pumpe aus"
+              : index === 5
+                ? "eingespiegelt"
+                : row.bemerkungen,
+        };
+      });
+    });
+
     setError(null);
     setOk(null);
     setPreviewData(null);
@@ -224,16 +287,16 @@ export default function ExcelPage() {
     setOk(null);
   };
 
-  const submitKlarspuelExcelViaForm = (payload: KlarspuelExcelExportPayload, openInBrowser: boolean) => {
+  const submitViaForm = (action: string, payload: KlarspuelExcelExportPayload, openInBrowser: boolean) => {
     const form = document.createElement("form");
     form.method = "POST";
-    form.action = excelApiRoute;
+    form.action = action;
     form.style.display = "none";
 
     if (openInBrowser) {
       form.target = "_blank";
     } else {
-      const iframeName = "klarspuel-excel-download-frame";
+      const iframeName = "pumpversuch-export-download-frame";
       let iframe = document.querySelector(`iframe[name="${iframeName}"]`) as HTMLIFrameElement | null;
       if (!iframe) {
         iframe = document.createElement("iframe");
@@ -321,12 +384,47 @@ export default function ExcelPage() {
     }
 
     // Browsernativer POST-Download ist in Chrome robuster als Blob-Download nach fetch().
-    submitKlarspuelExcelViaForm(payload, openInBrowser);
+    submitViaForm(excelApiRoute, payload, openInBrowser);
     setOk(
       openInBrowser
         ? "Excel-Export im neuen Tab/Download gestartet."
         : "Excel-Download gestartet."
     );
+    setLoading(false);
+  };
+
+  const runKlarspuelPdf = async (openInBrowser = true) => {
+    setError(null);
+    setOk(null);
+
+    if (!String(klarspuelHeaderForm.messstelle ?? "").trim()) {
+      setError("Bitte in den Stammdaten die Messstelle eintragen.");
+      return;
+    }
+    if (!String(klarspuelHeaderForm.hoeheGok ?? "").trim()) {
+      setError("Bitte in den Stammdaten die Höhe GOK eintragen.");
+      return;
+    }
+
+    const payload: KlarspuelExcelExportPayload = {
+      ...klarspuelHeaderForm,
+      flowRateUnit: grundwasserFlowRateUnit,
+      grundwasserRows,
+      wiederanstiegRows,
+    };
+
+    setLoading(true);
+    try {
+      const health = await fetch(PUMPVERSUCH_PDF_API_ROUTE, { method: "GET", cache: "no-store" });
+      if (!health.ok) throw new Error(`PDF-API nicht bereit (${health.status})`);
+    } catch (e) {
+      setLoading(false);
+      setError(e instanceof Error ? e.message : "PDF-Export-Check fehlgeschlagen.");
+      return;
+    }
+
+    submitViaForm(PUMPVERSUCH_PDF_API_ROUTE, payload, openInBrowser);
+    setOk(openInBrowser ? "PDF-Export im neuen Tab gestartet." : "PDF-Download gestartet.");
     setLoading(false);
   };
 
@@ -531,8 +629,25 @@ export default function ExcelPage() {
           </div>
 
           <div className="mb-4 rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700/80">
-              Schritt {step} von 3
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700/80">
+                Schritt {step} von 3
+              </div>
+              {step !== 1 ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  onClick={() =>
+                    step === 2
+                      ? setShowGrundwasserTaktEditor((prev) => !prev)
+                      : setShowWiederanstiegTaktEditor((prev) => !prev)
+                  }
+                  aria-label="Einstellungen"
+                >
+                  <Settings className="h-4 w-4" aria-hidden="true" />
+                  Einstellungen
+                </button>
+              ) : null}
             </div>
             <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
               {step === 1 ? "Stammdaten" : step === 2 ? "Messdaten Grundwasser" : "Messdaten Wiederanstieg"}
@@ -691,15 +806,6 @@ export default function ExcelPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  onClick={() => setShowGrundwasserTaktEditor((prev) => !prev)}
-                  aria-label="Einstellungen"
-                >
-                  <Settings className="h-4 w-4" aria-hidden="true" />
-                  Einstellungen
-                </button>
-                <button
-                  type="button"
                   className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100 disabled:opacity-60"
                   onClick={() => void runKlarspuelExcel(false)}
                   disabled={loading}
@@ -714,6 +820,14 @@ export default function ExcelPage() {
                   disabled={loading}
                 >
                   {loading ? "Öffne…" : "Im Browser öffnen"}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60"
+                  onClick={() => void runKlarspuelPdf(true)}
+                  disabled={loading}
+                >
+                  {loading ? "Erzeuge PDF…" : "PDF erstellen"}
                 </button>
               </div>
 
@@ -787,15 +901,6 @@ export default function ExcelPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  onClick={() => setShowWiederanstiegTaktEditor((prev) => !prev)}
-                  aria-label="Einstellungen"
-                >
-                  <Settings className="h-4 w-4" aria-hidden="true" />
-                  Einstellungen
-                </button>
-                <button
-                  type="button"
                   className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100 disabled:opacity-60"
                   onClick={() => void runKlarspuelExcel(false)}
                   disabled={loading}
@@ -810,6 +915,14 @@ export default function ExcelPage() {
                   disabled={loading}
                 >
                   {loading ? "Öffne…" : "Im Browser öffnen"}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60"
+                  onClick={() => void runKlarspuelPdf(true)}
+                  disabled={loading}
+                >
+                  {loading ? "Erzeuge PDF…" : "PDF erstellen"}
                 </button>
               </div>
 
