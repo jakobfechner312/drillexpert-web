@@ -1,13 +1,11 @@
 import { Tagesbericht } from "@/types/tagesbericht";
 
 export function createDefaultTagesbericht(): Tagesbericht {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
   return {
     reportType: "tagesbericht",
     status: "draft",
 
-    date: today,
+    date: "",
 
     name: "",
     project: "",

@@ -4499,23 +4499,14 @@ if (mode === "edit") {
                     <>
                       <label className="space-y-1">
                         <span className="text-sm text-slate-600">Datum</span>
-                        <div className="flex gap-2">
-                          <input
-                            type="date"
-                            className="w-full rounded-xl border p-3"
-                            value={report.date ?? ""}
-                            onChange={(e) => update("date", e.target.value)}
-                            onFocus={(e) => openNativePicker(e.currentTarget)}
-                            onClick={(e) => openNativePicker(e.currentTarget)}
-                          />
-                          <button
-                            type="button"
-                            className="btn btn-secondary shrink-0"
-                            onClick={() => update("date", getTodayDateInputValue())}
-                          >
-                            Heute
-                          </button>
-                        </div>
+                        <input
+                          type="date"
+                          className="w-full rounded-xl border p-3"
+                          value={report.date ?? ""}
+                          onChange={(e) => update("date", e.target.value)}
+                          onFocus={(e) => openNativePicker(e.currentTarget)}
+                          onClick={(e) => openNativePicker(e.currentTarget)}
+                        />
                       </label>
                       <label className="space-y-1">
                         <span className="text-sm text-slate-600">Projekt</span>

@@ -318,6 +318,17 @@ export default function ExcelPage() {
     form.remove();
   };
 
+  const parseFileNameFromDisposition = (contentDisposition: string | null, fallback: string) => {
+    if (!contentDisposition) return fallback;
+    const match = contentDisposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+    if (!match?.[1]) return fallback;
+    try {
+      return decodeURIComponent(match[1].replace(/"/g, "").trim());
+    } catch {
+      return match[1].replace(/"/g, "").trim();
+    }
+  };
+
   const runKlarspuelExcel = async (openInBrowser = false) => {
     setError(null);
     setOk(null);
@@ -377,14 +388,30 @@ export default function ExcelPage() {
         }
         throw new Error(`Excel-Export fehlgeschlagen (${probe.status})${detail ? `: ${detail}` : ""}`);
       }
+
+      const excelBlob = await probe.blob();
+      const fileName = parseFileNameFromDisposition(
+        probe.headers.get("content-disposition"),
+        `Pumpversuch-${new Date().toISOString().slice(0, 10)}.xlsx`
+      );
+      const blobUrl = URL.createObjectURL(excelBlob);
+      if (openInBrowser) {
+        window.open(blobUrl, "_blank", "noopener,noreferrer");
+      } else {
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = fileName;
+        link.rel = "noopener";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000);
     } catch (e) {
       setLoading(false);
       setError(e instanceof Error ? e.message : "Excel-Export-Check fehlgeschlagen.");
       return;
     }
-
-    // Browsernativer POST-Download ist in Chrome robuster als Blob-Download nach fetch().
-    submitViaForm(excelApiRoute, payload, openInBrowser);
     setOk(
       openInBrowser
         ? "Excel-Export im neuen Tab/Download gestartet."
