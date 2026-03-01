@@ -987,7 +987,7 @@ export default function TagesberichtForm({
       if (!raw) return fallback;
       const parsed = JSON.parse(raw);
       localDraftLoadedRef.current = true;
-      return { ...normalizeTagesbericht(parsed), reportType };
+      return { ...normalizeTagesbericht(parsed), reportType, date: "" };
     } catch (e) {
       console.warn("Local draft load failed", e);
       return fallback;
@@ -1124,21 +1124,6 @@ export default function TagesberichtForm({
       // Final fallback: focused input allows manual typing.
     }
   };
-  const getTodayDateInputValue = () => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, "0");
-    const d = String(now.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  };
-  useEffect(() => {
-    if (!isRml || mode !== "create") return;
-    const today = getTodayDateInputValue();
-    setReport((prev) => {
-      if (String(prev.date ?? "").trim()) return prev;
-      return { ...prev, date: today };
-    });
-  }, [isRml, mode]);
   useEffect(() => {
     const currentSnapshot = JSON.stringify({ report, stepIndex });
     if (!undoLastSnapshotRef.current) {
@@ -2468,7 +2453,7 @@ if (mode === "edit") {
       const raw = localStorage.getItem(draftStorageKey);
       if (!raw) return;
       const parsed = JSON.parse(raw);
-      setReport({ ...normalizeTagesbericht(parsed), reportType });
+      setReport({ ...normalizeTagesbericht(parsed), reportType, date: "" });
     } catch (e) {
       console.warn("Local draft load failed", e);
     } finally {
